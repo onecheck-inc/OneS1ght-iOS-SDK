@@ -9,6 +9,35 @@
 
 ---
 
+## [0.1.3] — 2026-08-21
+
+공개 API 변경 없음. 코드는 고칠 것이 없습니다.
+
+### Added
+- **로케이터 수신 진단** — 측위 시작 7초 뒤 한 번, 등록한 로케이터 중 신호가 잡히지 않는 것이
+  있으면 로그로 남깁니다. 로케이터가 죽어도 앱에서는 "좌표가 그냥 안 나온다"로만 보이는데,
+  원인을 현장에서 특정할 유일한 온디바이스 단서입니다.
+
+  ```
+  [E4003] 로케이터 일부 미수신 — registered=4 received=3 missing=0x9DD7
+  ```
+
+- `PositioningProvider.positioningDiagnostic` (선택 채택, 기본 `nil`) —
+  커스텀 provider 를 쓰고 있다면 구현하지 않아도 그대로 동작합니다.
+
+### 알아둘 것
+⚠️ `E4003` 은 **WARN 이고 측위를 막지 않습니다.** 앵커 세트는 마스터 1대와 서브 여러 대로
+이루어지고, 마스터가 살아 있는 한 서브가 빠져도 측위는 계속됩니다 — 감도가 떨어질 뿐입니다.
+고장이 아니라 **유지보수 신호**로 읽으세요.
+
+마스터가 빠졌는지 서브가 빠졌는지는 SDK 가 알 수 없습니다(주소만 압니다). 그래서 판정하지 않고
+사실만 남깁니다 — 판단은 현장에서 기기 라벨과 대조해야 합니다.
+
+신호는 3대 이상 잡히는데 좌표가 안 나오면 `E4002`(ERROR)입니다. 등록 좌표와 실제 배치가
+어긋났을 가능성이 큽니다. 잡힌 것이 3대 미만이면 좌표가 없는 게 당연하므로 이 코드를 내지 않습니다.
+
+---
+
 ## [0.1.2] — 2026-08-20
 
 공개 API 변경 없음. 의존성 해석만 다시 하면 됩니다.
@@ -74,6 +103,7 @@
 - **위치 권한이 측위의 전제 조건**입니다. 없으면 세션이 `INVALID_CONFIGURATION` 으로 실패합니다.
 - LICENSE 는 아직 없습니다. 사용 조건은 별도 계약을 따릅니다.
 
+[0.1.3]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.3
 [0.1.2]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.2
 [0.1.1]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.1
 [0.1.0]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.0
