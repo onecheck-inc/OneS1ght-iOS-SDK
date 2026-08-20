@@ -1,5 +1,5 @@
 //
-//  OneS1ghtSDK.swift
+//  OneS1ght.swift
 //  공개 진입점 — 호스트 앱이 보는 유일한 표면.
 //
 //  설계 규칙: "문은 static, 부품은 인스턴스".
@@ -9,22 +9,23 @@
 //  세션이 여럿이면 서로 충돌한다.
 //
 //  사용 (호스트 앱):
-//    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 층 자동 선택(첫 건물·첫 층). 이것만으로 측위 준비 끝.
-//    try await OneS1ghtSDK.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
-//    // (선택) 층을 직접 고르는 앱만 — 자동 선택을 덮어쓴다
-//    let buildings = try await OneS1ghtSDK.buildings()
-//    let infra = try await OneS1ghtSDK.loadFloor(buildingId: b.id, floorId: f.id)
-//    // ② 매장 진입 시 — 측위 가동 (initialize가 미리 끝나 있어 즉시 시작)
-//    OneS1ghtSDK.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
-//    try await OneS1ghtSDK.start(consent: userConsented)
-//    OneS1ghtSDK.identify(customerId: "cust_123")           // (선택) 로그인 시
-//    await OneS1ghtSDK.stop()                               // 재시작 가능 (초기화 유지)
+//    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 테넌트 설정 수신
+//    try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
+//    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
+//    let buildings = try await OneS1ght.buildings()
+//    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
+//    // ③ 인증 — 회원 ID 또는 createGuestID() 로 받은 값
+//    OneS1ght.identify(userId: "emp_1234")
+//    // ④ 매장 진입 시 — 측위 가동
+//    OneS1ght.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
+//    try await OneS1ght.start()
+//    await OneS1ght.stop()                               // 재시작 가능 (초기화 유지)
 //
 
 import Foundation
 
 @MainActor
-public final class OneS1ghtSDK {
+public final class OneS1ght {
 
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
@@ -50,14 +51,20 @@ public final class OneS1ghtSDK {
 
     // MARK: - 상태
 
-    /// B2C 유저 익명 ID (Keychain 영속)
-    public static var anonUserId: String { identity.anonUserId }
+    /// 비회원용 ID 발급. **SDK 는 보관하지 않는다** — 앱이 저장해 재사용해야 한다.
+    /// 회원이면 이 값 대신 고객사 회원 ID 를 identify(userId:) 로 넘긴다.
+    ///
+    ///     let id = UserDefaults.standard.string(forKey: "onesight.guestId")
+    ///         ?? { let v = OneS1ght.createGuestID()
+    ///              UserDefaults.standard.set(v, forKey: "onesight.guestId"); return v }()
+    ///     OneS1ght.identify(userId: id)
+    public static func createGuestID() -> String { IdentityStore.createGuestID() }
 
     /// 세션 가능 상태인가 (initialize 성공 = 기기 통과 + 키 유효 + 설정 로드됨)
     public static var isInitialized: Bool { coordinator?.isPrepared ?? false }
 
     /// 측위 가능 여부 — 사유 포함. 앱이 사전 안내 UI 를 분기할 때 쓴다.
-    public enum PositioningAvailability: Equatable {
+    public enum DeviceAvailability: Equatable {
         case available            // 측위 가능
         case osVersionTooLow      // iOS 27 미만 — "OS 업데이트 후 사용 가능" 안내
         case deviceNotSupported   // UWB(DL-TDoA) 칩 미지원 — "iPhone 12 이상 필요" 안내
@@ -66,7 +73,7 @@ public final class OneS1ghtSDK {
     /// 이 기기에서 측위가 가능한가 + 불가 사유. initialize 전에도 호출 가능 (throw 없음).
     /// OS 버전을 먼저 검사한다 — 구 OS 에선 칩 지원 여부를 물을 API 자체가 없어,
     /// 업데이트로 해결될 수 있는 기기에 deviceNotSupported 를 잘못 알려주지 않기 위함.
-    public static var positioningAvailability: PositioningAvailability {
+    public static var deviceAvailability: DeviceAvailability {
         #if os(iOS)
         guard #available(iOS 27.0, *) else { return .osVersionTooLow }
         return UwbPositioningProvider.isSupported ? .available : .deviceNotSupported
@@ -75,29 +82,60 @@ public final class OneS1ghtSDK {
         #endif
     }
 
-    /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 positioningAvailability 사용.
-    public static var isPositioningAvailable: Bool { positioningAvailability == .available }
+    /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 deviceAvailability 사용.
+    public static var isDeviceAvailable: Bool { deviceAvailability == .available }
+
+    // MARK: - 권한
+
+    /// 측위 권한 확인. **호출하면 시스템 팝업이 뜬다** — 확인과 요청이 분리되지 않는다.
+    ///
+    /// NearbyInteraction 에는 상태만 읽는 API 가 없어(iOS 26.5 SDK 헤더 전수 확인),
+    /// NISession 을 실제로 띄워 보는 것이 유일한 확인 수단이다. 그래서 SDK 가 시점을
+    /// 정하지 않고 이 문을 따로 열어 둔다 — 앱이 적절한 맥락에서 부르면 된다.
+    ///
+    ///     try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
+    ///     switch await OneS1ght.permissions() {
+    ///     case .authorized:  break
+    ///     case .denied:      showSettingsGuide()   // 앱에서 재요청 불가 — 설정 앱으로
+    ///     case .unsupported: showUnsupportedNotice()
+    ///     }
+    ///
+    /// 이미 한 번 답한 권한이면 팝업 없이 즉시 돌아온다.
+    /// initialize 를 부르지 않았어도 호출할 수 있다 (기기 조건만 보는 검사라서).
+    /// - Returns: `.authorized` · `.denied` · `.unsupported`
+    ///   (30초 안에 응답이 없으면 보수적으로 `.denied`)
+    public static func permissions() async -> PermissionStatus {
+        #if os(iOS)
+        guard deviceAvailability == .available else { return .unsupported }
+        guard #available(iOS 27.0, *) else { return .unsupported }
+        return await NIPermissionProbe().run()
+        #else
+        return .unsupported
+        #endif
+    }
 
     // MARK: - 생명주기
 
-    /// 초기화 (앱 시작 시 1회) — 기기 게이트 → 키 검증 + 설정 프리페치.
+    /// 초기화 (앱 시작 시 1회) — 기기 게이트 → 키 검증 + 테넌트 SDK 설정 수신.
     /// 통과하면 "이 기기에서 이 키로 측위 세션 가능" 확정.
+    /// verify 한 번으로 키 유효성과 백엔드 도달 가능 여부를 함께 확인한다.
     /// 실패 사유는 throw (osVersionTooLow/deviceNotSupported/invalidKey/positioningDisabled/network).
     /// 실패 시 재호출 = 재시도 · 성공 후 재호출 = 무시(멱등) · 다른 키로 재호출 = 세션 재구성.
     /// - sdkKey: OneS1ght 콘솔 발급 (ock_) — 인증·존·수집·이벤트·도면
-    /// - geospaceKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
+    /// - geoSdkKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
     ///   서버 통합이 끝나면 불필요해지는 과도기 인자 — 생략 시 측위만 비활성, 나머진 동작.
-    /// 통과 시 첫 건물·층을 자동 선택해 측위 준비까지 마친다 — start() 만 부르면 가동.
-    /// 다른 층을 원하면 buildings()/loadFloor() 로 덮어쓴다.
+    /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
+    ///   콘솔이 발급하는 키(production/development)가 가른다.
+    /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/loadFloor() 의 책임이다.
+    /// loadFloor 없이 start() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(로그로 통지).
     public static func initialize(sdkKey: String,
-                                  geospaceKey: String? = nil,
-                                  baseURL: URL = ApiClient.defaultBaseURL,
-                                  session: URLSession = .shared) async throws {
+                                  geoSdkKey: String? = nil,
+                                  baseURL: URL = ApiClient.defaultBaseURL) async throws {
         // ① 기기 게이트 — 측위 불가 기기는 세션 전체가 무의미하므로 네트워크 타기 전에 사유와 함께 거부.
         //    시뮬레이터는 예외: 개발·테스트 환경 전용이고 스토어 배포가 불가능해 프로덕션 우회 경로가 없다.
         //    (시뮬레이터에서도 실측위는 start()의 내장 UWB 게이트가 막는다 — Mock provider 주입만 가능)
         #if os(iOS) && !targetEnvironment(simulator)
-        switch positioningAvailability {
+        switch deviceAvailability {
         case .osVersionTooLow:    throw SdkError.osVersionTooLow
         case .deviceNotSupported: throw SdkError.deviceNotSupported
         case .available:          break
@@ -106,24 +144,24 @@ public final class OneS1ghtSDK {
 
         // ② 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
         //    (재구성 없이 두면 이전 키로 만든 ApiClient 를 조용히 재사용해 '맞는 키인데 401' 함정이 생긴다)
-        if let stored = storedKeys, stored != (sdkKey, geospaceKey) {
+        if let stored = storedKeys, stored != (sdkKey, geoSdkKey) {
             await coordinator?.stop()
             coordinator = nil
         }
 
         // ③ 세션 구성 (최초 또는 재구성 후 1회)
         if coordinator == nil {
-            let geospace = geospaceKey.map {
+            let geospace = geoSdkKey.map {
                 GeospaceClient(keys: .init(sdk: sdkKey, geospace: $0))
             }
-            let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL, session: session),
+            let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
                                        identity: identity,
                                        geospace: geospace)
-            c.onTriggers = { zoneId, triggers in OneS1ghtSDK.onTriggers?(zoneId, triggers) }
-            c.onPosition = { coord in OneS1ghtSDK.onPosition?(coord) }
-            c.onLog = { line in OneS1ghtSDK.onDebugLog?(line) }
+            c.onTriggers = { zoneId, triggers in OneS1ght.onTriggers?(zoneId, triggers) }
+            c.onPosition = { coord in OneS1ght.onPosition?(coord) }
+            c.onLog = { line in OneS1ght.onDebugLog?(line) }
             coordinator = c
-            storedKeys = (sdkKey, geospaceKey)
+            storedKeys = (sdkKey, geoSdkKey)
         }
 
         // ④ 키 검증 + 설정 프리페치 (실패 시 throw — 재호출이 곧 재시도)
@@ -131,9 +169,9 @@ public final class OneS1ghtSDK {
     }
 
     /// 시작 (매장 진입 시) — 내장 UWB 측위로 가동. 고객사가 쓰는 표준 경로.
-    /// - consent: 위치정보 수집 동의 (호스트가 취득). false면 수집 미시작 (.consentRequired)
-    /// - throws: .notInitialized / .consentRequired / .deviceNotSupported / .osVersionTooLow / ApiError
-    public static func start(consent: Bool) async throws {
+    /// identify(userId:) 가 선행되어야 한다 — 인증이 앞에 있는 것이 이 SDK 의 전제다.
+    /// - throws: .notInitialized / .notIdentified / .deviceNotSupported / .osVersionTooLow / ApiError
+    public static func start() async throws {
         #if os(iOS)
         guard #available(iOS 27.0, *) else { throw SdkError.osVersionTooLow }
         // 시뮬레이터는 여기서 막힌다 (UWB 칩 없음 → isSupported false).
@@ -141,22 +179,22 @@ public final class OneS1ghtSDK {
         guard UwbPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
         let uwb = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
         builtInProvider = uwb
-        uwb.onZoneEvent = { event in OneS1ghtSDK.onZoneEvent?(event) }
-        uwb.onLog = { line in OneS1ghtSDK.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
-        try await start(consent: consent, provider: uwb)
+        uwb.onZoneEvent = { event in OneS1ght.onZoneEvent?(event) }
+        uwb.onLog = { line in OneS1ght.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
+        try await start(provider: uwb)
         #else
         throw SdkError.deviceNotSupported
         #endif
     }
 
     /// 시작 (커스텀 측위 주입) — 테스트(Mock)·데모(UI 관찰용 provider 직접 보유) 등 특수 경우용.
-    public static func start(consent: Bool, provider: PositioningProvider) async throws {
+    public static func start(provider: PositioningProvider) async throws {
         guard let coordinator else { throw SdkError.notInitialized }   // initialize 자체를 안 부른 경우
         // 일시 장애 회복 — initialize 가 네트워크 순단으로 실패했더라도 시작 시점에 준비를 마저 시도한다
         // (키는 보관돼 있음). 결정적 실패(잘못된 키 등)는 같은 사유로 다시 throw 되므로 거짓 신호는 없다.
         if !coordinator.isPrepared { try await coordinator.prepare() }
-        try await coordinator.start(consent: consent, provider: provider)
-        if let customerId { coordinator.identify(customerId: customerId) }   // start 전 identify 반영
+        if let userId { coordinator.identify(userId: userId) }   // start 전 identify 반영
+        try await coordinator.start(provider: provider)
     }
 
     /// 종료: 측위 정지 + 잔여 좌표 flush. 초기화 상태는 유지 → start 재호출로 재시작 가능.
@@ -174,7 +212,7 @@ public final class OneS1ghtSDK {
 
     // MARK: - 공간 설정
 
-    /// 빌딩/층 트리 (선택 UI용). geospaceKey 없이 초기화했으면 빈 배열.
+    /// 빌딩/층 트리 (선택 UI용). geoSdkKey 없이 초기화했으면 빈 배열.
     public static func buildings() async throws -> [SpaceBuilding] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.buildings()
@@ -197,17 +235,19 @@ public final class OneS1ghtSDK {
 
     // MARK: - 사용자
 
-    /// (선택) 고객사 회원 ID 연결 — 로그인 후 호출, 로그아웃 시 nil
-    public static func identify(customerId: String?) {
-        self.customerId = customerId
-        coordinator?.identify(customerId: customerId)
+    /// 사용자 지정 — 이 SDK 의 유일한 사용자 식별자.
+    /// 회원이면 고객사 회원 ID, 비회원이면 createGuestID() 로 받아 앱이 보관한 값을 넘긴다.
+    /// start() 전에 반드시 호출해야 한다 (없으면 .notIdentified).
+    public static func identify(userId: String?) {
+        self.userId = userId
+        coordinator?.identify(userId: userId)
     }
 
     // MARK: - 내부 부품 (인스턴스 — 키 교체·reset 때 갈아끼움)
 
     private static let identity = IdentityStore()
     private static var coordinator: SessionCoordinator?
-    private static var customerId: String?
+    private static var userId: String?
     private static var builtInProvider: PositioningProvider?          // 내장 provider 재사용 (재시작 대비)
     private static var storedKeys: (sdk: String, geospace: String?)?  // 키 교체 감지용
 }

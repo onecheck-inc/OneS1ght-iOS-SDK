@@ -4,7 +4,7 @@
 //
 
 import XCTest
-@testable import OneS1ghtSDK
+@testable import OneS1ght
 
 @MainActor
 final class SessionCoordinatorTests: XCTestCase {
@@ -33,7 +33,8 @@ final class SessionCoordinatorTests: XCTestCase {
     private func makeStarted(flushThreshold: Int = 100) async throws -> SessionCoordinator {
         let c = makeCoordinator(flushThreshold: flushThreshold)
         try await c.prepare()
-        try await c.start(consent: true, provider: provider)
+        c.identify(userId: "emp_1234")
+        try await c.start(provider: provider)
         return c
     }
 
@@ -72,8 +73,9 @@ final class SessionCoordinatorTests: XCTestCase {
         }
     }
 
-    // prepare: verify → buildings 순서, "세션 가능" 확정. 측위는 아직 안 돎
-    func testPrepare_verifiesAndPrefetchesBuildings() async throws {
+    // prepare: verify 만. "세션 가능" 확정, 측위는 아직 안 돎.
+    // 건물·층 조회는 prepare 의 책임이 아니다 — buildings()/loadFloor() 로 분리돼 있다.
+    func testPrepare_verifiesKeyOnly() async throws {
         routeDefaults()
         let c = makeCoordinator()
         try await c.prepare()
@@ -81,27 +83,26 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(c.isPrepared)                              // 세션 가능
         XCTAssertFalse(provider.isRunning)                       // 측위는 아직
         XCTAssertEqual(StubURLProtocol.requests.map(\.path),
-                       ["/api/sdk/v1/auth/verify", "/api/sdk/v1/positioning/buildings"])
-        // prepare 시점엔 consent 미전송 (필드 생략 — 기존값 보존)
+                       ["/api/sdk/v1/auth/verify"])        // buildings 는 부르지 않는다
+        // verify 는 키 검증만 — 클라이언트 정보를 싣지 않는다
         let body = try JSONDecoder().decode(ReqVerify.self,
                                             from: XCTUnwrap(StubURLProtocol.requests[0].body))
-        XCTAssertNil(body.client?.consent)
+        XCTAssertNil(body.client)
     }
 
-    // start: consent 기록(verify) + config 주입 + provider 가동
-    func testStart_afterPrepare_recordsConsentAndRuns() async throws {
+    // start: provider 가동. consent 가 사라져 verify 재호출도 없어졌다.
+    func testStart_afterPrepare_runsWithoutExtraVerify() async throws {
         routeDefaults()
         let c = try await makeStarted()
 
         XCTAssertTrue(provider.isRunning)
         XCTAssertTrue(c.visitorId.hasPrefix("v-"))
-        XCTAssertEqual(provider.appliedBuildingId, "B1")         // buildings 값 주입
-        XCTAssertEqual(provider.appliedFloorId, "F")
-        // 요청: prepare 2회 + start의 consent 기록 1회
+        // 층 미선택 상태 — SDK 가 임의로 건물·층을 고르지 않는다 (호스트가 loadFloor 를 부를 때까지)
+        XCTAssertNil(provider.appliedBuildingId)
+        XCTAssertNil(provider.appliedFloorId)
+        // verify 는 prepare 의 1회뿐 — 동의 기록 목적의 재호출이 사라졌다
         let verifies = StubURLProtocol.requests.filter { $0.path.hasSuffix("/auth/verify") }
-        XCTAssertEqual(verifies.count, 2)
-        let consentBody = try JSONDecoder().decode(ReqVerify.self, from: XCTUnwrap(verifies[1].body))
-        XCTAssertEqual(consentBody.client?.consent, true)        // start에서 consent=true 기록
+        XCTAssertEqual(verifies.count, 1)
         await c.stop()
     }
 
@@ -110,7 +111,7 @@ final class SessionCoordinatorTests: XCTestCase {
         routeDefaults()
         let c = makeCoordinator()
         do {
-            try await c.start(consent: true, provider: provider)
+            try await c.start(provider: provider)
             XCTFail("notInitialized여야 함")
         } catch let e as SdkError {
             XCTAssertEqual(e, .notInitialized)
@@ -118,18 +119,18 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertFalse(provider.isRunning)
     }
 
-    // 동의 게이팅 — consent=false: 수집 미시작 (서버 요청도 안 나감)
-    func testStart_consentFalse_doesNotStartCollection() async throws {
+    // 인증 게이팅 — identify 없이 start: 수집 미시작 (서버 요청도 안 나감)
+    func testStart_withoutIdentify_doesNotStartCollection() async throws {
         routeDefaults()
         let c = makeCoordinator()
         try await c.prepare()
         let requestsAfterPrepare = StubURLProtocol.requests.count
 
         do {
-            try await c.start(consent: false, provider: provider)
-            XCTFail("consentRequired여야 함")
+            try await c.start(provider: provider)
+            XCTFail("notIdentified여야 함")
         } catch let e as SdkError {
-            XCTAssertEqual(e, .consentRequired)
+            XCTAssertEqual(e, .notIdentified)
         } catch { XCTFail("SdkError여야 함") }
 
         XCTAssertFalse(provider.isRunning)                        // 측위 미가동
@@ -188,7 +189,7 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(body.points.count, 2)
         XCTAssertEqual(body.points[0].coordinates, Coordinates(x: 1, y: 2, z: 0))
         XCTAssertEqual(body.visitor_id, c.visitorId)
-        XCTAssertFalse(body.anon_user_id.isEmpty)
+        XCTAssertEqual(body.user_id, "emp_1234")
         XCTAssertTrue(StubURLProtocol.requests.contains { $0.path.contains("/positioning/floors/F") })
         await c.stop()
     }

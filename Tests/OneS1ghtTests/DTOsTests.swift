@@ -4,7 +4,7 @@
 //
 
 import XCTest
-@testable import OneS1ghtSDK
+@testable import OneS1ght
 
 final class DTOsTests: XCTestCase {
 
@@ -70,26 +70,25 @@ final class DTOsTests: XCTestCase {
     // MARK: 요청 인코딩 — snake_case 키·상태 원문 확인
 
     func testEncodeReqZoneEvent_producesSnakeCaseAndRawStatus() throws {
-        let req = ReqZoneEvent(anon_user_id: "A", visitor_id: "v-20260718-001",
+        let req = ReqZoneEvent(user_id: "A", visitor_id: "v-20260718-001",
                                floor_id: "F", zone_id: "Z",
                                status: .dwell, occurred_at: "2026-07-18T08:00:00Z",
                                platform_name: "iOS")
         let obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(req)) as! [String: Any]
         XCTAssertEqual(obj["status"] as? String, "DWELL")        // enum → 서버 표기
         XCTAssertEqual(obj["occurred_at"] as? String, "2026-07-18T08:00:00Z")
-        XCTAssertEqual(obj["anon_user_id"] as? String, "A")      // snake_case 그대로
+        XCTAssertEqual(obj["user_id"] as? String, "A")           // snake_case 그대로
     }
 
     func testEncodeReqVerify_omitsNilFields() throws {
         // client의 nil 필드는 JSON에서 빠져야 함 (보낸 필드만 갱신 규칙)
         let req = ReqVerify(platform_name: "iOS", app_id: nil,
-                            client: ClientInfo(anon_user_id: "A", device_model: nil, os_name: nil,
+                            client: ClientInfo(user_id: "A", device_model: nil, os_name: nil,
                                                os_version: nil, app_version: nil, sdk_version: nil,
-                                               device_language: nil, customer_id: nil,
-                                               consent: nil, consent_at: nil, attributes: nil))
+                                               device_language: nil, attributes: nil))
         let obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(req)) as! [String: Any]
         let client = obj["client"] as! [String: Any]
-        XCTAssertEqual(client.count, 1)                          // anon_user_id 하나만
+        XCTAssertEqual(client.count, 1)                          // user_id 하나만
         XCTAssertNil(obj["app_id"])
     }
 }

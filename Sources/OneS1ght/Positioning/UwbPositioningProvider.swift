@@ -299,8 +299,12 @@ extension UwbPositioningProvider: NISessionDelegate {
     }
 
     public nonisolated func session(_ session: NISession, didInvalidateWith error: Error) {
+        // 권한 거부는 "고칠 수 있는 실패"라 일반 오류와 구분해 알린다 — 앱이 설정 안내를 띄울 수 있게.
+        // permissions() 로 미리 확인했더라도 사용자가 설정에서 나중에 끌 수 있어 이 경로는 계속 필요하다.
+        let denied = (error as NSError).code == NIError.Code.userDidNotAllow.rawValue
         Task { @MainActor in
-            self.addLog(SdkLocalized.format("provider.invalid", error.localizedDescription))
+            self.addLog(denied ? SdkLocalized.text("provider.permissionDenied")
+                               : SdkLocalized.format("provider.invalid", error.localizedDescription))
             self.stop()
         }
     }

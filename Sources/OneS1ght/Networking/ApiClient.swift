@@ -66,7 +66,7 @@ public final class ApiClient {
         try await post("/events/zone", body: req)
     }
 
-    /// ⑤ POST /positioning/logs — 동선 좌표 벌크 (100건/5분/종료)
+    /// ⑤ POST /positioning/logs — 동선 좌표 벌크 (300건/60초/종료)
     public func sendPositionLogs(_ req: ReqPositionBulk) async throws -> ResPositionBulk {
         try await post("/positioning/logs", body: req)
     }

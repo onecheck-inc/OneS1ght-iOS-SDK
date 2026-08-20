@@ -1,6 +1,6 @@
 //
 //  SpaceModels.swift
-//  OneS1ghtSDK
+//  OneS1ght
 //
 //  호스트 앱이 "지도를 그리기 위해" 받는 공간 정보 타입들.
 //  · 데이터 출처(콘솔/GeoSpace)는 SDK 내부 사정이라 타입 이름에 드러내지 않는다.

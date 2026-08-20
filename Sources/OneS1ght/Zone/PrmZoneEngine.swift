@@ -1,6 +1,6 @@
 //
 //  PrmZoneEngine.swift
-//  OneS1ghtSDK
+//  OneS1ght
 //
 //  Geoplan PRM(gpi-prm) 기반 존 판정 — iOS 실전 엔진.
 //  · 콘솔 존 API의 판정 파라미터(in_dist·in_count·out_period 등)를 그대로 소비한다
@@ -26,9 +26,10 @@ public final class PrmZoneEngine: ZoneJudging {
     public var onJudge: ((ZoneJudge) -> Void)?   // PRM 은 틱 단위 판단을 노출하지 않음 — 미발행
     public var onLog: ((String) -> Void)?        // PRM 수명주기·오류 진단 (조용한 실패 금지)
 
-    /// 인스턴스 이름 = 기기 익명 ID(UUID). 2.0.0 에서 pushEvent 의 tagId 가 사라지면서
-    /// 그 자리를 이 이름이 잇는다 — PRM 내부 파일로그(gpi-logger)·콜백의 prmName 으로 나와
-    /// 서버 존 이벤트(anon_user_id)와 같은 키로 대조할 수 있다.
+    /// PRM 인스턴스 이름 — 엔진 파일로그(gpi-logger)와 콜백의 prmName 으로 나오는 식별용.
+    /// 기기 단위 익명 ID 를 없앴으므로 고정값을 쓴다. 인스턴스는 기기당 하나뿐이라
+    /// 구분이 필요 없고, 서버 데이터와의 대조는 user_id·visitor_id 로 한다.
+    private static let prmName = "onesight"
     private let prm: Prm
     private let bridge: CallbackBridge
     private var nameToZone: [String: Zone] = [:]
@@ -55,7 +56,7 @@ public final class PrmZoneEngine: ZoneJudging {
         // prm 이 stored property 라 self 사용 전에 채워야 한다 → bridge 를 지역에서 먼저 만든다.
         let bridge = CallbackBridge()
         self.bridge = bridge
-        self.prm = Prm.create(name: IdentityStore().anonUserId, callback: bridge)
+        self.prm = Prm.create(name: Self.prmName, callback: bridge)
         bridge.owner = self
     }
 

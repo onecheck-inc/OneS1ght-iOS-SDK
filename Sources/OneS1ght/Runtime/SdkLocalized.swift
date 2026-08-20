@@ -1,6 +1,6 @@
 //
 //  SdkLocalized.swift  (SDK 로그/메시지 다국어)
-//  OneS1ghtSDK
+//  OneS1ght
 //
 //  OS 언어가 일본어면 "ja", 영어면 "en", 그 외엔 "ko".
 //  문구는 Resources/i18n/SdkLocalization.json 에 { "키": { "ko":…, "ja":…, "en":… } } 로 관리.

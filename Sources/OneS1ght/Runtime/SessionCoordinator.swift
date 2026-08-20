@@ -4,7 +4,7 @@
 //
 //  verify(키검증) → buildings(1회) → provider 가동
 //    ├ didEnter(빌딩)   → buildings 캐시 보정
-//    ├ didUpdate(좌표)  → 층 설정 lazy 로드 + 버퍼 적재 → 100건/5분/종료/백그라운드에 벌크 전송
+//    ├ didUpdate(좌표)  → 층 설정 lazy 로드 + 버퍼 적재 → 300건/60초/종료/백그라운드에 벌크 전송
 //    └ didDetectZone    → events/zone 즉시 전송 (+network 1회 재시도) → triggers 호스트 전달
 //
 //  · 동의 게이팅: consent=false면 수집 미시작 (결정사항 5 — 서버는 기록만 하므로 클라가 막음)
@@ -19,8 +19,8 @@ import UIKit
 /// 서버 에러(ApiError) 밖의 SDK 수준 실패
 public enum SdkError: Error, Equatable {
     case notInitialized        // initialize() 안 하고 start() 호출
+    case notIdentified         // identify(userId:) 없이 start() 호출
     case positioningDisabled   // verify는 통과했으나 positioning_enabled=false
-    case consentRequired       // 동의 없음 → 수집 미시작
     case deviceNotSupported    // UWB 칩 없음 (측위 불가 기기)
     case osVersionTooLow       // iOS 27 미만
 }
@@ -31,10 +31,12 @@ final class SessionCoordinator {
     // 의존성 (전부 주입 — 테스트는 스텁 세션·가짜 프로바이더)
     private let api: ApiClient
     private let identity: IdentityStore
-    private var geospace: GeospaceClient?        // initialize(geospaceKey:)가 있을 때만 — 앵커·세션·층 (과도기)
+    private var geospace: GeospaceClient?        // initialize(geoSdkKey:)가 있을 때만 — 앵커·세션·층 (과도기)
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
 
-    // 배치 정책 (사양서 §6.5·§9 — 테스트에서 작게 주입)
+    // 배치 정책 (사양서 §6.8 은 100건/5분 "권장" — 2026-08-20 300건/60초로 조정.
+    // 4Hz 에서는 300건(=75초)보다 60초 타이머가 먼저 걸려 실질 60초·240건 주기가 된다.
+    // 종전 100건/300초는 25초마다 100건 → 요청 수가 2.4배였다. 테스트에서 작게 주입.)
     private let flushThreshold: Int
     private let flushInterval: TimeInterval
     private(set) var buffer: TrajectoryBuffer!
@@ -43,12 +45,12 @@ final class SessionCoordinator {
     private(set) var isPrepared = false           // initialize(=prepare) 성공 여부 = "세션 가능"
     /// 호스트가 loadFloor 를 호출한 적 있나 — **호출 진입 시점**에 세운다.
     /// 완료 시점(currentInfra)만 보면 자동 선택과 동시에 진행돼 늦게 끝난 쪽이 이기는 경합이 생긴다.
-    private var hostDidSelectFloor = false
     private(set) var isRunning = false
     private(set) var visitorId = ""
+    /// 고객사가 넘긴 사용자 ID — 이 SDK 의 유일한 사용자 식별자
+    private(set) var userId: String?
     private(set) var floorConfigs: [String: ResFloorConfig] = [:]   // 층별 존 설정 (lazy)
     private var loadingFloors: Set<String> = []
-    private var buildingsCache: ResBuildings?
     private(set) var currentInfra: FloorInfra?   // loadFloor 결과 — start 시 provider 에 주입
     private var flushTimer: Timer?
     private var lifecycleObservers: [NSObjectProtocol] = []
@@ -66,8 +68,8 @@ final class SessionCoordinator {
     init(api: ApiClient,
          identity: IdentityStore,
          geospace: GeospaceClient? = nil,
-         flushThreshold: Int = 100,
-         flushInterval: TimeInterval = 300,
+         flushThreshold: Int = 300,
+         flushInterval: TimeInterval = 60,
          maxPerRequest: Int = 500) {
         self.api = api
         self.identity = identity
@@ -81,47 +83,26 @@ final class SessionCoordinator {
 
     // MARK: - 라이프사이클 (도식 1~5)
 
-    /// 초기화(앱 시작 시 1회) — 키 검증 + buildings 프리페치.
+    /// 초기화(앱 시작 시 1회) — 키 검증 + 테넌트 SDK 설정 수신. 이게 전부다.
     /// 통과 = "세션 가능" 확정. 실패 사유는 throw (invalidKey/positioningDisabled/network).
+    ///
+    /// 건물·층은 여기서 건드리지 않는다 — 공간 선택은 buildings()/loadFloor() 라는
+    /// 별도 메서드의 책임이고, 어느 층을 쓸지는 호스트 앱만 안다. 자동 선택을 두면
+    /// 앱이 고르는 중에 SDK 가 다른 층으로 덮어쓰는 경합이 생긴다(08-11 실기기 확인).
     func prepare() async throws {
         guard !isPrepared else { return }                            // 멱등
 
-        // ③ 키 검증 + 클라 등록 (consent는 아직 모름 → 생략, 서버 기존값 보존)
-        let verified = try await api.verify(makeVerifyRequest(consent: nil))
+        // 키 검증 + 클라 등록 (consent는 아직 모름 → 생략, 서버 기존값 보존)
+        // verify 성공 = 키 유효 + 백엔드 도달 가능 두 가지를 한 번에 확인한 것.
+        let verified = try await api.verify(makeVerifyRequest())
         guard verified.valid, verified.positioning_enabled else {
             throw SdkError.positioningDisabled
         }
         log(SdkLocalized.format("coord.verifyPass", verified.tenant_code ?? "?"))
-
-        // ④ 빌딩·층 목록 프리페치 (경량, 1회)
-        buildingsCache = try await api.buildings()
-        log(SdkLocalized.format("coord.buildingsLoaded", buildingsCache?.buildings.count ?? 0))
         isPrepared = true
-
-        // 층 자동 해석 — initialize 만으로 측위 준비가 끝나게 (start 는 바로 가동).
-        // 실패해도 prepare 는 성공 — 앱이 buildings()/loadFloor() 로 수동 선택하면 된다.
-        await autoSelectFloorIfNeeded()
     }
 
-    /// 층 자동 해석 — 현재는 "첫 건물 · 도면 있는 첫 층" (단일 현장 가정).
-    /// 지오펜스(가까운 건물)·BLE(층 판별)가 들어오면 정확히 이 지점이 똑똑해진다.
-    private func autoSelectFloorIfNeeded() async {
-        guard currentInfra == nil, !hostDidSelectFloor, let geospace else { return }
-        do {
-            guard let b = try await geospace.loadBuildings().first,
-                  let f = b.floors.first(where: { $0.hasPlan }) ?? b.floors.first else { return }
-            // 목록을 받아오는 동안 호스트가 loadFloor 를 호출했을 수 있다 — 그러면 물러난다.
-            // (08-11 실기기: 앱이 DNP 를 고르는 중에 자동 선택이 607호로 덮어써 앵커 0개 수신.
-            //  완료 여부(currentInfra)가 아니라 호출 여부로 판정해야 동시 진행 경합이 잡힌다)
-            guard currentInfra == nil, !hostDidSelectFloor else { return }
-            _ = try await performLoadFloor(buildingId: b.id, floorId: f.id)
-            log(SdkLocalized.format("coord.autoSelect", b.name, f.name))
-        } catch {
-            log(SdkLocalized.format("coord.autoSelectFail", "\(error)"))
-        }
-    }
-
-    /// 빌딩/층 트리 — 선택 UI용. geospaceKey 없으면 빈 배열 (측위 미사용 통합)
+    /// 빌딩/층 트리 — 선택 UI용. geoSdkKey 없으면 빈 배열 (측위 미사용 통합)
     func buildings() async throws -> [SpaceBuilding] {
         guard let geospace else { return [] }
         return try await geospace.loadBuildings()
@@ -131,11 +112,9 @@ final class SessionCoordinator {
     /// start 전에 부르면 start 가 주입하고, 가동 중에 부르면 즉시 갈아끼운다(층 전환).
     @discardableResult
     func loadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
-        hostDidSelectFloor = true                    // 자동 선택보다 호스트 선택이 항상 우선
         return try await performLoadFloor(buildingId: buildingId, floorId: floorId)
     }
 
-    /// 실제 로드 — 자동 선택도 이 경로를 쓴다(표식은 세우지 않음).
     @discardableResult
     private func performLoadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
         guard let geospace else { throw SdkError.notInitialized }
@@ -194,25 +173,18 @@ final class SessionCoordinator {
 
     /// 시작(매장 진입 시) — 동의 게이트 + consent 기록 + 측위 가동.
     /// prepare가 미리 끝나 있어 서버 왕복은 consent 기록 1회뿐 (buildings 재요청 없음).
-    func start(consent: Bool, provider: PositioningProvider) async throws {
+    func start(provider: PositioningProvider) async throws {
         guard !isRunning else { return }                             // 멱등
         guard isPrepared else { throw SdkError.notInitialized }
-        guard consent else { throw SdkError.consentRequired }        // 동의 게이팅 — 수집 미시작
+        _ = try requireUserId()                                      // 인증이 앞에 있어야 한다
 
-        // consent 기록 (verify 재호출 — "보낸 필드만 갱신" 규칙. 키 폐기도 이때 재확인됨)
-        _ = try await api.verify(makeVerifyRequest(consent: consent))
-        log(SdkLocalized.text("coord.consent"))
-
-        if currentInfra == nil { await autoSelectFloorIfNeeded() }   // 재시도 안전망
-
-        // 인프라 주입 — loadFloor 로 받아둔 층(앵커·세션·존)이 있으면 그걸로,
-        // 없으면 구버전 폴백(콘솔 첫 건물·첫 층 ID만 — 앵커는 호스트 apply 의존)
+        // 인프라 주입 — loadFloor 로 받아둔 층(앵커·세션·존)이 있을 때만.
+        // 층 미선택이면 측위 파이프라인은 돌되 좌표가 나오지 않는다 → 조용히 두지 않고 알린다.
         self.provider = provider
         if currentInfra != nil {
             applyInfraToProvider()
-        } else if let building = buildingsCache?.buildings.first,
-                  let floor = building.floors?.first {
-            provider.apply(buildingId: building.building_id, floorId: floor.floor_id)
+        } else {
+            log(SdkLocalized.text("coord.noFloorLoaded"))
         }
 
         // 방문 시작
@@ -224,14 +196,10 @@ final class SessionCoordinator {
         observeAppLifecycle()
     }
 
-    /// (선택) 고객사 회원 연결 — verify 재호출 (보낸 필드만 갱신되는 서버 규칙 활용)
-    func identify(customerId: String?) {
-        Task {
-            var client = baseClientInfo()
-            client.customer_id = customerId
-            _ = try? await api.verify(ReqVerify(platform_name: "iOS",
-                                                app_id: Self.appId, client: client))
-        }
+    /// 사용자 지정. 이 SDK 의 유일한 사용자 식별자다 —
+    /// 고객사가 회원 ID 또는 createGuestID() 로 받은 값을 넘긴다.
+    func identify(userId: String?) {
+        self.userId = userId
     }
 
     /// 종료: 측위 정지 + 잔여 좌표 flush (도식 11)
@@ -251,7 +219,8 @@ final class SessionCoordinator {
 
     /// 좌표 벌크 전송 (buffer의 Sender) — true = 200
     private func sendPositions(_ batch: [PositionPoint]) async -> Bool {
-        let req = ReqPositionBulk(anon_user_id: identity.anonUserId,
+        guard let userId else { return false }
+        let req = ReqPositionBulk(user_id: userId,
                                   visitor_id: visitorId,
                                   platform_name: "iOS",
                                   points: batch)
@@ -291,9 +260,15 @@ final class SessionCoordinator {
 
     private static var appId: String? { Bundle.main.bundleIdentifier }
 
-    private func baseClientInfo() -> ClientInfo {
-        var c = ClientInfo(anon_user_id: identity.anonUserId)
-        c.sdk_version = OneS1ghtSDK.sdkVersion
+    /// userId 가 없으면 세션이 성립하지 않는다 — 인증이 앞에 있는 것이 이 SDK 의 전제다.
+    private func requireUserId() throws -> String {
+        guard let userId, !userId.isEmpty else { throw SdkError.notIdentified }
+        return userId
+    }
+
+    private func baseClientInfo(_ userId: String) -> ClientInfo {
+        var c = ClientInfo(user_id: userId)
+        c.sdk_version = OneS1ght.sdkVersion
         #if canImport(UIKit)
         c.os_name = "iOS"
         c.os_version = UIDevice.current.systemVersion
@@ -301,14 +276,11 @@ final class SessionCoordinator {
         return c
     }
 
-    private func makeVerifyRequest(consent: Bool?) -> ReqVerify {
-        var client = baseClientInfo()
-        client.consent = consent                              // nil이면 필드 생략 → 서버 기존값 보존
-        if consent == true { client.consent_at = Self.iso(Date()) }
-        return ReqVerify(platform_name: "iOS", app_id: Self.appId, client: client)
+    private func makeVerifyRequest() -> ReqVerify {
+        ReqVerify(platform_name: "iOS", app_id: Self.appId, client: nil)
     }
 
-    // MARK: - 배치 트리거 (100건 / 5분 / 백그라운드)
+    // MARK: - 배치 트리거 (300건 / 60초 / 백그라운드)
 
     private func startFlushTimer() {
         flushTimer = Timer.scheduledTimer(withTimeInterval: flushInterval, repeats: true) { [weak self] _ in
@@ -360,12 +332,8 @@ final class SessionCoordinator {
 
 extension SessionCoordinator: PositioningProviderDelegate {
 
-    /// 입장 트리거 — 빌딩 목록 캐시 보정 (start에서 이미 로드, 실패했었다면 재시도)
-    func provider(_ p: PositioningProvider, didEnter buildingId: String) {
-        if buildingsCache == nil {
-            Task { buildingsCache = try? await api.buildings() }
-        }
-    }
+    /// 입장 트리거 — 통지만 받는다. 건물·층 조회는 호스트 앱의 몫이라 SDK 는 움직이지 않는다.
+    func provider(_ p: PositioningProvider, didEnter buildingId: String) {}
 
     /// 좌표 fix — 층 설정 확보 + 버퍼 적재, 임계 도달 시 flush
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,
@@ -384,7 +352,8 @@ extension SessionCoordinator: PositioningProviderDelegate {
     func provider(_ p: PositioningProvider, didDetectZone zoneId: String,
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date) {
         ensureFloorLoaded(floorId)
-        let req = ReqZoneEvent(anon_user_id: identity.anonUserId,
+        guard let userId else { return }
+        let req = ReqZoneEvent(user_id: userId,
                                visitor_id: visitorId,
                                floor_id: floorId,
                                zone_id: zoneId,
