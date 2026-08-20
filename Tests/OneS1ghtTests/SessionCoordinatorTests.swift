@@ -179,8 +179,12 @@ final class SessionCoordinatorTests: XCTestCase {
         routeDefaults()
         let c = try await makeStarted(flushThreshold: 2)
 
-        provider.simulatePosition(Coordinates(x: 1, y: 2, z: 0), floorId: "F")
-        provider.simulatePosition(Coordinates(x: 3, y: 4, z: 0), floorId: "F")
+        // capturedAt 을 1초 간격으로 — 기본 4Hz(=0.25초) 다운샘플을 둘 다 통과한다.
+        // 같은 시각으로 몰아 넣으면 두 번째가 솎여 버퍼가 임계에 닿지 않는다.
+        let t0 = Date()
+        provider.simulatePosition(Coordinates(x: 1, y: 2, z: 0), floorId: "F", at: t0)
+        provider.simulatePosition(Coordinates(x: 3, y: 4, z: 0), floorId: "F",
+                                  at: t0.addingTimeInterval(1))
 
         try await waitUntil { StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") } }
 
@@ -219,6 +223,72 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(c.buffer.count, 0)
         XCTAssertFalse(provider.isRunning)
         XCTAssertTrue(c.isPrepared)                              // 초기화는 살아있음 → start 재호출 가능
+    }
+
+    // MARK: - position_rate_hz 다운샘플
+
+    // 기본 4Hz — 0.05초 간격으로 20개를 넣어도 서버로 가는 건 솎인 소수뿐.
+    // 앱 콜백(onPosition)과 존 판정은 원속도를 유지하므로 여기서 검증하지 않는다.
+    func testPositionRate_downsamplesServerUploadsOnly() async throws {
+        routeDefaults()
+        let c = try await makeStarted(flushThreshold: 1000)   // flush 안 나게 크게
+
+        let t0 = Date()
+        for i in 0..<20 {
+            provider.simulatePosition(Coordinates(x: Double(i), y: 0, z: 0), floorId: "F",
+                                      at: t0.addingTimeInterval(Double(i) * 0.05))
+        }
+        // 1초 구간에 4Hz → 최대 5개 안팎 (경계 여유 10% 포함)
+        XCTAssertLessThanOrEqual(c.buffer.count, 6)
+        XCTAssertGreaterThanOrEqual(c.buffer.count, 4)
+        await c.stop()
+    }
+
+    // 서버가 내려준 rate 를 반영한다 — 20Hz 면 0.05초 간격이 전부 통과.
+    func testPositionRate_serverValueApplied() async throws {
+        StubURLProtocol.handler = { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("/auth/verify") {
+                return (200, Data(#"""
+                { "valid": true, "tenant_code": "t", "positioning_enabled": true,
+                  "position_rate_hz": 20 }
+                """#.utf8))
+            }
+            if path.contains("/positioning/floors/") {
+                return (200, Data(#"""
+                { "floor_id": "F", "building_id": null, "name": "F", "synced_at": "s",
+                  "zones": [], "anchors": [] }
+                """#.utf8))
+            }
+            return (200, Data(#"{ "accepted_count": 0 }"#.utf8))
+        }
+        let c = try await makeStarted(flushThreshold: 1000)
+        XCTAssertEqual(c.positionRateHz, 20)
+
+        let t0 = Date()
+        for i in 0..<10 {
+            provider.simulatePosition(Coordinates(x: Double(i), y: 0, z: 0), floorId: "F",
+                                      at: t0.addingTimeInterval(Double(i) * 0.05))
+        }
+        XCTAssertEqual(c.buffer.count, 10)                    // 전부 통과
+        await c.stop()
+    }
+
+    // 범위 밖 값은 1~100 으로 접는다 (서버가 접어 보내지만 SDK 도 방어).
+    func testPositionRate_outOfRangeClamped() async throws {
+        StubURLProtocol.handler = { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("/auth/verify") {
+                return (200, Data(#"""
+                { "valid": true, "tenant_code": "t", "positioning_enabled": true,
+                  "position_rate_hz": 9999 }
+                """#.utf8))
+            }
+            return (200, Data(#"{ "accepted_count": 0 }"#.utf8))
+        }
+        let c = makeCoordinator()
+        try await c.prepare()
+        XCTAssertEqual(c.positionRateHz, SdkDefaults.maxRateHz)
     }
 
     /// 비동기 조건 폴링 (최대 2초)

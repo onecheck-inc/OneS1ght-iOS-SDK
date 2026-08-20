@@ -303,5 +303,10 @@
     "ko": "⛔️ 측위 권한이 거부되어 중단합니다 — 설정 앱에서 허용해야 재개할 수 있습니다",
     "ja": "⛔️ 測位権限が拒否されたため停止します — 設定アプリで許可すると再開できます",
     "en": "⛔️ Positioning permission denied — enable it in Settings to resume."
+  },
+  "coord.rateApplied": {
+    "ko": "좌표 전송 주기 %d회/초 적용 (서버 설정)",
+    "ja": "座標送信レート %d回/秒 を適用（サーバー設定）",
+    "en": "Position upload rate set to %d/s (server setting)"
   }
 }

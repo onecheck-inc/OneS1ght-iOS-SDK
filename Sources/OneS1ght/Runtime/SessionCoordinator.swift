@@ -47,6 +47,12 @@ final class SessionCoordinator {
     private(set) var visitorId = ""
     /// 앱이 넘긴 프로필 ID — 좌표·존 이벤트의 귀속 키
     private(set) var profileId: String?
+
+    // 서버가 verify 로 내려주는 테넌트 설정
+    private(set) var positionRateHz = SdkDefaults.positionRateHz
+    private(set) var remoteConfig: [String: String] = [:]
+    /// 서버 전송용 좌표 다운샘플 기준 시각 — 판정 입력은 솎지 않는다
+    private var lastRecordedAt: Date?
     private(set) var floorConfigs: [String: ResFloorConfig] = [:]   // 층별 존 설정 (lazy)
     private var loadingFloors: Set<String> = []
     private(set) var floorState: FloorState?    // setFloorMap 결과 — start 시 provider 에 주입
@@ -97,7 +103,14 @@ final class SessionCoordinator {
         guard verified.valid, verified.positioning_enabled else {
             throw SdkError.positioningDisabled
         }
+        // 테넌트 설정 반영 — 범위 밖·미회신은 기본값(4Hz)으로 접는다
+        let hz = verified.position_rate_hz ?? SdkDefaults.positionRateHz
+        positionRateHz = min(max(hz, SdkDefaults.minRateHz), SdkDefaults.maxRateHz)
+        remoteConfig = verified.remote_config ?? [:]
         log(SdkLocalized.format("coord.verifyPass", verified.tenant_code ?? "?"))
+        if positionRateHz != SdkDefaults.positionRateHz {
+            log(SdkLocalized.format("coord.rateApplied", positionRateHz))
+        }
         isPrepared = true
     }
 
@@ -211,6 +224,7 @@ final class SessionCoordinator {
 
         // 방문 시작
         visitorId = identity.newVisitorId()
+        lastRecordedAt = nil
         provider.delegate = self
         provider.start()
         isRunning = true
@@ -381,14 +395,27 @@ extension SessionCoordinator: PositioningProviderDelegate {
     /// 좌표 fix — 층 설정 확보 + 버퍼 적재, 임계 도달 시 flush
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,
                   floorId: String, at capturedAt: Date) {
-        onPosition?(coordinates)
+        onPosition?(coordinates)          // 앱 훅 — 원속도 유지 (지도 렌더)
         ensureFloorLoaded(floorId)
+        // ⚠️ 서버 전송분만 솎는다. 존 판정(provider 내부 zoneEngine)은 원속도 그대로 —
+        //    PRM 의 시간 게이트가 입력 간격을 전제로 동작해 여기까지 줄이면 체류·이탈이 어긋난다.
+        guard shouldRecord(at: capturedAt) else { return }
         buffer.add(PositionPoint(floor_id: floorId,
                                  coordinates: coordinates,
                                  captured_at: Self.iso(capturedAt)))
         if buffer.count >= flushThreshold {
             Task { await buffer.flush() }
         }
+    }
+
+    /// position_rate_hz 다운샘플 판정.
+    /// 경계에 10% 여유를 둔다 — 4Hz 설정에 4Hz 입력이면 간격이 0.25초 언저리로 흔들려,
+    /// 정확히 1/rate 로 자르면 절반이 버려진다(기본값에서 동작이 바뀌면 안 된다).
+    private func shouldRecord(at t: Date) -> Bool {
+        let minGap = (1.0 / Double(positionRateHz)) * 0.9
+        if let last = lastRecordedAt, t.timeIntervalSince(last) < minGap { return false }
+        lastRecordedAt = t
+        return true
     }
 
     /// 존 판정 — 즉시 전송 (network 실패만 1회 재시도), triggers는 호스트 콜백으로

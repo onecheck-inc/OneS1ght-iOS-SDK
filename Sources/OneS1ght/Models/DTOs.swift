@@ -105,6 +105,18 @@ public struct ResVerify: Codable {
     public let valid: Bool
     public let tenant_code: String?
     public let positioning_enabled: Bool    // false면 측위 시작 안 함
+    /// 초당 좌표 전송 횟수 (1~100). 테넌트 단위 설정 — 어드민 /admin/sdk 에서 조정.
+    /// 구서버는 이 필드를 안 주므로 옵셔널. 없거나 범위 밖이면 SdkDefaults.positionRateHz.
+    public let position_rate_hz: Int?
+    /// SDK 키별 원격 설정 (environment · logLevel 등). 앱 재배포 없이 서버가 제어.
+    public let remote_config: [String: String]?
+}
+
+/// 서버가 값을 주지 않을 때 쓰는 기본값 — 종전 SDK 하드코딩과 같아 동작이 바뀌지 않는다.
+public enum SdkDefaults {
+    public static let positionRateHz = 4
+    public static let minRateHz = 1
+    public static let maxRateHz = 100
 }
 
 /// GET /positioning/buildings 응답
