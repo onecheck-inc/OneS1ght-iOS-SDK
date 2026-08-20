@@ -71,10 +71,37 @@ public final class ApiClient {
         try await post("/positioning/logs", body: req)
     }
 
+    // MARK: - 프로필 (서버 TBD)
+
+    /// ⑥ POST /profiles — 프로필 생성, 서버가 profile_id 발급
+    public func createProfile(_ req: ReqProfile) async throws -> ResProfileCreate {
+        try await post("/profiles", body: req)
+    }
+
+    /// ⑦ GET /profiles/{id}
+    public func getProfile(_ profileId: String) async throws -> ResProfile {
+        try await get("/profiles/\(profileId)")
+    }
+
+    /// ⑧ PUT /profiles/{id} — 속성 전체 교체
+    public func putProfile(_ profileId: String, _ req: ReqProfile) async throws -> ResProfile {
+        try await send("/profiles/\(profileId)", method: "PUT", body: req)
+    }
+
+    /// ⑨ DELETE /profiles/{id}
+    public func deleteProfile(_ profileId: String) async throws -> ResProfileDelete {
+        try await send("/profiles/\(profileId)", method: "DELETE", body: Optional<ReqProfile>.none)
+    }
+
     // MARK: - 내부 공통
 
     private func get<R: Decodable>(_ path: String) async throws -> R {
         try await perform(request(path: path, method: "GET", body: nil))
+    }
+
+    private func send<B: Encodable, R: Decodable>(_ path: String, method: String, body: B?) async throws -> R {
+        let data = try body.map { try JSONEncoder().encode($0) }
+        return try await perform(request(path: path, method: method, body: data))
     }
 
     private func post<B: Encodable, R: Decodable>(_ path: String, body: B) async throws -> R {

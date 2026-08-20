@@ -19,7 +19,7 @@ import UIKit
 /// 서버 에러(ApiError) 밖의 SDK 수준 실패
 public enum SdkError: Error, Equatable {
     case notInitialized        // initialize() 안 하고 start() 호출
-    case notIdentified         // identify(userId:) 없이 start() 호출
+    case notIdentified         // identify(profileId:) 없이 start() 호출
     case positioningDisabled   // verify는 통과했으나 positioning_enabled=false
     case deviceNotSupported    // UWB 칩 없음 (측위 불가 기기)
     case osVersionTooLow       // iOS 27 미만
@@ -43,15 +43,14 @@ final class SessionCoordinator {
 
     // 상태
     private(set) var isPrepared = false           // initialize(=prepare) 성공 여부 = "세션 가능"
-    /// 호스트가 loadFloor 를 호출한 적 있나 — **호출 진입 시점**에 세운다.
-    /// 완료 시점(currentInfra)만 보면 자동 선택과 동시에 진행돼 늦게 끝난 쪽이 이기는 경합이 생긴다.
     private(set) var isRunning = false
     private(set) var visitorId = ""
-    /// 고객사가 넘긴 사용자 ID — 이 SDK 의 유일한 사용자 식별자
-    private(set) var userId: String?
+    /// 앱이 넘긴 프로필 ID — 좌표·존 이벤트의 귀속 키
+    private(set) var profileId: String?
     private(set) var floorConfigs: [String: ResFloorConfig] = [:]   // 층별 존 설정 (lazy)
     private var loadingFloors: Set<String> = []
-    private(set) var currentInfra: FloorInfra?   // loadFloor 결과 — start 시 provider 에 주입
+    private(set) var floorState: FloorState?    // setFloorMap 결과 — start 시 provider 에 주입
+    private(set) var currentFloor: Floor?        // setFloorMap 이 받은 Floor (floorSession 노출용)
     private var flushTimer: Timer?
     private var lifecycleObservers: [NSObjectProtocol] = []
 
@@ -102,41 +101,65 @@ final class SessionCoordinator {
         isPrepared = true
     }
 
-    /// 빌딩/층 트리 — 선택 UI용. geoSdkKey 없으면 빈 배열 (측위 미사용 통합)
-    func buildings() async throws -> [SpaceBuilding] {
+    // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 — geoSdkKey 없으면 빈 값)
+
+    func buildings() async throws -> [Building] {
         guard let geospace else { return [] }
         return try await geospace.loadBuildings()
     }
 
-    /// 층 인프라 로드 — 도면(렌더용 반환) + 앵커·세션·존(측위·판정용 보관).
-    /// start 전에 부르면 start 가 주입하고, 가동 중에 부르면 즉시 갈아끼운다(층 전환).
-    @discardableResult
-    func loadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
-        return try await performLoadFloor(buildingId: buildingId, floorId: floorId)
+    func floors(buildingId: String) async throws -> [Floor] {
+        guard let geospace else { return [] }
+        return try await geospace.loadFloors(buildingId: buildingId)
     }
 
-    @discardableResult
-    private func performLoadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
+    /// 층 단건 — 도면 이미지 포함.
+    func floor(buildingId: String, floorId: String) async throws -> Floor {
         guard let geospace else { throw SdkError.notInitialized }
-        let infra = try await geospace.loadInfra(buildingId: buildingId, floorId: floorId)
-        currentInfra = infra
-        log(SdkLocalized.format("coord.floorLoaded", infra.anchors.count, String(floorId.prefix(8))))
-        if isRunning { applyInfraToProvider() }      // 가동 중 층 전환
-        return infra
+        return try await geospace.loadFloor(buildingId: buildingId, floorId: floorId)
+    }
+
+    func zones(buildingId: String, floorId: String) async throws -> [Zone] {
+        guard let geospace else { return [] }
+        return try await geospace.loadZones(buildingId: buildingId, floorId: floorId)
+    }
+
+    func locators(buildingId: String, floorId: String) async throws -> FloorLocators {
+        guard let geospace else { throw SdkError.notInitialized }
+        return try await geospace.loadLocators(buildingId: buildingId, floorId: floorId)
+    }
+
+    // MARK: - 층 지정
+
+    /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
+    /// 가동 중에 부르면 즉시 층 전환 — 세션은 그대로, 엔진 주입값만 갈린다.
+    func setFloorMap(_ floor: Floor?, buildingId: String?) async throws {
+        guard let floor, let buildingId else {
+            floorState = nil
+            currentFloor = nil
+            provider?.apply(config: PositioningConfig())   // 엔진에서 층 설정 해제
+            return
+        }
+        guard let geospace else { throw SdkError.notInitialized }
+        let state = try await geospace.loadFloorState(buildingId: buildingId, floorId: floor.id)
+        floorState = state
+        currentFloor = floor
+        log(SdkLocalized.format("coord.floorLoaded", state.locators.count, String(floor.id.prefix(8))))
+        if isRunning { applyFloorStateToProvider() }      // 가동 중 층 전환
     }
 
     /// 존만 재조회 (도면 재다운로드 없음 — 폴링용). 받은 존은 엔진에도 즉시 반영.
     /// 실패하면 지금 존을 그대로 돌려준다 — 통신 오류로 지도의 존이 사라지면 안 된다.
     /// 로그는 "결과가 바뀔 때만" — 등록 감시가 1초마다 부르는 경로라 매번 찍으면 로그창이 덮인다.
     func refreshZones() async -> [Zone] {
-        guard let geospace, let infra = currentInfra else {
+        guard let geospace, let state = floorState else {
             logZoneOutcome(SdkLocalized.text("zone.refreshSkipped"), key: "no-floor")
-            return currentInfra?.zones ?? []
+            return floorState?.zones ?? []
         }
         do {
-            let zones = try await geospace.loadZones(buildingId: infra.buildingId,
-                                                     floorId: infra.floorId)
-            currentInfra?.zones = zones
+            let zones = try await geospace.loadZones(buildingId: state.buildingId,
+                                                     floorId: state.floorId)
+            floorState?.zones = zones
             if isRunning, !zones.isEmpty {
                 provider?.apply(config: PositioningConfig(zones: zones))
             }
@@ -146,9 +169,9 @@ final class SessionCoordinator {
                            key: "ok:\(names)")
             return zones
         } catch {
-            logZoneOutcome(SdkLocalized.format("zone.refreshFail", infra.zones.count, "\(error)"),
+            logZoneOutcome(SdkLocalized.format("zone.refreshFail", state.zones.count, "\(error)"),
                            key: "err:\(error)")
-            return infra.zones
+            return state.zones
         }
     }
 
@@ -160,29 +183,28 @@ final class SessionCoordinator {
         log(message)
     }
 
-    /// currentInfra → provider (앵커·세션·존 + 건물·층 ID)
-    private func applyInfraToProvider() {
-        guard let infra = currentInfra, let provider else { return }
-        provider.apply(buildingId: infra.buildingId, floorId: infra.floorId)
+    /// floorState → provider (로케이터·세션·존 + 건물·층 ID)
+    private func applyFloorStateToProvider() {
+        guard let state = floorState, let provider else { return }
+        provider.apply(buildingId: state.buildingId, floorId: state.floorId)
         var anchorMap: [Int: SIMD3<Double>] = [:]
-        for a in infra.anchors { anchorMap[a.address] = SIMD3(a.x, a.y, a.z) }
+        for l in state.locators { anchorMap[l.address] = SIMD3(l.x, l.y, l.z) }
         provider.apply(config: PositioningConfig(anchors: anchorMap,
-                                                 sessionId: infra.sessionId,
-                                                 zones: infra.zones))
+                                                 sessionId: state.sessionId,
+                                                 zones: state.zones))
     }
 
-    /// 시작(매장 진입 시) — 동의 게이트 + consent 기록 + 측위 가동.
-    /// prepare가 미리 끝나 있어 서버 왕복은 consent 기록 1회뿐 (buildings 재요청 없음).
+    /// 시작(매장 진입 시) — 측위 가동. 서버 왕복 없음 (prepare 가 미리 끝나 있다).
     func start(provider: PositioningProvider) async throws {
         guard !isRunning else { return }                             // 멱등
         guard isPrepared else { throw SdkError.notInitialized }
         _ = try requireUserId()                                      // 인증이 앞에 있어야 한다
 
-        // 인프라 주입 — loadFloor 로 받아둔 층(앵커·세션·존)이 있을 때만.
-        // 층 미선택이면 측위 파이프라인은 돌되 좌표가 나오지 않는다 → 조용히 두지 않고 알린다.
+        // 층 상태 주입 — setFloorMap 으로 받아둔 층(로케이터·세션·존)이 있을 때만.
+        // 층 미지정이면 측위 파이프라인은 돌되 좌표가 나오지 않는다 → 조용히 두지 않고 알린다.
         self.provider = provider
-        if currentInfra != nil {
-            applyInfraToProvider()
+        if floorState != nil {
+            applyFloorStateToProvider()
         } else {
             log(SdkLocalized.text("coord.noFloorLoaded"))
         }
@@ -196,11 +218,32 @@ final class SessionCoordinator {
         observeAppLifecycle()
     }
 
-    /// 사용자 지정. 이 SDK 의 유일한 사용자 식별자다 —
-    /// 고객사가 회원 ID 또는 createGuestID() 로 받은 값을 넘긴다.
-    func identify(userId: String?) {
-        self.userId = userId
+    /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
+    func identify(profileId: String?) {
+        self.profileId = profileId
     }
+
+    // MARK: - 프로필 CRUD (키 검증 통과가 전제라 coordinator 경유)
+
+    func createProfile(_ attributes: [String: String]) async throws -> String {
+        try await api.createProfile(ReqProfile(attributes: attributes)).profile_id
+    }
+    func getProfile(_ profileId: String) async throws -> [String: String] {
+        try await api.getProfile(profileId).attributes ?? [:]
+    }
+    func putProfile(_ profileId: String, _ attributes: [String: String]) async throws {
+        _ = try await api.putProfile(profileId, ReqProfile(attributes: attributes))
+    }
+    func deleteProfile(_ profileId: String) async throws {
+        _ = try await api.deleteProfile(profileId)
+    }
+
+    // MARK: - 버퍼 창구
+
+    /// 쌓인 좌표를 지금 전송 (300건/60초를 기다리지 않고 앞당김)
+    func sendNow() async { await buffer.flush() }
+    /// 쌓인 좌표를 전송 없이 폐기
+    func discardPending() { buffer.empty() }
 
     /// 종료: 측위 정지 + 잔여 좌표 flush (도식 11)
     func stop() async {
@@ -219,8 +262,8 @@ final class SessionCoordinator {
 
     /// 좌표 벌크 전송 (buffer의 Sender) — true = 200
     private func sendPositions(_ batch: [PositionPoint]) async -> Bool {
-        guard let userId else { return false }
-        let req = ReqPositionBulk(user_id: userId,
+        guard let profileId else { return false }
+        let req = ReqPositionBulk(profile_id: profileId,
                                   visitor_id: visitorId,
                                   platform_name: "iOS",
                                   points: batch)
@@ -260,14 +303,14 @@ final class SessionCoordinator {
 
     private static var appId: String? { Bundle.main.bundleIdentifier }
 
-    /// userId 가 없으면 세션이 성립하지 않는다 — 인증이 앞에 있는 것이 이 SDK 의 전제다.
+    /// profileId 가 없으면 세션이 성립하지 않는다 — 데이터에 주인이 없으면 리포트가 성립하지 않는다.
     private func requireUserId() throws -> String {
-        guard let userId, !userId.isEmpty else { throw SdkError.notIdentified }
-        return userId
+        guard let profileId, !profileId.isEmpty else { throw SdkError.notIdentified }
+        return profileId
     }
 
-    private func baseClientInfo(_ userId: String) -> ClientInfo {
-        var c = ClientInfo(user_id: userId)
+    private func baseClientInfo(_ profileId: String) -> ClientInfo {
+        var c = ClientInfo(profile_id: profileId)
         c.sdk_version = OneS1ght.sdkVersion
         #if canImport(UIKit)
         c.os_name = "iOS"
@@ -352,8 +395,8 @@ extension SessionCoordinator: PositioningProviderDelegate {
     func provider(_ p: PositioningProvider, didDetectZone zoneId: String,
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date) {
         ensureFloorLoaded(floorId)
-        guard let userId else { return }
-        let req = ReqZoneEvent(user_id: userId,
+        guard let profileId else { return }
+        let req = ReqZoneEvent(profile_id: profileId,
                                visitor_id: visitorId,
                                floor_id: floorId,
                                zone_id: zoneId,

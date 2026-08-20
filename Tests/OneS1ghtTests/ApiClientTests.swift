@@ -75,7 +75,7 @@ final class ApiClientTests: XCTestCase {
             """#.utf8))
         }
         let res = try await client.sendZoneEvent(
-            ReqZoneEvent(user_id: "A", visitor_id: "V", floor_id: "F", zone_id: "Z",
+            ReqZoneEvent(profile_id: "A", visitor_id: "V", floor_id: "F", zone_id: "Z",
                          status: .enter, occurred_at: "T", platform_name: "iOS"))
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/sdk/v1/events/zone")
         XCTAssertEqual(res.triggers.first?.type, "coupon")
@@ -86,7 +86,7 @@ final class ApiClientTests: XCTestCase {
         StubURLProtocol.handler = { _ in (422, Data(#"{ "detail": "empty points" }"#.utf8)) }
         do {
             _ = try await client.sendPositionLogs(
-                ReqPositionBulk(user_id: "A", visitor_id: "V", platform_name: "iOS", points: []))
+                ReqPositionBulk(profile_id: "A", visitor_id: "V", platform_name: "iOS", points: []))
             XCTFail("에러여야 함")
         } catch let e as ApiError {
             XCTAssertEqual(e, .unprocessable(detail: "empty points"))

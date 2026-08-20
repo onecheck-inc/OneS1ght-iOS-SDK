@@ -14,8 +14,8 @@
 //    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
 //    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
-//    // ③ 인증 — 회원 ID 또는 createGuestID() 로 받은 값
-//    OneS1ght.identify(userId: "emp_1234")
+//    // ③ 프로필 연결 — createProfile 로 발급받아 앱이 보관한 값
+//    OneS1ght.identify(profileId: "pf_8a3c")
 //    // ④ 매장 진입 시 — 측위 가동
 //    OneS1ght.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
 //    try await OneS1ght.start()
@@ -34,31 +34,11 @@ public final class OneS1ght {
 
     // MARK: - 콜백
 
-    /// 구역(Zone) 진입/이탈/체류 이벤트 — 온디바이스 판정 즉시 (서버 왕복 없음).
-    /// 앱 내 실시간 반응(쿠폰·안내 등)을 붙이는 표준 훅.
-    public static var onZoneEvent: ((ZoneEvent) -> Void)?
-
-    /// 존 이벤트 응답의 개인화 액션(triggers) 수신 — (zoneId, [Trigger])
-    public static var onTriggers: ((String, [Trigger]) -> Void)?
-
-    /// 실시간 좌표 (도면 로컬 미터) — 지도에 내 위치를 그리는 표준 훅.
-    /// 서버 전송과 무관하게 좌표가 나올 때마다 호출된다 (최대 4회/초).
-    public static var onPosition: ((Coordinates) -> Void)?
-
     /// SDK 내부 활동 로그 (디버그용) — verify·좌표 flush·zone 전송의 성공/실패 통지.
     /// 데모/개발 중 "전송이 실제로 되고 있나"를 눈으로 확인하는 용도. 운영에선 미등록 권장.
     public static var onDebugLog: ((String) -> Void)?
 
     // MARK: - 상태
-
-    /// 비회원용 ID 발급. **SDK 는 보관하지 않는다** — 앱이 저장해 재사용해야 한다.
-    /// 회원이면 이 값 대신 고객사 회원 ID 를 identify(userId:) 로 넘긴다.
-    ///
-    ///     let id = UserDefaults.standard.string(forKey: "onesight.guestId")
-    ///         ?? { let v = OneS1ght.createGuestID()
-    ///              UserDefaults.standard.set(v, forKey: "onesight.guestId"); return v }()
-    ///     OneS1ght.identify(userId: id)
-    public static func createGuestID() -> String { IdentityStore.createGuestID() }
 
     /// 세션 가능 상태인가 (initialize 성공 = 기기 통과 + 키 유효 + 설정 로드됨)
     public static var isInitialized: Bool { coordinator?.isPrepared ?? false }
@@ -157,8 +137,9 @@ public final class OneS1ght {
             let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
                                        identity: identity,
                                        geospace: geospace)
-            c.onTriggers = { zoneId, triggers in OneS1ght.onTriggers?(zoneId, triggers) }
-            c.onPosition = { coord in OneS1ght.onPosition?(coord) }
+            // 좌표·트리거는 세션 콜백으로 흘린다 (전역 훅은 onDebugLog 만 남았다)
+            c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
+            c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
             c.onLog = { line in OneS1ght.onDebugLog?(line) }
             coordinator = c
             storedKeys = (sdkKey, geoSdkKey)
@@ -166,40 +147,6 @@ public final class OneS1ght {
 
         // ④ 키 검증 + 설정 프리페치 (실패 시 throw — 재호출이 곧 재시도)
         try await coordinator?.prepare()
-    }
-
-    /// 시작 (매장 진입 시) — 내장 UWB 측위로 가동. 고객사가 쓰는 표준 경로.
-    /// identify(userId:) 가 선행되어야 한다 — 인증이 앞에 있는 것이 이 SDK 의 전제다.
-    /// - throws: .notInitialized / .notIdentified / .deviceNotSupported / .osVersionTooLow / ApiError
-    public static func start() async throws {
-        #if os(iOS)
-        guard #available(iOS 27.0, *) else { throw SdkError.osVersionTooLow }
-        // 시뮬레이터는 여기서 막힌다 (UWB 칩 없음 → isSupported false).
-        // 시뮬레이터 테스트는 start(consent:provider:) 로 Mock 을 주입하는 경로만 열려 있다.
-        guard UwbPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
-        let uwb = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
-        builtInProvider = uwb
-        uwb.onZoneEvent = { event in OneS1ght.onZoneEvent?(event) }
-        uwb.onLog = { line in OneS1ght.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
-        try await start(provider: uwb)
-        #else
-        throw SdkError.deviceNotSupported
-        #endif
-    }
-
-    /// 시작 (커스텀 측위 주입) — 테스트(Mock)·데모(UI 관찰용 provider 직접 보유) 등 특수 경우용.
-    public static func start(provider: PositioningProvider) async throws {
-        guard let coordinator else { throw SdkError.notInitialized }   // initialize 자체를 안 부른 경우
-        // 일시 장애 회복 — initialize 가 네트워크 순단으로 실패했더라도 시작 시점에 준비를 마저 시도한다
-        // (키는 보관돼 있음). 결정적 실패(잘못된 키 등)는 같은 사유로 다시 throw 되므로 거짓 신호는 없다.
-        if !coordinator.isPrepared { try await coordinator.prepare() }
-        if let userId { coordinator.identify(userId: userId) }   // start 전 identify 반영
-        try await coordinator.start(provider: provider)
-    }
-
-    /// 종료: 측위 정지 + 잔여 좌표 flush. 초기화 상태는 유지 → start 재호출로 재시작 가능.
-    public static func stop() async {
-        await coordinator?.stop()
     }
 
     /// 초기화 리셋 — 세션을 버린다. 이후 initialize(sdkKey:)로 다른 키로 재초기화 가능
@@ -210,20 +157,65 @@ public final class OneS1ght {
         storedKeys = nil
     }
 
-    // MARK: - 공간 설정
+    // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 · 목록 ↔ 단건)
 
-    /// 빌딩/층 트리 (선택 UI용). geoSdkKey 없이 초기화했으면 빈 배열.
-    public static func buildings() async throws -> [SpaceBuilding] {
+    /// 건물 목록. geoSdkKey 없이 초기화했으면 빈 배열. 층은 floors() 로 따로.
+    public static func buildings() async throws -> [Building] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.buildings()
     }
 
-    /// 층 인프라 로드 — 도면(앱 렌더용)을 돌려주고, 앵커·세션·존은 SDK 가 내부 엔진에 주입한다.
-    /// start 전이면 start 가 반영하고, 가동 중이면 즉시 층 전환.
-    @discardableResult
-    public static func loadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
+    /// 건물 단건.
+    public static func building(_ buildingID: String) async throws -> Building {
+        guard let b = try await buildings().first(where: { $0.id == buildingID }) else {
+            throw ApiError.notFound(detail: buildingID)
+        }
+        return b
+    }
+
+    /// 층 목록 — 이름·치수는 채워지고 **도면 이미지는 비어 있다**(목록 경량화).
+    /// 지도를 그릴 층만 floor() 단건으로 받으면 이미지가 채워져 온다.
+    public static func floors(_ buildingID: String) async throws -> [Floor] {
         guard let coordinator else { throw SdkError.notInitialized }
-        return try await coordinator.loadFloor(buildingId: buildingId, floorId: floorId)
+        return try await coordinator.floors(buildingId: buildingID)
+    }
+
+    /// 층 단건 — 도면 이미지 포함 (floors() 가 캐시를 데워 두면 추가 왕복 없음).
+    public static func floor(_ buildingID: String, _ floorID: String) async throws -> Floor {
+        guard let coordinator else { throw SdkError.notInitialized }
+        return try await coordinator.floor(buildingId: buildingID, floorId: floorID)
+    }
+
+    /// 존 목록 (판정 파라미터 포함).
+    public static func zones(_ buildingID: String, _ floorID: String) async throws -> [Zone] {
+        guard let coordinator else { throw SdkError.notInitialized }
+        return try await coordinator.zones(buildingId: buildingID, floorId: floorID)
+    }
+
+    /// 존 단건.
+    public static func zone(_ buildingID: String, _ floorID: String,
+                            _ zoneID: String) async throws -> Zone {
+        guard let z = try await zones(buildingID, floorID).first(where: { $0.id == zoneID }) else {
+            throw ApiError.notFound(detail: zoneID)
+        }
+        return z
+    }
+
+    /// 로케이터 + 세션ID — sessionId 는 별도 API 가 아니라 이 응답에 함께 실려 온다.
+    public static func locators(_ buildingID: String,
+                                _ floorID: String) async throws -> FloorLocators {
+        guard let coordinator else { throw SdkError.notInitialized }
+        return try await coordinator.locators(buildingId: buildingID, floorId: floorID)
+    }
+
+    // MARK: - 층 지정
+
+    /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
+    /// 로케이터·sessionId·존을 받아 엔진에 주입한다 — 가동 중이면 즉시 층 전환.
+    public static func setFloorMap(_ floor: Floor?, buildingID: String? = nil) async throws {
+        guard let coordinator else { throw SdkError.notInitialized }
+        try await coordinator.setFloorMap(floor, buildingId: buildingID ?? currentBuildingID)
+        currentBuildingID = floor == nil ? nil : (buildingID ?? currentBuildingID)
     }
 
     /// 현재 층의 존만 재조회 (경량 — 도면 재다운로드 없음). 콘솔에서 존을 바꿨을 때 폴링용.
@@ -233,21 +225,78 @@ public final class OneS1ght {
         await coordinator?.refreshZones() ?? []
     }
 
+    // MARK: - 측위 세션
+
+    /// 현재 설정된 층의 측위 세션. setFloorMap 이 선행되어야 한다.
+    /// 항상 같은 인스턴스를 돌려준다(싱글턴) — UWB 라디오·판정 엔진·좌표 버퍼가
+    /// 기기당 하나뿐이라 세션이 여럿이면 물리적으로 충돌한다.
+    public static func floorSession() throws -> FloorSession {
+        guard coordinator != nil else { throw SdkError.notInitialized }
+        return FloorSession.shared
+    }
+
+    // MARK: - 프로필
+
+    /// 프로필 생성 — 서버가 발급한 profileId 를 돌려준다. **앱이 보관해 재사용해야 한다.**
+    /// 속성은 고객사 자유(성별·연령대·관심사 등).
+    /// ⚠️ 나이는 정확값 대신 연령대("20s")로 넣기를 권한다 — 성별·관심사·동선과 조합되면
+    ///    재식별 가능성이 생긴다.
+    public static func createProfile(_ attributes: [String: String]) async throws -> String {
+        guard let coordinator else { throw SdkError.notInitialized }
+        return try await coordinator.createProfile(attributes)
+    }
+
+    /// 프로필 조회.
+    public static func getProfile(_ profileId: String) async throws -> [String: String] {
+        guard let coordinator else { throw SdkError.notInitialized }
+        return try await coordinator.getProfile(profileId)
+    }
+
+    /// 프로필 속성 전체 교체.
+    public static func putProfile(_ profileId: String,
+                                  _ attributes: [String: String]) async throws {
+        guard let coordinator else { throw SdkError.notInitialized }
+        try await coordinator.putProfile(profileId, attributes)
+    }
+
+    /// 프로필 삭제.
+    public static func deleteProfile(_ profileId: String) async throws {
+        guard let coordinator else { throw SdkError.notInitialized }
+        try await coordinator.deleteProfile(profileId)
+    }
+
+    // MARK: - 버퍼
+
+    /// 쌓인 좌표를 지금 서버로 전송 (300건/60초를 기다리지 않고 앞당김).
+    public static func send() async {
+        await coordinator?.sendNow()
+    }
+
+    /// 쌓인 좌표를 **전송하지 않고 폐기**.
+    /// ⚠️ flush 가 아니라 empty 인 이유 — 통상 flush 는 "쌓인 것을 목적지로 밀어낸다"(전송)는
+    ///    뜻이라, 폐기에 그 이름을 쓰면 전송으로 오해한 호출에 데이터가 조용히 사라진다.
+    public static func empty() {
+        coordinator?.discardPending()
+    }
+
     // MARK: - 사용자
 
-    /// 사용자 지정 — 이 SDK 의 유일한 사용자 식별자.
-    /// 회원이면 고객사 회원 ID, 비회원이면 createGuestID() 로 받아 앱이 보관한 값을 넘긴다.
+    /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
+    /// createProfile() 로 발급받아 앱이 보관한 값을 넘긴다(로그아웃 등 해제는 nil).
+    /// 고객사 회원 ID ↔ profileId 매핑은 고객사만 보관한다 — 회원 ID 는 OneS1ght 에 오지 않는다.
     /// start() 전에 반드시 호출해야 한다 (없으면 .notIdentified).
-    public static func identify(userId: String?) {
-        self.userId = userId
-        coordinator?.identify(userId: userId)
+    public static func identify(profileId: String?) {
+        self.profileId = profileId
+        coordinator?.identify(profileId: profileId)
     }
 
     // MARK: - 내부 부품 (인스턴스 — 키 교체·reset 때 갈아끼움)
 
     private static let identity = IdentityStore()
     private static var coordinator: SessionCoordinator?
-    private static var userId: String?
-    private static var builtInProvider: PositioningProvider?          // 내장 provider 재사용 (재시작 대비)
+    private static var profileId: String?
+    private static var currentBuildingID: String?             // setFloorMap 의 건물 문맥
+    /// FloorSession 이 코디네이터에 닿는 통로 (같은 모듈 내부 전용)
+    static var coordinatorRef: SessionCoordinator? { coordinator }
     private static var storedKeys: (sdk: String, geospace: String?)?  // 키 교체 감지용
 }

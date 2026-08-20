@@ -29,6 +29,10 @@ final class TrajectoryBuffer {
 
     func add(_ p: PositionPoint) { points.append(p) }
 
+    /// 쌓인 좌표를 전송 없이 버린다. flush 진행 중이어도 안전 —
+    /// 전송 성공분 제거(removeFirst)는 남은 배열 기준이라 빈 배열에선 no-op 이 된다.
+    func empty() { points.removeAll() }
+
     /// 쌓인 전부를 상한 단위로 전송. 중간 실패 시 남은 건 유지하고 중단.
     func flush() async {
         guard !isFlushing else { return }

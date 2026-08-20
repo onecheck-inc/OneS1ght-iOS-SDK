@@ -33,7 +33,7 @@ final class SessionCoordinatorTests: XCTestCase {
     private func makeStarted(flushThreshold: Int = 100) async throws -> SessionCoordinator {
         let c = makeCoordinator(flushThreshold: flushThreshold)
         try await c.prepare()
-        c.identify(userId: "emp_1234")
+        c.identify(profileId: "pf_8a3c")
         try await c.start(provider: provider)
         return c
     }
@@ -189,7 +189,7 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(body.points.count, 2)
         XCTAssertEqual(body.points[0].coordinates, Coordinates(x: 1, y: 2, z: 0))
         XCTAssertEqual(body.visitor_id, c.visitorId)
-        XCTAssertEqual(body.user_id, "emp_1234")
+        XCTAssertEqual(body.profile_id, "pf_8a3c")
         XCTAssertTrue(StubURLProtocol.requests.contains { $0.path.contains("/positioning/floors/F") })
         await c.stop()
     }

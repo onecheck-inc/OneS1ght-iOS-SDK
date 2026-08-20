@@ -19,33 +19,50 @@ import OneS1ght
 // ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신
 try await OneS1ght.initialize(sdkKey: "ock_sdk_...", geoSdkKey: "gsk_...")
 
-// ② 공간 선택 — 필수 (이걸 안 하면 좌표가 나오지 않습니다)
+// ② 측위 권한 — 부르는 순간 시스템 팝업이 뜬다 (시점은 앱이 정한다)
+switch await OneS1ght.permissions() {
+case .authorized:  break
+case .denied:      return showSettingsGuide()
+case .unsupported: return showUnsupportedNotice()
+}
+
+// ③ 프로필 — 최초 1회 발급받아 앱이 보관, 이후 재사용
+let profileId = savedProfileId ?? (try await OneS1ght.createProfile([
+    "gender": "F", "ageBand": "20s"          // 나이는 연령대로 (재식별 방지)
+]))
+OneS1ght.identify(profileId: profileId)
+
+// ④ 공간 선택 — 필수 (이걸 안 하면 좌표가 나오지 않습니다)
 let buildings = try await OneS1ght.buildings()
-if let b = buildings.first, let f = b.floors.first {
-    try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
-}
+let floors    = try await OneS1ght.floors(buildings[0].id)
+try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
 
-// ③ 인증 — 회원 ID 또는 createGuestID() 로 받아 앱이 보관한 값
-OneS1ght.identify(userId: "emp_1234")
+// ⑤ 지도 렌더 — 도면은 단건 조회에 담겨 온다
+let floor = try await OneS1ght.floor(buildings[0].id, floors[0].id)
+mapView.setBackground(floor.image)
 
-// ④ 매장 화면 진입 시 — 측위 시작
-try await OneS1ght.start()
+// ⑥ 매장 화면 진입 시 — 측위 시작
+let session = try OneS1ght.floorSession()
+session.onZoneEnter = { zone in print("진입: \(zone.name)") }
+session.onZoneExit  = { zone in print("이탈: \(zone.name)") }
+session.onPosition  = { c in mapView.moveMarker(c) }
+try await session.begin()
 
-// 구역 이벤트 수신
-OneS1ght.onZoneEvent = { event in
-    if case .enter(let zone, _) = event { print("진입: \(zone.name)") }
-}
-
-// ⑤ 매장 화면 이탈 시
-await OneS1ght.stop()
+// ⑦ 매장 화면 이탈 시
+await session.end()
 ```
 
 ## 주요 API
 | 구분 | API |
 |---|---|
-| 함수 | `initialize(sdkKey:geoSdkKey:)` · `identify(userId:)` · `createGuestID()` · `start()` · `stop()` · `buildings()` · `loadFloor(buildingId:floorId:)` · `refreshZones()` · `reset()` |
-| 콜백 | `onZoneEvent` · `onTriggers` · `onPosition` · `onDebugLog` |
-| 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `permissions()` · `sdkVersion` |
+| 초기화 | `initialize(sdkKey:geoSdkKey:)` · `permissions()` · `reset()` |
+| 프로필 | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
+| 공간 조회 | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
+| 층 지정 | `setFloorMap(_:buildingID:)` · `refreshZones()` |
+| 측위 | `floorSession()` → `begin()` · `end()` |
+| 세션 콜백 | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
+| 버퍼 | `send()`(전송) · `empty()`(폐기) |
+| 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `sdkVersion` |
 
 자세한 연동 절차(콘솔 설정·키 발급·Zone 구성)는 OneS1ght 연동 가이드 문서를 참조하세요.
 

@@ -1,6 +1,6 @@
 //
 //  IdentityStoreTests.swift
-//  anon_user_id 영속 · visitor_id 형식/카운터/날짜리셋 (사양서 §4)
+//  anon_profile_id 영속 · visitor_id 형식/카운터/날짜리셋 (사양서 §4)
 //
 
 import XCTest
@@ -23,15 +23,6 @@ final class IdentityStoreTests: XCTestCase {
         secure = InMemorySecureStore()
         defaults = UserDefaults(suiteName: "IdentityStoreTests")!
         defaults.removePersistentDomain(forName: "IdentityStoreTests")
-    }
-
-    // 게스트 ID — 발급만 하고 SDK 는 보관하지 않는다 (앱이 저장할 몫).
-    // 부를 때마다 다른 값이 나와야 "SDK 가 몰래 영속시키지 않는다"가 보장된다.
-    func testCreateGuestID_isFreshEachCall() {
-        let a = IdentityStore.createGuestID()
-        let b = IdentityStore.createGuestID()
-        XCTAssertTrue(a.hasPrefix("guest_"))
-        XCTAssertNotEqual(a, b)
     }
 
     // visitor_id — 형식 v-YYYYMMDD-NNN + 같은 날 카운터 증가

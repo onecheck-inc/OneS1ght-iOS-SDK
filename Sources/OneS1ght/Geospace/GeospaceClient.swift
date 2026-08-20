@@ -39,52 +39,80 @@ final class GeospaceClient {
 
     // MARK: - 공개 진입점
 
-    /// 빌딩/층 트리 로드 (선택 UI용) — 콘솔(ock_)이 기본, 실패 시 GeoSpace 폴백.
-    /// 콘솔 층은 존에서 파생돼 존이 0개면 빈 목록이 되는 구조(08-03)라, 그 경우에만
-    /// 층을 독립 제공하는 GeoSpace 모바일 API 로 내려간다. (08-05 순서 교체 — 콘솔이 단일 진실)
-    func loadBuildings() async throws -> [SpaceBuilding] {
-        do { return try await consoleBuildings() }
-        catch { return try await mobileBuildings() }
+    /// 건물 목록 — 콘솔(ock_)이 기본, 실패 시 GeoSpace 폴백. 층은 담지 않는다.
+    /// floorCount 는 서버가 응답에 실어줄 때까지 nil (floor_count TBD).
+    func loadBuildings() async throws -> [Building] {
+        do {
+            let base = ApiClient.defaultBaseURL.absoluteString
+            let list: ConsoleBuildingsResponse = try await consoleGet("\(base)/positioning/buildings")
+            let out = list.buildings
+                .filter { !$0.buildingId.hasPrefix("sim-") }   // GeoSpace 미연동 sim 매장 제외
+                .map { Building(id: $0.buildingId, name: $0.name, floorCount: $0.floorCount) }
+            guard !out.isEmpty else { throw GsError.decode }
+            return out
+        } catch {
+            let res: BuildingsResponse = try await get("api/m/buildings")
+            return res.buildings.map { Building(id: $0.buildingId, name: $0.buildingName,
+                                                floorCount: $0.floors.count) }
+        }
     }
 
-    private func consoleBuildings() async throws -> [SpaceBuilding] {
+    /// 층 목록 — 이름·hasPlan 채움, **도면 이미지는 비움**(목록이 층 수 × 수백 KB 가 되는 것 방지).
+    /// 이름이 plan 응답에만 있는 서버 구조라 층마다 plan 을 부르지만, 캐시에 남아
+    /// floor(단건)·setFloorMap 때 재사용된다 — 총 왕복 수는 종전과 같다.
+    /// 콘솔 층은 존에서 파생돼 존 0개면 빈 목록(08-03) → GeoSpace 모바일 API 로 층만 우회.
+    func loadFloors(buildingId: String) async throws -> [Floor] {
         let base = ApiClient.defaultBaseURL.absoluteString
-        let list: ConsoleBuildingsResponse = try await consoleGet("\(base)/positioning/buildings")
-        var out: [SpaceBuilding] = []
-        var gsCache: [SpaceBuilding]?                                     // 층 우회용 (필요할 때 1회만)
-        for b in list.buildings where !b.buildingId.hasPrefix("sim-") {   // GeoSpace 미연동 sim 매장 제외
-            let fl: ConsoleFloorsResponse = try await consoleGet("\(base)/positioning/buildings/\(b.buildingId)/floors")
-            var floorIds = fl.floors.map(\.floorId)
-            // 콘솔 층은 존에서 파생돼, 존 미등록 층은 목록에 안 잡힌다(서버 구조).
-            // 도면·앵커가 있어도 층 ID 를 못 얻어 측위 진입이 막히므로 GeoSpace 로 층만 우회한다.
-            // (도면·존은 그대로 콘솔 프록시 사용 — 서버가 층을 독립 제공하면 이 블록은 자동으로 안 탄다)
-            if floorIds.isEmpty {
-                if gsCache == nil { gsCache = try? await mobileBuildings() }
-                floorIds = gsCache?.first { $0.id == b.buildingId }?.floors.map(\.id) ?? []
-            }
-            var floors: [SpaceFloor] = []
-            for id in floorIds {
-                let plan = try? await consolePlan(b.buildingId, id)        // 이름 획득 + 도면 선로딩 캐시
-                floors.append(SpaceFloor(id: id,
-                                    name: plan?.floorName ?? String(id.prefix(8)),
-                                    hasPlan: plan?.hasPlan ?? false))
-            }
-            out.append(SpaceBuilding(id: b.buildingId, name: b.name, floors: floors))
+        var floorIds: [String] = []
+        if let fl: ConsoleFloorsResponse =
+            try? await consoleGet("\(base)/positioning/buildings/\(buildingId)/floors") {
+            floorIds = fl.floors.map(\.floorId)
         }
-        guard !out.isEmpty else { throw GsError.decode }
+        if floorIds.isEmpty {
+            let res: BuildingsResponse = try await get("api/m/buildings")
+            floorIds = res.buildings.first { $0.buildingId == buildingId }?
+                .floors.map(\.floorId) ?? []
+        }
+        var out: [Floor] = []
+        for id in floorIds {
+            let plan = try? await consolePlan(buildingId, id)   // 이름 획득 + 도면 선로딩 캐시
+            out.append(makeFloor(id: id, from: plan, withImage: false))
+        }
         return out
     }
 
-    private func mobileBuildings() async throws -> [SpaceBuilding] {
-        let res: BuildingsResponse = try await get("api/m/buildings")
-        return res.buildings.map { b in
-            SpaceBuilding(id: b.buildingId, name: b.buildingName,
-                     floors: b.floors.map { SpaceFloor(id: $0.floorId, name: $0.floorName, hasPlan: $0.hasPlan) })
-        }
+    /// 층 단건 — 도면 이미지까지 채워 반환. loadFloors 가 캐시를 데워 두면 왕복 없음.
+    func loadFloor(buildingId: String, floorId: String) async throws -> Floor {
+        let plan = try? await consolePlan(buildingId, floorId)
+        return makeFloor(id: floorId, from: plan, withImage: true)
     }
 
-    /// 선택한 building/floor의 도면·앵커·존 로드
-    func loadInfra(buildingId: String, floorId: String) async throws -> FloorInfra {
+    /// ConsolePlanResponse → Floor. withImage=false 면 치수·이름만 채우고 PNG 는 뺀다.
+    private func makeFloor(id: String, from plan: ConsolePlanResponse?, withImage: Bool) -> Floor {
+        guard let plan, let img = plan.plan?.image else {
+            return Floor(id: id, name: plan?.floorName ?? String(id.prefix(8)),
+                         hasPlan: plan?.hasPlan ?? false)
+        }
+        let heightM = img.widthM * Double(img.imgH) / Double(img.imgW)
+        return Floor(id: id,
+                     name: plan.floorName ?? String(id.prefix(8)),
+                     image: withImage ? img.pngData() : nil,
+                     hasPlan: plan.hasPlan,
+                     originX: img.originX, originY: img.originY,
+                     widthM: img.widthM, heightM: heightM)
+    }
+
+    /// 로케이터 + 세션ID — 측위 시작에 필요한 전부. GeoSpace 앵커 API 에서 온다.
+    func loadLocators(buildingId: String, floorId: String) async throws -> FloorLocators {
+        let res = try await getAnchors(floorId)
+        return FloorLocators(locators: res.anchors.compactMap { $0.toLocator() },
+                             sessionId: res.anchors.first?.sessionId)
+    }
+
+    /// 측위·판정 재료(로케이터·세션·존) 로드 — setFloorMap 이 부른다.
+    /// 도면 이미지는 여기 없다(지도는 Floor 로 그린다). 단 존 픽셀→미터 정규화에
+    /// 도면 치수가 필요해 plan 메타는 여전히 읽는다(캐시 재사용).
+    func loadFloorState(buildingId: String, floorId: String) async throws -> FloorState {
         status = SdkLocalized.text("gs.loading")
         async let planTask = getPlan(buildingId: buildingId, floorId)
         async let anchorTask = getAnchors(floorId)
@@ -92,29 +120,16 @@ final class GeospaceClient {
         let (plan, anchorRes) = try await (planTask, anchorTask)
         let zonesRaw = await zoneTask
 
-        guard let imageData = plan.image.pngData() else { throw GsError.noImage }
-        let widthM = plan.image.widthM
-        let heightM = widthM * Double(plan.image.imgH) / Double(plan.image.imgW)
-        let ox = plan.image.originX, oy = plan.image.originY
-
         let zones = normalizeZones(zonesRaw, image: plan.image)
-
-        // 측위 가능 판정 = 앵커 + 세션ID 존재. clusterStatus 는 안 따진다 —
-        // (등록 절차 상태일 뿐, 실제 통신 여부는 시작 후 수신 watchdog 이 판정)
-        let ready = !anchorRes.anchors.isEmpty
-            && anchorRes.anchors.first?.sessionId != nil
-        let infra = FloorInfra(
+        let state = FloorState(
             buildingId: buildingId,
             floorId: floorId,
             sessionId: anchorRes.anchors.first?.sessionId,
-            positioningReady: ready,
-            plan: FloorPlanImage(pngData: imageData, originX: ox, originY: oy,
-                                 widthM: widthM, heightM: heightM),
-            anchors: anchorRes.anchors.compactMap { $0.toAnchor() },
+            locators: anchorRes.anchors.compactMap { $0.toLocator() },
             zones: zones
         )
-        status = SdkLocalized.format("gs.done", infra.anchors.count, zones.count)
-        return infra
+        status = SdkLocalized.format("gs.done", state.locators.count, zones.count)
+        return state
     }
 
     // MARK: - 엔드포인트
@@ -305,7 +320,11 @@ final class GeospaceClient {
     /// console §6.2 buildings / §6.3 floors 응답 (snake_case)
     private struct ConsoleBuildingsResponse: Decodable {
         let buildings: [B]
-        struct B: Decodable { let buildingId: String; let name: String }
+        struct B: Decodable {
+            let buildingId: String
+            let name: String
+            let floorCount: Int?     // 서버 floor_count (TBD — 실릴 때까지 nil)
+        }
     }
     private struct ConsoleFloorsResponse: Decodable {
         let floors: [F]
@@ -333,10 +352,10 @@ final class GeospaceClient {
         let sessionId: Int?          // = networkIdentifier (층별 UWB 세션)
         let clusterStatus: String?   // "auto_done"=배치완료 / "apply_failed" 등=미배치
         /// 주소 = UWB MAC 뒤 2바이트 (마지막 4 hex)
-        func toAnchor() -> AnchorPoint? {
+        func toLocator() -> Locator? {
             guard let mac = uwbMac, let x, let y,
                   let addr = Int(String(mac.suffix(4)), radix: 16) else { return nil }
-            return AnchorPoint(address: addr & 0xFFFF, x: x, y: y, z: 0)
+            return Locator(address: addr & 0xFFFF, x: x, y: y, z: 0)
         }
     }
 

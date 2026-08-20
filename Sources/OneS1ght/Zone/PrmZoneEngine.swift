@@ -28,7 +28,7 @@ public final class PrmZoneEngine: ZoneJudging {
 
     /// PRM 인스턴스 이름 — 엔진 파일로그(gpi-logger)와 콜백의 prmName 으로 나오는 식별용.
     /// 기기 단위 익명 ID 를 없앴으므로 고정값을 쓴다. 인스턴스는 기기당 하나뿐이라
-    /// 구분이 필요 없고, 서버 데이터와의 대조는 user_id·visitor_id 로 한다.
+    /// 구분이 필요 없고, 서버 데이터와의 대조는 profile_id·visitor_id 로 한다.
     private static let prmName = "onesight"
     private let prm: Prm
     private let bridge: CallbackBridge
@@ -233,7 +233,7 @@ public final class PrmZoneEngine: ZoneJudging {
         func onReceivedInout(prmName: String, inoutStr: String, areaName: String) {
             Task { @MainActor [weak owner] in
                 // 원본 콜백 증적 — 어댑터 번역 전 PRM 이 준 그대로 (판정 주체가 PRM 임을 파일로 증명)
-                // prmName = 인스턴스 이름 = anon_user_id (2.0.0 이전의 tagId 자리)
+                // prmName = 인스턴스 이름 = anon_profile_id (2.0.0 이전의 tagId 자리)
                 owner?.onLog?("PRM ← \(inoutStr) tag=\(prmName) area=\(areaName)")
                 owner?.handleInout(inoutStr, areaName: areaName)
             }
