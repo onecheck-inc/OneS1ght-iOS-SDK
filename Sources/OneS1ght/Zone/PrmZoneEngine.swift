@@ -27,9 +27,10 @@ public final class PrmZoneEngine: ZoneJudging {
     public var onLog: ((String) -> Void)?        // PRM 수명주기·오류 진단 (조용한 실패 금지)
 
     private let prm: Prm = PrmFactory.getInstance()
-    /// pushEvent 태그 = 기기 익명 ID(UUID) — PRM 내부 파일로그(gpi-logger)와
-    /// 서버 존 이벤트(anon_user_id)를 같은 키로 대조할 수 있게 한다.
-    private lazy var tagId: String = IdentityStore().anonUserId
+    /// pushEvent 태그 — PRM 내부 파일로그(gpi-logger)와 서버 존 이벤트를 같은 키로
+    /// 대조하기 위한 값. 판정 자체에는 쓰이지 않는다.
+    /// SDK 코어가 apply(config:) 로 userId 를 꽂아 준다 (기본값은 빈 문자열).
+    public var tag: String = ""
     private let bridge = CallbackBridge()
     private var nameToZone: [String: Zone] = [:]
 
@@ -137,7 +138,7 @@ public final class PrmZoneEngine: ZoneJudging {
         }
         // logShadowCount(p, now: now)   // 적립 그림자 카운트 로그 — 필요할 때만 주석 해제 (4Hz 로그량 큼)
         // 직접 주입 모드의 spaceId 는 1 고정 (PRM README 컨벤션)
-        prm.pushEvent(spaceId: 1, tagId: tagId, x: p.x, y: p.y, z: 0)
+        prm.pushEvent(spaceId: 1, tagId: tag, x: p.x, y: p.y, z: 0)
     }
 
     // ── 진입 적립 그림자 카운트 — 엔진이 내부 카운트를 노출하지 않아 SDK 가 같은 규칙으로 병행 계산.

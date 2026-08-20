@@ -27,18 +27,15 @@ public enum ZoneEventStatus: String, Codable {
 
 // MARK: - 요청 (SDK → 서버)
 
-/// verify의 client 블록 — 필수는 anon_user_id뿐, 나머지는 "가진 것만" (생략 시 서버 기존값 보존)
+/// verify의 client 블록 — 필수는 user_id뿐, 나머지는 "가진 것만" (생략 시 서버 기존값 보존)
 public struct ClientInfo: Codable {
-    public let anon_user_id: String
+    public let user_id: String
     public var device_model: String?
     public var os_name: String?
     public var os_version: String?
     public var app_version: String?
     public var sdk_version: String?
     public var device_language: String?
-    public var customer_id: String?
-    public var consent: Bool?
-    public var consent_at: String?
     public var attributes: [String: String]?
 }
 
@@ -51,7 +48,7 @@ public struct ReqVerify: Codable {
 
 /// POST /events/zone — 존 입장/체류/퇴장 (판정 시마다)
 public struct ReqZoneEvent: Codable {
-    public let anon_user_id: String
+    public let user_id: String
     public let visitor_id: String
     public let floor_id: String
     public let zone_id: String
@@ -69,7 +66,7 @@ public struct PositionPoint: Codable {
 
 /// POST /positioning/logs — 좌표 벌크 (봉투 1회 + points[] 반복, 요청당 ≤500)
 public struct ReqPositionBulk: Codable {
-    public let anon_user_id: String
+    public let user_id: String
     public let visitor_id: String
     public let platform_name: String
     public let points: [PositionPoint]

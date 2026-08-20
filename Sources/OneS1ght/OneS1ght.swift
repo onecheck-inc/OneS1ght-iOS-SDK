@@ -14,10 +14,11 @@
 //    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
 //    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
-//    // ③ 매장 진입 시 — 측위 가동
+//    // ③ 인증 — 회원 ID 또는 createGuestID() 로 받은 값
+//    OneS1ght.identify(userId: "emp_1234")
+//    // ④ 매장 진입 시 — 측위 가동
 //    OneS1ght.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
-//    try await OneS1ght.start(consent: userConsented)
-//    OneS1ght.identify(customerId: "cust_123")           // (선택) 로그인 시
+//    try await OneS1ght.start()
 //    await OneS1ght.stop()                               // 재시작 가능 (초기화 유지)
 //
 
@@ -50,8 +51,14 @@ public final class OneS1ght {
 
     // MARK: - 상태
 
-    /// B2C 유저 익명 ID (Keychain 영속)
-    public static var anonUserId: String { identity.anonUserId }
+    /// 비회원용 ID 발급. **SDK 는 보관하지 않는다** — 앱이 저장해 재사용해야 한다.
+    /// 회원이면 이 값 대신 고객사 회원 ID 를 identify(userId:) 로 넘긴다.
+    ///
+    ///     let id = UserDefaults.standard.string(forKey: "onesight.guestId")
+    ///         ?? { let v = OneS1ght.createGuestID()
+    ///              UserDefaults.standard.set(v, forKey: "onesight.guestId"); return v }()
+    ///     OneS1ght.identify(userId: id)
+    public static func createGuestID() -> String { IdentityStore.createGuestID() }
 
     /// 세션 가능 상태인가 (initialize 성공 = 기기 통과 + 키 유효 + 설정 로드됨)
     public static var isInitialized: Bool { coordinator?.isPrepared ?? false }
@@ -162,9 +169,9 @@ public final class OneS1ght {
     }
 
     /// 시작 (매장 진입 시) — 내장 UWB 측위로 가동. 고객사가 쓰는 표준 경로.
-    /// - consent: 위치정보 수집 동의 (호스트가 취득). false면 수집 미시작 (.consentRequired)
-    /// - throws: .notInitialized / .consentRequired / .deviceNotSupported / .osVersionTooLow / ApiError
-    public static func start(consent: Bool) async throws {
+    /// identify(userId:) 가 선행되어야 한다 — 인증이 앞에 있는 것이 이 SDK 의 전제다.
+    /// - throws: .notInitialized / .notIdentified / .deviceNotSupported / .osVersionTooLow / ApiError
+    public static func start() async throws {
         #if os(iOS)
         guard #available(iOS 27.0, *) else { throw SdkError.osVersionTooLow }
         // 시뮬레이터는 여기서 막힌다 (UWB 칩 없음 → isSupported false).
@@ -174,20 +181,20 @@ public final class OneS1ght {
         builtInProvider = uwb
         uwb.onZoneEvent = { event in OneS1ght.onZoneEvent?(event) }
         uwb.onLog = { line in OneS1ght.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
-        try await start(consent: consent, provider: uwb)
+        try await start(provider: uwb)
         #else
         throw SdkError.deviceNotSupported
         #endif
     }
 
     /// 시작 (커스텀 측위 주입) — 테스트(Mock)·데모(UI 관찰용 provider 직접 보유) 등 특수 경우용.
-    public static func start(consent: Bool, provider: PositioningProvider) async throws {
+    public static func start(provider: PositioningProvider) async throws {
         guard let coordinator else { throw SdkError.notInitialized }   // initialize 자체를 안 부른 경우
         // 일시 장애 회복 — initialize 가 네트워크 순단으로 실패했더라도 시작 시점에 준비를 마저 시도한다
         // (키는 보관돼 있음). 결정적 실패(잘못된 키 등)는 같은 사유로 다시 throw 되므로 거짓 신호는 없다.
         if !coordinator.isPrepared { try await coordinator.prepare() }
-        try await coordinator.start(consent: consent, provider: provider)
-        if let customerId { coordinator.identify(customerId: customerId) }   // start 전 identify 반영
+        if let userId { coordinator.identify(userId: userId) }   // start 전 identify 반영
+        try await coordinator.start(provider: provider)
     }
 
     /// 종료: 측위 정지 + 잔여 좌표 flush. 초기화 상태는 유지 → start 재호출로 재시작 가능.
@@ -228,17 +235,19 @@ public final class OneS1ght {
 
     // MARK: - 사용자
 
-    /// (선택) 고객사 회원 ID 연결 — 로그인 후 호출, 로그아웃 시 nil
-    public static func identify(customerId: String?) {
-        self.customerId = customerId
-        coordinator?.identify(customerId: customerId)
+    /// 사용자 지정 — 이 SDK 의 유일한 사용자 식별자.
+    /// 회원이면 고객사 회원 ID, 비회원이면 createGuestID() 로 받아 앱이 보관한 값을 넘긴다.
+    /// start() 전에 반드시 호출해야 한다 (없으면 .notIdentified).
+    public static func identify(userId: String?) {
+        self.userId = userId
+        coordinator?.identify(userId: userId)
     }
 
     // MARK: - 내부 부품 (인스턴스 — 키 교체·reset 때 갈아끼움)
 
     private static let identity = IdentityStore()
     private static var coordinator: SessionCoordinator?
-    private static var customerId: String?
+    private static var userId: String?
     private static var builtInProvider: PositioningProvider?          // 내장 provider 재사용 (재시작 대비)
     private static var storedKeys: (sdk: String, geospace: String?)?  // 키 교체 감지용
 }

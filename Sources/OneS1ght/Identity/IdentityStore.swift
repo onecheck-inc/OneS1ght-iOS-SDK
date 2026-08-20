@@ -2,7 +2,9 @@
 //  IdentityStore.swift
 //  식별자 규약 (사양서 §4)
 //
-//  · anon_user_id : 클라이언트가 UUID 생성 → Keychain 영속 (앱 재설치 전까지 유지)
+//  · user_id      : SDK 가 만들지 않는다. 고객사가 identify(userId:) 로 넘긴다.
+//                   이 SDK 가 놓이는 자리(근태·매장·행사)는 전부 인증이 앞에 있어,
+//                   기기 단위 익명 ID 를 따로 두면 같은 사람이 기기 수만큼 갈라진다.
 //  · visitor_id   : 방문 1건마다 "v-YYYYMMDD-NNN" (NNN = 그날 방문 카운터, 001부터)
 //
 //  Keychain은 SecureStore 프로토콜 뒤로 — 테스트는 인메모리 가짜 주입, 실기기는 KeychainSecureStore.
@@ -24,7 +26,6 @@ public protocol SecureStore {
 public final class IdentityStore {
 
     private enum Key {
-        static let anonUserId = "onesight.anon_user_id"      // SecureStore
         static let visitorDate = "onesight.visitor.date"     // UserDefaults
         static let visitorSeq  = "onesight.visitor.seq"      // UserDefaults
     }
@@ -41,22 +42,9 @@ public final class IdentityStore {
         self.now = now
     }
 
-    /// 메모리 캐시 — Keychain이 실패해도 "실행 중엔" 같은 값 보장 (매 접근 재발급 방지)
-    private var cachedAnonId: String?
-
-    /// 익명 유저 ID — 최초 접근 시 UUID 생성·영속, 이후 항상 같은 값
-    public var anonUserId: String {
-        if let cachedAnonId { return cachedAnonId }
-        let id: String
-        if let existing = secure.read(Key.anonUserId) {
-            id = existing
-        } else {
-            id = UUID().uuidString
-            secure.write(Key.anonUserId, id)
-        }
-        cachedAnonId = id
-        return id
-    }
+    /// 비회원용 ID 발급. **SDK 는 보관하지 않는다** — 앱이 저장해 재사용해야 한다.
+    /// 기기 식별자를 SDK 가 몰래 영속시키지 않겠다는 뜻이기도 하다.
+    public static func createGuestID() -> String { "guest_" + UUID().uuidString }
 
     /// 방문 ID 발급 — "v-YYYYMMDD-NNN". 호출할 때마다 그날 카운터 +1, 날짜 바뀌면 001부터
     public func newVisitorId() -> String {

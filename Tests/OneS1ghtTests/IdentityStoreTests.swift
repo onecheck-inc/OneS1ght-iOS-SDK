@@ -25,13 +25,13 @@ final class IdentityStoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: "IdentityStoreTests")
     }
 
-    // anon_user_id — 최초 생성 후 "재기동"(새 인스턴스)에도 동일값
-    func testAnonUserId_persistsAcrossRestarts() {
-        let first = IdentityStore(secure: secure, defaults: defaults).anonUserId
-        XCTAssertFalse(first.isEmpty)
-        // 새 IdentityStore = 앱 재기동 시뮬레이션 (같은 Keychain 공유)
-        let second = IdentityStore(secure: secure, defaults: defaults).anonUserId
-        XCTAssertEqual(first, second)
+    // 게스트 ID — 발급만 하고 SDK 는 보관하지 않는다 (앱이 저장할 몫).
+    // 부를 때마다 다른 값이 나와야 "SDK 가 몰래 영속시키지 않는다"가 보장된다.
+    func testCreateGuestID_isFreshEachCall() {
+        let a = IdentityStore.createGuestID()
+        let b = IdentityStore.createGuestID()
+        XCTAssertTrue(a.hasPrefix("guest_"))
+        XCTAssertNotEqual(a, b)
     }
 
     // visitor_id — 형식 v-YYYYMMDD-NNN + 같은 날 카운터 증가

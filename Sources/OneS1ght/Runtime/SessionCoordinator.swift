@@ -19,8 +19,8 @@ import UIKit
 /// 서버 에러(ApiError) 밖의 SDK 수준 실패
 public enum SdkError: Error, Equatable {
     case notInitialized        // initialize() 안 하고 start() 호출
+    case notIdentified         // identify(userId:) 없이 start() 호출
     case positioningDisabled   // verify는 통과했으나 positioning_enabled=false
-    case consentRequired       // 동의 없음 → 수집 미시작
     case deviceNotSupported    // UWB 칩 없음 (측위 불가 기기)
     case osVersionTooLow       // iOS 27 미만
 }
@@ -47,6 +47,8 @@ final class SessionCoordinator {
     /// 완료 시점(currentInfra)만 보면 자동 선택과 동시에 진행돼 늦게 끝난 쪽이 이기는 경합이 생긴다.
     private(set) var isRunning = false
     private(set) var visitorId = ""
+    /// 고객사가 넘긴 사용자 ID — 이 SDK 의 유일한 사용자 식별자
+    private(set) var userId: String?
     private(set) var floorConfigs: [String: ResFloorConfig] = [:]   // 층별 존 설정 (lazy)
     private var loadingFloors: Set<String> = []
     private(set) var currentInfra: FloorInfra?   // loadFloor 결과 — start 시 provider 에 주입
@@ -92,7 +94,7 @@ final class SessionCoordinator {
 
         // 키 검증 + 클라 등록 (consent는 아직 모름 → 생략, 서버 기존값 보존)
         // verify 성공 = 키 유효 + 백엔드 도달 가능 두 가지를 한 번에 확인한 것.
-        let verified = try await api.verify(makeVerifyRequest(consent: nil))
+        let verified = try await api.verify(makeVerifyRequest())
         guard verified.valid, verified.positioning_enabled else {
             throw SdkError.positioningDisabled
         }
@@ -171,14 +173,10 @@ final class SessionCoordinator {
 
     /// 시작(매장 진입 시) — 동의 게이트 + consent 기록 + 측위 가동.
     /// prepare가 미리 끝나 있어 서버 왕복은 consent 기록 1회뿐 (buildings 재요청 없음).
-    func start(consent: Bool, provider: PositioningProvider) async throws {
+    func start(provider: PositioningProvider) async throws {
         guard !isRunning else { return }                             // 멱등
         guard isPrepared else { throw SdkError.notInitialized }
-        guard consent else { throw SdkError.consentRequired }        // 동의 게이팅 — 수집 미시작
-
-        // consent 기록 (verify 재호출 — "보낸 필드만 갱신" 규칙. 키 폐기도 이때 재확인됨)
-        _ = try await api.verify(makeVerifyRequest(consent: consent))
-        log(SdkLocalized.text("coord.consent"))
+        _ = try requireUserId()                                      // 인증이 앞에 있어야 한다
 
         // 인프라 주입 — loadFloor 로 받아둔 층(앵커·세션·존)이 있을 때만.
         // 층 미선택이면 측위 파이프라인은 돌되 좌표가 나오지 않는다 → 조용히 두지 않고 알린다.
@@ -198,14 +196,10 @@ final class SessionCoordinator {
         observeAppLifecycle()
     }
 
-    /// (선택) 고객사 회원 연결 — verify 재호출 (보낸 필드만 갱신되는 서버 규칙 활용)
-    func identify(customerId: String?) {
-        Task {
-            var client = baseClientInfo()
-            client.customer_id = customerId
-            _ = try? await api.verify(ReqVerify(platform_name: "iOS",
-                                                app_id: Self.appId, client: client))
-        }
+    /// 사용자 지정. 이 SDK 의 유일한 사용자 식별자다 —
+    /// 고객사가 회원 ID 또는 createGuestID() 로 받은 값을 넘긴다.
+    func identify(userId: String?) {
+        self.userId = userId
     }
 
     /// 종료: 측위 정지 + 잔여 좌표 flush (도식 11)
@@ -225,7 +219,8 @@ final class SessionCoordinator {
 
     /// 좌표 벌크 전송 (buffer의 Sender) — true = 200
     private func sendPositions(_ batch: [PositionPoint]) async -> Bool {
-        let req = ReqPositionBulk(anon_user_id: identity.anonUserId,
+        guard let userId else { return false }
+        let req = ReqPositionBulk(user_id: userId,
                                   visitor_id: visitorId,
                                   platform_name: "iOS",
                                   points: batch)
@@ -265,8 +260,14 @@ final class SessionCoordinator {
 
     private static var appId: String? { Bundle.main.bundleIdentifier }
 
-    private func baseClientInfo() -> ClientInfo {
-        var c = ClientInfo(anon_user_id: identity.anonUserId)
+    /// userId 가 없으면 세션이 성립하지 않는다 — 인증이 앞에 있는 것이 이 SDK 의 전제다.
+    private func requireUserId() throws -> String {
+        guard let userId, !userId.isEmpty else { throw SdkError.notIdentified }
+        return userId
+    }
+
+    private func baseClientInfo(_ userId: String) -> ClientInfo {
+        var c = ClientInfo(user_id: userId)
         c.sdk_version = OneS1ght.sdkVersion
         #if canImport(UIKit)
         c.os_name = "iOS"
@@ -275,11 +276,8 @@ final class SessionCoordinator {
         return c
     }
 
-    private func makeVerifyRequest(consent: Bool?) -> ReqVerify {
-        var client = baseClientInfo()
-        client.consent = consent                              // nil이면 필드 생략 → 서버 기존값 보존
-        if consent == true { client.consent_at = Self.iso(Date()) }
-        return ReqVerify(platform_name: "iOS", app_id: Self.appId, client: client)
+    private func makeVerifyRequest() -> ReqVerify {
+        ReqVerify(platform_name: "iOS", app_id: Self.appId, client: nil)
     }
 
     // MARK: - 배치 트리거 (300건 / 60초 / 백그라운드)
@@ -354,7 +352,8 @@ extension SessionCoordinator: PositioningProviderDelegate {
     func provider(_ p: PositioningProvider, didDetectZone zoneId: String,
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date) {
         ensureFloorLoaded(floorId)
-        let req = ReqZoneEvent(anon_user_id: identity.anonUserId,
+        guard let userId else { return }
+        let req = ReqZoneEvent(user_id: userId,
                                visitor_id: visitorId,
                                floor_id: floorId,
                                zone_id: zoneId,
