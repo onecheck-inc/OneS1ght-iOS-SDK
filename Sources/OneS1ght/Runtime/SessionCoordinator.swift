@@ -295,7 +295,7 @@ final class SessionCoordinator {
 
     private func baseClientInfo() -> ClientInfo {
         var c = ClientInfo(anon_user_id: identity.anonUserId)
-        c.sdk_version = OneS1ghtSDK.sdkVersion
+        c.sdk_version = OneS1ght.sdkVersion
         #if canImport(UIKit)
         c.os_name = "iOS"
         c.os_version = UIDevice.current.systemVersion

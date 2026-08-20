@@ -4,7 +4,7 @@
 //
 
 import XCTest
-@testable import OneS1ghtSDK
+@testable import OneS1ght
 
 /// Keychain 대역 — 딕셔너리에 저장 (프로세스 내 영속 시뮬레이션)
 final class InMemorySecureStore: SecureStore {

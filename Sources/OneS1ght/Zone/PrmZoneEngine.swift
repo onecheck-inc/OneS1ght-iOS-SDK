@@ -1,6 +1,6 @@
 //
 //  PrmZoneEngine.swift
-//  OneS1ghtSDK
+//  OneS1ght
 //
 //  Geoplan PRM(gpi-prm) 기반 존 판정 — iOS 실전 엔진.
 //  · 콘솔 존 API의 판정 파라미터(in_dist·in_count·out_period 등)를 그대로 소비한다

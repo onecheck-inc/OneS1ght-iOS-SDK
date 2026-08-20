@@ -1,6 +1,6 @@
 // swift-tools-version: 5.9
 //
-//  OneS1ghtSDK — OneS1ght 실내 위치 인텔리전스 SDK (iOS / Swift)
+//  OneS1ght — OneS1ght 실내 위치 인텔리전스 SDK (iOS / Swift)
 //
 //  · gpi-dltdoa(측위 엔진)를 xcframework로 품어 재배포 — 고객은 이 패키지 하나만 추가.
 //    (외부 URL 의존성 없음 — Geoplan 레포 접근 불필요)
@@ -11,13 +11,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "OneS1ghtSDK",
+    name: "OneS1ght",
     platforms: [
         .iOS(.v15),
         .macOS(.v14),          // swift test를 맥에서 돌리기 위함
     ],
     products: [
-        .library(name: "OneS1ghtSDK", targets: ["OneS1ghtSDK"]),
+        .library(name: "OneS1ght", targets: ["OneS1ght"]),
     ],
     dependencies: [
         // 진출입 판정 엔진 (Geoplan PRM) — 서버 존 파라미터(in_dist 등)를 소비하는 공식 판정.
@@ -35,25 +35,25 @@ let package = Package(
             path: "Frameworks/gpi-dltdoa.xcframework"
         ),
         .target(
-            name: "OneS1ghtSDK",
+            name: "OneS1ght",
             dependencies: [
                 .target(name: "gpi-dltdoa", condition: .when(platforms: [.iOS])),
                 .product(name: "gpi-prm", package: "gpi-prm",
                          condition: .when(platforms: [.iOS])),   // 맥 테스트는 자체 ZoneEngine 경로
             ],
-            path: "Sources/OneS1ghtSDK",
+            path: "Sources/OneS1ght",
             resources: [
                 .process("Resources/i18n/SdkLocalization.json"),   // SDK 로그 다국어 (Bundle.module)
             ]
         ),
         .testTarget(
-            name: "OneS1ghtSDKTests",
+            name: "OneS1ghtTests",
             dependencies: [
-                "OneS1ghtSDK",
+                "OneS1ght",
                 // PRM 판정 규칙 실측 프로브(iOS 시뮬레이터 전용)에서 엔진을 직접 호출
                 .product(name: "gpi-prm", package: "gpi-prm", condition: .when(platforms: [.iOS])),
             ],
-            path: "Tests/OneS1ghtSDKTests"
+            path: "Tests/OneS1ghtTests"
         ),
     ]
 )

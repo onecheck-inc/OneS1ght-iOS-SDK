@@ -4,7 +4,7 @@
 //
 
 import XCTest
-@testable import OneS1ghtSDK
+@testable import OneS1ght
 
 final class ApiClientTests: XCTestCase {
 

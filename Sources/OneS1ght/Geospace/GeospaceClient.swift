@@ -1,6 +1,6 @@
 //
 //  GeospaceClient.swift
-//  OneS1ghtSDK
+//  OneS1ght
 //
 //  ⚠️ SDK 내부 전용 — 호스트 앱은 이 타입을 모른다.
 //     고객사는 initialize(apiKey:geospaceKey:) 로 키 2개만 넘기고,

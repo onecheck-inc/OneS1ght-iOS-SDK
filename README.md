@@ -13,21 +13,21 @@ https://github.com/onecheck-inc/onesight-mobile-swift
 
 ## 빠른 시작
 ```swift
-import OneS1ghtSDK
+import OneS1ght
 
 // ① 앱 시작 시 — 키 검증 + 설정 로드
-try await OneS1ghtSDK.initialize(sdkKey: "ock_sdk_...")
+try await OneS1ght.initialize(sdkKey: "ock_sdk_...")
 
 // ② 매장 화면 진입 시 — 측위 시작 (위치 권한·수집 동의 후)
-try await OneS1ghtSDK.start(consent: true)
+try await OneS1ght.start(consent: true)
 
 // 구역 이벤트 수신
-OneS1ghtSDK.onZoneEvent = { event in
+OneS1ght.onZoneEvent = { event in
     if case .enter(let zone, _) = event { print("진입: \(zone.name)") }
 }
 
 // ③ 매장 화면 이탈 시
-await OneS1ghtSDK.stop()
+await OneS1ght.stop()
 ```
 
 ## 주요 API

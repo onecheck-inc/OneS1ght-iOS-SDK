@@ -1,5 +1,5 @@
 //
-//  OneS1ghtSDK.swift
+//  OneS1ght.swift
 //  공개 진입점 — 호스트 앱이 보는 유일한 표면.
 //
 //  설계 규칙: "문은 static, 부품은 인스턴스".
@@ -10,21 +10,21 @@
 //
 //  사용 (호스트 앱):
 //    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 층 자동 선택(첫 건물·첫 층). 이것만으로 측위 준비 끝.
-//    try await OneS1ghtSDK.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
+//    try await OneS1ght.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
 //    // (선택) 층을 직접 고르는 앱만 — 자동 선택을 덮어쓴다
-//    let buildings = try await OneS1ghtSDK.buildings()
-//    let infra = try await OneS1ghtSDK.loadFloor(buildingId: b.id, floorId: f.id)
+//    let buildings = try await OneS1ght.buildings()
+//    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
 //    // ② 매장 진입 시 — 측위 가동 (initialize가 미리 끝나 있어 즉시 시작)
-//    OneS1ghtSDK.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
-//    try await OneS1ghtSDK.start(consent: userConsented)
-//    OneS1ghtSDK.identify(customerId: "cust_123")           // (선택) 로그인 시
-//    await OneS1ghtSDK.stop()                               // 재시작 가능 (초기화 유지)
+//    OneS1ght.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
+//    try await OneS1ght.start(consent: userConsented)
+//    OneS1ght.identify(customerId: "cust_123")           // (선택) 로그인 시
+//    await OneS1ght.stop()                               // 재시작 가능 (초기화 유지)
 //
 
 import Foundation
 
 @MainActor
-public final class OneS1ghtSDK {
+public final class OneS1ght {
 
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
@@ -119,9 +119,9 @@ public final class OneS1ghtSDK {
             let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL, session: session),
                                        identity: identity,
                                        geospace: geospace)
-            c.onTriggers = { zoneId, triggers in OneS1ghtSDK.onTriggers?(zoneId, triggers) }
-            c.onPosition = { coord in OneS1ghtSDK.onPosition?(coord) }
-            c.onLog = { line in OneS1ghtSDK.onDebugLog?(line) }
+            c.onTriggers = { zoneId, triggers in OneS1ght.onTriggers?(zoneId, triggers) }
+            c.onPosition = { coord in OneS1ght.onPosition?(coord) }
+            c.onLog = { line in OneS1ght.onDebugLog?(line) }
             coordinator = c
             storedKeys = (sdkKey, geospaceKey)
         }
@@ -141,8 +141,8 @@ public final class OneS1ghtSDK {
         guard UwbPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
         let uwb = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
         builtInProvider = uwb
-        uwb.onZoneEvent = { event in OneS1ghtSDK.onZoneEvent?(event) }
-        uwb.onLog = { line in OneS1ghtSDK.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
+        uwb.onZoneEvent = { event in OneS1ght.onZoneEvent?(event) }
+        uwb.onLog = { line in OneS1ght.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
         try await start(consent: consent, provider: uwb)
         #else
         throw SdkError.deviceNotSupported
