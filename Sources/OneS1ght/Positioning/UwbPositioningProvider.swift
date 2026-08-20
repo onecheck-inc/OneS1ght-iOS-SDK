@@ -172,6 +172,18 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         }
     }
 
+    /// 프로토콜용 진단 — 코어(SessionCoordinator)가 이 값을 읽어 로그 코드로 남긴다.
+    /// AnchorDiagnostic 을 그대로 노출하지 않는 이유는 코어가 iOS 전용 타입을 몰라야 하기 때문이다.
+    public var positioningDiagnostic: PositioningDiagnostic? {
+        let d = diagnostic
+        return PositioningDiagnostic(
+            registeredCount: d.registered.count,
+            receivedCount: d.received.count,
+            matchedCount: d.matched.count,
+            missingAddresses: d.missing,
+            hasFix: d.hasFix)
+    }
+
     /// 현재 시점 측위 통신 진단 (트래킹 중 누적 수신 기준 — 세션 켜져 있어야 의미 있음).
     public var diagnostic: AnchorDiagnostic {
         let reg = Set(anchors.keys)
