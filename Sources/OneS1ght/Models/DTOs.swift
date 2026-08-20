@@ -98,6 +98,29 @@ public struct ResProfileDelete: Codable {
     public let deleted: Bool
 }
 
+// MARK: - SDK 로그 (관리자가 콘솔 로그 분석기에서 본다)
+
+/// 로그 한 줄. **문구가 아니라 코드를 보낸다** — 사람이 읽는 문장은 콘솔이
+/// 관리자 화면 언어로 렌더링한다(로그를 읽는 사람은 기기 사용자가 아니다).
+public struct SdkLogEntry: Codable {
+    public let code: String          // E1001 · I3001 …
+    public let level: String         // ERROR · WARN · INFO
+    public let message: String       // 문맥만 (floor=… building=…). 개인정보·키 금지
+    public let at: String            // ISO-8601 (UTC, 밀리초)
+}
+
+/// POST /logs — 요청당 최대 500건 (초과 시 422)
+public struct ReqSdkLogs: Codable {
+    public let profile_id: String
+    public let platform_name: String
+    public let sdk_version: String
+    public let entries: [SdkLogEntry]
+}
+
+public struct ResSdkLogs: Codable {
+    public let accepted_count: Int
+}
+
 // MARK: - 응답 (서버 → SDK)
 
 /// POST /auth/verify 응답

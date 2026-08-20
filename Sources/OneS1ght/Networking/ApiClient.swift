@@ -93,6 +93,15 @@ public final class ApiClient {
         try await send("/profiles/\(profileId)", method: "DELETE", body: Optional<ReqProfile>.none)
     }
 
+    // MARK: - SDK 로그
+
+    /// ⑩ POST /logs — 관리자가 콘솔 로그 분석기에서 볼 줄을 적재한다.
+    /// 서버가 느슨하게 받도록 설계돼 있어(레벨 정규화·2000자 절단·시각 결측 보정)
+    /// 실패해도 앱 동작에는 영향이 없다.
+    public func sendLogs(_ req: ReqSdkLogs) async throws -> ResSdkLogs {
+        try await post("/logs", body: req)
+    }
+
     // MARK: - 내부 공통
 
     private func get<R: Decodable>(_ path: String) async throws -> R {

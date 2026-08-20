@@ -70,6 +70,40 @@ final class SessionCoordinator {
     var onLog: ((String) -> Void)?
     private func log(_ msg: String) { onLog?(msg) }
 
+    // MARK: - 서버 로그 (콘솔 로그 분석기)
+
+    private(set) var logBuffer: SdkLogBuffer!
+
+    /// 에러를 남긴다 — onDebugLog(시스템 언어 문구) + 서버(코드 + 문맥).
+    /// 서버로는 문구를 보내지 않는다: 읽는 사람이 기기 사용자가 아니라 관리자라
+    /// 콘솔이 관리자 화면 언어로 렌더링해야 한다.
+    func report(_ code: SdkErrorCode, _ context: String = "") {
+        log("[\(code.rawValue)] \(code.summary)\(context.isEmpty ? "" : " — \(context)")")
+        logBuffer?.add(SdkLogEntry(code: code.rawValue, level: code.level.rawValue,
+                                   message: context, at: Self.iso(Date())))
+    }
+
+    /// 세션 추적용 정보 로그 — 에러가 아니다.
+    func report(_ code: SdkInfoCode, _ context: String = "") {
+        log("[\(code.rawValue)] \(code.summary)\(context.isEmpty ? "" : " — \(context)")")
+        logBuffer?.add(SdkLogEntry(code: code.rawValue, level: SdkLogLevel.info.rawValue,
+                                   message: context, at: Self.iso(Date())))
+    }
+
+    /// 서버 통신 실패를 코드로 옮겨 남긴다. ApiError 가 아니면 network 로 본다.
+    func reportApi(_ error: Error, _ context: String = "") {
+        let code = (error as? ApiError)?.code ?? .network
+        report(code, context)
+    }
+
+    private func sendLogs(_ batch: [SdkLogEntry]) async -> Bool {
+        // profileId 가 없으면 귀속할 곳이 없다 — 로그를 버린다(초기화 전 단계).
+        guard let profileId else { return false }
+        let req = ReqSdkLogs(profile_id: profileId, platform_name: "iOS",
+                             sdk_version: OneS1ght.sdkVersion, entries: batch)
+        return (try? await api.sendLogs(req)) != nil
+    }
+
     init(api: ApiClient,
          identity: IdentityStore,
          geospace: GeospaceClient? = nil,
@@ -83,6 +117,9 @@ final class SessionCoordinator {
         self.flushInterval = flushInterval
         self.buffer = TrajectoryBuffer(maxPerRequest: maxPerRequest) { [weak self] batch in
             await self?.sendPositions(batch) ?? false
+        }
+        self.logBuffer = SdkLogBuffer { [weak self] batch in
+            await self?.sendLogs(batch) ?? false
         }
     }
 
@@ -108,8 +145,10 @@ final class SessionCoordinator {
         positionRateHz = min(max(hz, SdkDefaults.minRateHz), SdkDefaults.maxRateHz)
         remoteConfig = verified.remote_config ?? [:]
         log(SdkLocalized.format("coord.verifyPass", verified.tenant_code ?? "?"))
+        report(.initialized, "tenant=\(verified.tenant_code ?? "?")")
         if positionRateHz != SdkDefaults.positionRateHz {
             log(SdkLocalized.format("coord.rateApplied", positionRateHz))
+            report(.rateApplied, "rate=\(positionRateHz)")
         }
         isPrepared = true
     }
@@ -158,6 +197,12 @@ final class SessionCoordinator {
         floorState = state
         currentFloor = floor
         log(SdkLocalized.format("coord.floorLoaded", state.locators.count, String(floor.id.prefix(8))))
+        report(.floorSet, "building=\(buildingId) floor=\(floor.id) " +
+                          "locators=\(state.locators.count) zones=\(state.zones.count)")
+        // 측위가 실제로 가능한 상태인지 — 관리자가 콘솔에서 원인을 바로 볼 수 있게 코드로 남긴다
+        if state.locators.isEmpty { report(.locatorsMissing, "floor=\(floor.id)") }
+        if state.sessionId == nil { report(.sessionIdMissing, "floor=\(floor.id)") }
+        if state.zones.isEmpty    { report(.zonesEmpty,      "floor=\(floor.id)") }
         if isRunning { applyFloorStateToProvider() }      // 가동 중 층 전환
     }
 
@@ -220,11 +265,13 @@ final class SessionCoordinator {
             applyFloorStateToProvider()
         } else {
             log(SdkLocalized.text("coord.noFloorLoaded"))
+            report(.floorNotSet)
         }
 
         // 방문 시작
         visitorId = identity.newVisitorId()
         lastRecordedAt = nil
+        report(.positioningOn, "visitor=\(visitorId)")
         provider.delegate = self
         provider.start()
         isRunning = true
@@ -235,6 +282,7 @@ final class SessionCoordinator {
     /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
     func identify(profileId: String?) {
         self.profileId = profileId
+        if profileId != nil { report(.identified) }
     }
 
     // MARK: - 프로필 CRUD (키 검증 통과가 전제라 coordinator 경유)
@@ -268,7 +316,12 @@ final class SessionCoordinator {
         let pending = buffer.count
         log(SdkLocalized.format("coord.stopFlush", pending))
         await buffer.flush()
-        if buffer.count > 0 { log(SdkLocalized.format("coord.pendingLost", buffer.count)) }
+        if buffer.count > 0 {
+            log(SdkLocalized.format("coord.pendingLost", buffer.count))
+            report(.pendingDropped, "points=\(buffer.count)")
+        }
+        report(.positioningOff, "visitor=\(visitorId)")
+        await logBuffer.flush()          // 세션 종료 — 잔여 로그도 내보낸다
         isRunning = false
     }
 
@@ -287,6 +340,7 @@ final class SessionCoordinator {
             return true
         } catch {
             log(SdkLocalized.format("coord.logsFail", batch.count))
+            reportApi(error, "positions=\(batch.count)")
             return false
         }
     }
@@ -442,9 +496,11 @@ extension SessionCoordinator: PositioningProviderDelegate {
                     onTriggers?(zoneId, res.triggers)
                 } else {
                     log(SdkLocalized.format("coord.zoneDropNet", status.rawValue))
+                    report(.network, "zone=\(zoneId) status=\(status.rawValue) dropped")
                 }
             } catch {
                 log(SdkLocalized.format("coord.zoneDropErr", status.rawValue))   // 서버 500이면 여기 찍힘
+                reportApi(error, "zone=\(zoneId) status=\(status.rawValue) dropped")
             }
         }
     }
