@@ -298,5 +298,10 @@
     "ko": "⚠️ 선택된 층이 없어 측위 좌표가 나오지 않습니다 — loadFloor 를 먼저 호출하세요",
     "ja": "⚠️ 選択された階がないため測位座標が出ません — 先に loadFloor を呼び出してください",
     "en": "⚠️ No floor selected — positions will not be produced. Call loadFloor first."
+  },
+  "provider.permissionDenied": {
+    "ko": "⛔️ 측위 권한이 거부되어 중단합니다 — 설정 앱에서 허용해야 재개할 수 있습니다",
+    "ja": "⛔️ 測位権限が拒否されたため停止します — 設定アプリで許可すると再開できます",
+    "en": "⛔️ Positioning permission denied — enable it in Settings to resume."
   }
 }

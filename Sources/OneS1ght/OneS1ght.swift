@@ -78,6 +78,35 @@ public final class OneS1ght {
     /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 positioningAvailability 사용.
     public static var isPositioningAvailable: Bool { positioningAvailability == .available }
 
+    // MARK: - 권한
+
+    /// 측위 권한 확인. **호출하면 시스템 팝업이 뜬다** — 확인과 요청이 분리되지 않는다.
+    ///
+    /// NearbyInteraction 에는 상태만 읽는 API 가 없어(iOS 26.5 SDK 헤더 전수 확인),
+    /// NISession 을 실제로 띄워 보는 것이 유일한 확인 수단이다. 그래서 SDK 가 시점을
+    /// 정하지 않고 이 문을 따로 열어 둔다 — 앱이 적절한 맥락에서 부르면 된다.
+    ///
+    ///     try await OneS1ght.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
+    ///     switch await OneS1ght.permissions() {
+    ///     case .authorized:  break
+    ///     case .denied:      showSettingsGuide()   // 앱에서 재요청 불가 — 설정 앱으로
+    ///     case .unsupported: showUnsupportedNotice()
+    ///     }
+    ///
+    /// 이미 한 번 답한 권한이면 팝업 없이 즉시 돌아온다.
+    /// initialize 를 부르지 않았어도 호출할 수 있다 (기기 조건만 보는 검사라서).
+    /// - Returns: `.authorized` · `.denied` · `.unsupported`
+    ///   (30초 안에 응답이 없으면 보수적으로 `.denied`)
+    public static func permissions() async -> PermissionStatus {
+        #if os(iOS)
+        guard positioningAvailability == .available else { return .unsupported }
+        guard #available(iOS 27.0, *) else { return .unsupported }
+        return await NIPermissionProbe().run()
+        #else
+        return .unsupported
+        #endif
+    }
+
     // MARK: - 생명주기
 
     /// 초기화 (앱 시작 시 1회) — 기기 게이트 → 키 검증 + 테넌트 SDK 설정 수신.
