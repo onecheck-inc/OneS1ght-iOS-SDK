@@ -10,7 +10,7 @@
 //
 //  사용 (호스트 앱):
 //    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 테넌트 설정 수신
-//    try await OneS1ght.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
+//    try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
 //    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
 //    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
@@ -86,7 +86,7 @@ public final class OneS1ght {
     /// NISession 을 실제로 띄워 보는 것이 유일한 확인 수단이다. 그래서 SDK 가 시점을
     /// 정하지 않고 이 문을 따로 열어 둔다 — 앱이 적절한 맥락에서 부르면 된다.
     ///
-    ///     try await OneS1ght.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
+    ///     try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
     ///     switch await OneS1ght.permissions() {
     ///     case .authorized:  break
     ///     case .denied:      showSettingsGuide()   // 앱에서 재요청 불가 — 설정 앱으로
@@ -115,14 +115,14 @@ public final class OneS1ght {
     /// 실패 사유는 throw (osVersionTooLow/deviceNotSupported/invalidKey/positioningDisabled/network).
     /// 실패 시 재호출 = 재시도 · 성공 후 재호출 = 무시(멱등) · 다른 키로 재호출 = 세션 재구성.
     /// - sdkKey: OneS1ght 콘솔 발급 (ock_) — 인증·존·수집·이벤트·도면
-    /// - geospaceKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
+    /// - geoSdkKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
     ///   서버 통합이 끝나면 불필요해지는 과도기 인자 — 생략 시 측위만 비활성, 나머진 동작.
     /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
     ///   콘솔이 발급하는 키(production/development)가 가른다.
     /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/loadFloor() 의 책임이다.
     /// loadFloor 없이 start() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(로그로 통지).
     public static func initialize(sdkKey: String,
-                                  geospaceKey: String? = nil,
+                                  geoSdkKey: String? = nil,
                                   baseURL: URL = ApiClient.defaultBaseURL) async throws {
         // ① 기기 게이트 — 측위 불가 기기는 세션 전체가 무의미하므로 네트워크 타기 전에 사유와 함께 거부.
         //    시뮬레이터는 예외: 개발·테스트 환경 전용이고 스토어 배포가 불가능해 프로덕션 우회 경로가 없다.
@@ -137,14 +137,14 @@ public final class OneS1ght {
 
         // ② 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
         //    (재구성 없이 두면 이전 키로 만든 ApiClient 를 조용히 재사용해 '맞는 키인데 401' 함정이 생긴다)
-        if let stored = storedKeys, stored != (sdkKey, geospaceKey) {
+        if let stored = storedKeys, stored != (sdkKey, geoSdkKey) {
             await coordinator?.stop()
             coordinator = nil
         }
 
         // ③ 세션 구성 (최초 또는 재구성 후 1회)
         if coordinator == nil {
-            let geospace = geospaceKey.map {
+            let geospace = geoSdkKey.map {
                 GeospaceClient(keys: .init(sdk: sdkKey, geospace: $0))
             }
             let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
@@ -154,7 +154,7 @@ public final class OneS1ght {
             c.onPosition = { coord in OneS1ght.onPosition?(coord) }
             c.onLog = { line in OneS1ght.onDebugLog?(line) }
             coordinator = c
-            storedKeys = (sdkKey, geospaceKey)
+            storedKeys = (sdkKey, geoSdkKey)
         }
 
         // ④ 키 검증 + 설정 프리페치 (실패 시 throw — 재호출이 곧 재시도)
@@ -205,7 +205,7 @@ public final class OneS1ght {
 
     // MARK: - 공간 설정
 
-    /// 빌딩/층 트리 (선택 UI용). geospaceKey 없이 초기화했으면 빈 배열.
+    /// 빌딩/층 트리 (선택 UI용). geoSdkKey 없이 초기화했으면 빈 배열.
     public static func buildings() async throws -> [SpaceBuilding] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.buildings()

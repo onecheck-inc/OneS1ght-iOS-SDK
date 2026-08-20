@@ -16,7 +16,7 @@ https://github.com/onecheck-inc/onesight-mobile-swift
 import OneS1ght
 
 // ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신
-try await OneS1ght.initialize(sdkKey: "ock_sdk_...", geospaceKey: "gsk_...")
+try await OneS1ght.initialize(sdkKey: "ock_sdk_...", geoSdkKey: "gsk_...")
 
 // ② 공간 선택 — 필수 (이걸 안 하면 좌표가 나오지 않습니다)
 let buildings = try await OneS1ght.buildings()

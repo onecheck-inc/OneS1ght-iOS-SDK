@@ -31,7 +31,7 @@ final class SessionCoordinator {
     // 의존성 (전부 주입 — 테스트는 스텁 세션·가짜 프로바이더)
     private let api: ApiClient
     private let identity: IdentityStore
-    private var geospace: GeospaceClient?        // initialize(geospaceKey:)가 있을 때만 — 앵커·세션·층 (과도기)
+    private var geospace: GeospaceClient?        // initialize(geoSdkKey:)가 있을 때만 — 앵커·세션·층 (과도기)
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
 
     // 배치 정책 (사양서 §6.8 은 100건/5분 "권장" — 2026-08-20 300건/60초로 조정.
@@ -100,7 +100,7 @@ final class SessionCoordinator {
         isPrepared = true
     }
 
-    /// 빌딩/층 트리 — 선택 UI용. geospaceKey 없으면 빈 배열 (측위 미사용 통합)
+    /// 빌딩/층 트리 — 선택 UI용. geoSdkKey 없으면 빈 배열 (측위 미사용 통합)
     func buildings() async throws -> [SpaceBuilding] {
         guard let geospace else { return [] }
         return try await geospace.loadBuildings()

@@ -3,7 +3,7 @@
 //  OneS1ght
 //
 //  ⚠️ SDK 내부 전용 — 호스트 앱은 이 타입을 모른다.
-//     고객사는 initialize(apiKey:geospaceKey:) 로 키 2개만 넘기고,
+//     고객사는 initialize(apiKey:geoSdkKey:) 로 키 2개만 넘기고,
 //     앵커·세션·도면·존이 어디서 오는지는 SDK 사정으로 감춘다.
 //
 //  GeoSpace(geoplan.io) 연동 — 한 호스트, 두 키.
