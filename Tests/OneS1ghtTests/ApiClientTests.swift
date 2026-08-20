@@ -148,6 +148,47 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(res.triggers.first?.type, "coupon")
     }
 
+    /// payload 에 문자열 아닌 값이 섞여도 존 이벤트가 통째로 날아가면 안 된다.
+    ///
+    /// ⚠️ `remote_config` 와 같은 구조의 자루다(서버 선언이 Map&lt;String, Object&gt;).
+    /// 여기서 디코드가 깨지면 triggers 가 통째로 사라져 **쿠폰·사이니지가 조용히 끊긴다.**
+    /// 측위는 그대로 돌기 때문에 초기화 실패보다 오히려 발견이 늦다.
+    func testZoneEvent_mixedTypePayload_stillDelivers() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"""
+            { "accepted": true, "event_id": "e1",
+              "triggers": [ { "trigger_id": "a1", "type": "coupon",
+                              "payload": { "title": "10% 할인", "amount": 1000,
+                                           "stackable": false, "ratio": 0.1 } } ] }
+            """#.utf8))
+        }
+        let res = try await client.sendZoneEvent(
+            ReqZoneEvent(profile_id: "A", visitor_id: "V", floor_id: "F", zone_id: "Z",
+                         status: .enter, occurred_at: "T", platform_name: "iOS"))
+
+        XCTAssertEqual(res.triggers.count, 1, "payload 때문에 트리거가 통째로 사라졌다")
+        let payload = try XCTUnwrap(res.triggers.first?.payload)
+        XCTAssertEqual(payload["title"], "10% 할인")
+        XCTAssertEqual(payload["amount"], "1000")
+        XCTAssertEqual(payload["stackable"], "false")
+    }
+
+    /// payload 가 어떤 모양이든 트리거 자체는 살아 있어야 한다.
+    func testZoneEvent_unreadablePayload_keepsTrigger() async throws {
+        for weird in ["123", #""문자열""#, #"{"nested":{"a":1}}"#, #"["배열"]"#] {
+            StubURLProtocol.handler = { _ in
+                (200, Data(#"""
+                { "accepted": true, "event_id": "e1",
+                  "triggers": [ { "trigger_id": "a1", "type": "coupon", "payload": \#(weird) } ] }
+                """#.utf8))
+            }
+            let res = try await client.sendZoneEvent(
+                ReqZoneEvent(profile_id: "A", visitor_id: "V", floor_id: "F", zone_id: "Z",
+                             status: .enter, occurred_at: "T", platform_name: "iOS"))
+            XCTAssertEqual(res.triggers.first?.type, "coupon", "payload=\(weird) 때문에 트리거가 날아갔다")
+        }
+    }
+
     // ⑤ position logs — 경로 + 422 매핑
     func testPositionLogs_pathAnd422() async {
         StubURLProtocol.handler = { _ in (422, Data(#"{ "detail": "empty points" }"#.utf8)) }

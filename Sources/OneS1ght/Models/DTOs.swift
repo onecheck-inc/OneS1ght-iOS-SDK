@@ -243,7 +243,26 @@ public struct ResFloorConfig: Codable {
 public struct Trigger: Codable {
     public let trigger_id: String
     public let type: String                 // signage | coupon | tracking | merch | generic
+    /// 액션 내용(title·rule 등). 서버 선언이 느슨한 자루라 **여기서 실패하면 안 된다.**
+    ///
+    /// ⚠️ `remote_config` 와 완전히 같은 구조다. 오늘은 서버가 문자열 2개만 담아서 안 깨지지만,
+    /// 쿠폰 금액(숫자)이나 다국어 블록을 하나 얹는 순간 존 이벤트 응답 **전체** 디코드가 깨진다.
+    /// 그러면 이미 배포된 앱에서 쿠폰·사이니지가 조용히 끊기고, 측위는 그대로 돌아서
+    /// 초기화 실패보다 오히려 발견이 늦다.
     public let payload: [String: String]?
+
+    public init(trigger_id: String, type: String, payload: [String: String]?) {
+        self.trigger_id = trigger_id
+        self.type = type
+        self.payload = payload
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        trigger_id = try c.decode(String.self, forKey: .trigger_id)
+        type = try c.decode(String.self, forKey: .type)
+        payload = (try? c.decode(LenientStringMap.self, forKey: .payload))?.values
+    }
 }
 public struct ResZoneEvent: Codable {
     public let accepted: Bool
