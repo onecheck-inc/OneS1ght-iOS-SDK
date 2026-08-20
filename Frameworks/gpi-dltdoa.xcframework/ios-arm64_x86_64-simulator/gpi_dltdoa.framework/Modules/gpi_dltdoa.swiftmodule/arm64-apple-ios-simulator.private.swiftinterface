@@ -1,0 +1,64 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 6.4 effective-5.10 (swiftlang-6.4.0.20.104 clang-2100.3.20.102)
+// swift-module-flags: -target arm64-apple-ios18.0-simulator -enable-objc-interop -enable-library-evolution -language-mode 5 -O -enable-upcoming-feature DisableOutwardActorInference -enable-upcoming-feature InferSendableFromCaptures -enable-upcoming-feature GlobalActorIsolatedTypesUsability -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -module-name gpi_dltdoa
+// swift-module-flags-ignorable:  -formal-cxx-interoperability-mode=off -interface-compiler-version 6.4
+import Combine
+import Foundation
+import NearbyInteraction
+import Swift
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+import simd
+@available(iOS 27.0, *)
+@_Concurrency::MainActor public class DLTDoAPositioner : Foundation::ObservableObject {
+  @Combine::Published<simd::simd_double3?> @_projectedValueProperty($estimatedPosition) @_Concurrency::MainActor public var estimatedPosition: simd::simd_double3? {
+    get
+  }
+  @_Concurrency::MainActor public var $estimatedPosition: Combine::Published<simd::simd_double3?>.Combine::Publisher {
+    get
+  }
+  @_Concurrency::MainActor public static var sdkVersion: Swift::String {
+    get
+  }
+  @_Concurrency::MainActor public var minRssi: Swift::Double
+  @_Concurrency::MainActor public var anchorCoordinatesOverride: [Swift::Int : simd::simd_double3]
+  @_spi(Internal) @_Concurrency::MainActor public var positioningAlgorithm: gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::PositioningAlgorithm
+  @_spi(Internal) @_Concurrency::MainActor public var cfoCorrectionMode: gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::CfoCorrectionMode
+  @_Concurrency::MainActor public init(minRssi: Swift::Double = -90.0)
+  @_Concurrency::MainActor public func update(measurements: [NearbyInteraction::NIDLTDOAMeasurement])
+  @available(iOS 27.0, *)
+  public typealias ObjectWillChangePublisher = Combine::ObservableObjectPublisher
+  @objc deinit
+}
+@_spi(Internal) @available(iOS 27.0, *)
+extension gpi_dltdoa::DLTDoAPositioner {
+  @_spi(Internal) public enum PositioningAlgorithm {
+    @_spi(Internal) case ukf
+    @_spi(Internal) case gradientDescent
+    @_spi(Internal) public static func == (a: gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::PositioningAlgorithm, b: gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::PositioningAlgorithm) -> Swift::Bool
+    @_spi(Internal) public func hash(into hasher: inout Swift::Hasher)
+    @_spi(Internal) public var hashValue: Swift::Int {
+      @_spi(Internal) get
+    }
+  }
+  @_spi(Internal) public enum CfoCorrectionMode {
+    @_spi(Internal) case singlePollCfo
+    @_spi(Internal) case rcfoComposite
+    @_spi(Internal) public static func == (a: gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::CfoCorrectionMode, b: gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::CfoCorrectionMode) -> Swift::Bool
+    @_spi(Internal) public func hash(into hasher: inout Swift::Hasher)
+    @_spi(Internal) public var hashValue: Swift::Int {
+      @_spi(Internal) get
+    }
+  }
+}
+@available(iOS 27.0, *)
+extension gpi_dltdoa::DLTDoAPositioner : Swift::Sendable {}
+@_spi(Internal) @available(iOS 27.0, *)
+extension gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::PositioningAlgorithm : Swift::Equatable {}
+@_spi(Internal) @available(iOS 27.0, *)
+extension gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::PositioningAlgorithm : Swift::Hashable {}
+@_spi(Internal) @available(iOS 27.0, *)
+extension gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::CfoCorrectionMode : Swift::Equatable {}
+@_spi(Internal) @available(iOS 27.0, *)
+extension gpi_dltdoa::DLTDoAPositioner.gpi_dltdoa::CfoCorrectionMode : Swift::Hashable {}

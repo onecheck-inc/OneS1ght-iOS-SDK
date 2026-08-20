@@ -1,0 +1,32 @@
+{
+  "pins" : [
+    {
+      "identity" : "geos",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/GEOSwift/geos.git",
+      "state" : {
+        "revision" : "4d8af495e7507f48f1ae9104102debdd2043917b",
+        "version" : "9.0.0"
+      }
+    },
+    {
+      "identity" : "geoswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/GEOSwift/GEOSwift.git",
+      "state" : {
+        "revision" : "9ddf733b9f72799eb7651d1e0d322f2426b36a06",
+        "version" : "11.2.0"
+      }
+    },
+    {
+      "identity" : "gpi-prm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Geoplan-Mobile/gpi-prm",
+      "state" : {
+        "revision" : "4e1fe6117671cb711edaa87d51b8628610da5463",
+        "version" : "1.1.0"
+      }
+    }
+  ],
+  "version" : 2
+}

@@ -1,0 +1,312 @@
+{
+  "provider.ready": {
+    "ko": "geoSDK v%@ 준비됨",
+    "ja": "geoSDK v%@ 準備完了",
+    "en": "geoSDK v%@ ready"
+  },
+  "provider.noSession": {
+    "ko": "세션 ID 미주입 — apply(config:) 후 시작하세요",
+    "ja": "セッションID未注入 — apply(config:) 後に開始してください",
+    "en": "Session ID not injected — call apply(config:) before start"
+  },
+  "provider.zoneReady": {
+    "ko": "ZoneEngine 준비됨 (존 0개 — 지도는 파트너 API zone 사용)",
+    "ja": "ZoneEngine 準備完了 (ゾーン0件 — 地図はパートナーAPIのゾーンを使用)",
+    "en": "ZoneEngine ready (0 zones — map uses partner API zones)"
+  },
+  "provider.anchorsApply": {
+    "ko": "GeoSpace 앵커 %d개 주입",
+    "ja": "GeoSpace アンカー %d台を適用",
+    "en": "Injected %d GeoSpace anchors"
+  },
+  "provider.sessionApply": {
+    "ko": "세션 ID 주입: networkId %d",
+    "ja": "セッションID注入: networkId %d",
+    "en": "Session ID injected: networkId %d"
+  },
+  "provider.configApply": {
+    "ko": "config 주입: floor %@…",
+    "ja": "config 注入: floor %@…",
+    "en": "Config injected: floor %@…"
+  },
+  "provider.trackingStart": {
+    "ko": "트래킹 시작 (networkId: %d)",
+    "ja": "トラッキング開始 (networkId: %d)",
+    "en": "Tracking started (networkId: %d)"
+  },
+  "provider.position": {
+    "ko": "좌표 (%.2f, %.2f, %.2f)",
+    "ja": "座標 (%.2f, %.2f, %.2f)",
+    "en": "Position (%.2f, %.2f, %.2f)"
+  },
+  "provider.waiting": {
+    "ko": "NISession.run() — 앵커 신호 대기 중…",
+    "ja": "NISession.run() — アンカーの信号を待機中…",
+    "en": "NISession.run() — waiting for anchor signals…"
+  },
+  "provider.diag": {
+    "ko": "통신 진단: %@",
+    "ja": "通信診断: %@",
+    "en": "Diagnostic: %@"
+  },
+  "provider.trackingStop": {
+    "ko": "종료 — measurement %d건",
+    "ja": "終了 — measurement %d件",
+    "en": "Stopped — %d measurements"
+  },
+  "provider.suspended": {
+    "ko": "세션 일시중단",
+    "ja": "セッション一時停止",
+    "en": "Session suspended"
+  },
+  "provider.resumed": {
+    "ko": "세션 재개",
+    "ja": "セッション再開",
+    "en": "Session resumed"
+  },
+  "provider.invalid": {
+    "ko": "세션 무효화: %@",
+    "ja": "セッション無効化: %@",
+    "en": "Session invalidated: %@"
+  },
+  "provider.judgeInside": {
+    "ko": "안:%@",
+    "ja": "内:%@",
+    "en": "in:%@"
+  },
+  "provider.judgeOutside": {
+    "ko": "밖",
+    "ja": "外",
+    "en": "out"
+  },
+  "diag.summary": {
+    "ko": "등록 %d·수신 %d·유효 %d%@ → %@",
+    "ja": "登録 %d·受信 %d·有効 %d%@ → %@",
+    "en": "Registered %d·Received %d·Valid %d%@ → %@"
+  },
+  "diag.missing": {
+    "ko": " · 미수신 %@",
+    "ja": " · 未受信 %@",
+    "en": " · missing %@"
+  },
+  "diag.ok": {
+    "ko": "측위 정상 (좌표 산출 중)",
+    "ja": "測位正常 (座標算出中)",
+    "en": "Positioning OK (computing coordinates)"
+  },
+  "diag.pending": {
+    "ko": "앵커 충분 — 좌표 수렴 대기",
+    "ja": "アンカー十分 — 座標収束待ち",
+    "en": "Anchors sufficient — awaiting fix"
+  },
+  "diag.fail": {
+    "ko": "측위 불가 — 유효앵커 %d/3",
+    "ja": "測位不可 — 有効アンカー %d/3",
+    "en": "Positioning unavailable — valid anchors %d/3"
+  },
+  "coord.verifyPass": {
+    "ko": "verify 통과 (tenant: %@)",
+    "ja": "verify 通過 (tenant: %@)",
+    "en": "verify passed (tenant: %@)"
+  },
+  "coord.buildingsLoaded": {
+    "ko": "buildings %d건 로드 — 세션 가능",
+    "ja": "buildings %d件をロード — セッション可能",
+    "en": "Loaded %d buildings — session ready"
+  },
+  "coord.consent": {
+    "ko": "consent 기록됨",
+    "ja": "consent 記録済み",
+    "en": "consent recorded"
+  },
+  "coord.stopFlush": {
+    "ko": "종료 — 잔여 %d건 flush 시도",
+    "ja": "終了 — 残り %d件を flush",
+    "en": "Stopping — flushing %d pending"
+  },
+  "coord.pendingLost": {
+    "ko": "미전송 %d건 남음 (인메모리 — 앱 종료 시 유실)",
+    "ja": "未送信 %d件が残存 (インメモリ — アプリ終了時に消失)",
+    "en": "%d unsent (in-memory — lost on app exit)"
+  },
+  "coord.logsSent": {
+    "ko": "좌표 %d건 전송 → 서버 accepted %d",
+    "ja": "座標 %d件を送信 → サーバー accepted %d",
+    "en": "Sent %d coordinates → server accepted %d"
+  },
+  "coord.logsFail": {
+    "ko": "좌표 %d건 전송 실패 → 버퍼 유지·재시도 예정",
+    "ja": "座標 %d件の送信失敗 → バッファ保持·再試行予定",
+    "en": "Failed to send %d coordinates → buffer kept, will retry"
+  },
+  "coord.floorLoaded": {
+    "ko": "층 설정 로드: zones %d개 (floor %@…)",
+    "ja": "階設定をロード: zones %d件 (floor %@…)",
+    "en": "Floor config loaded: %d zones (floor %@…)"
+  },
+  "coord.floorEmpty": {
+    "ko": "층에 존 없음(404) — 정상 분기",
+    "ja": "階にゾーンなし(404) — 正常分岐",
+    "en": "No zones on floor (404) — normal branch"
+  },
+  "coord.zoneSent": {
+    "ko": "zone %@ 전송 (triggers %d개)",
+    "ja": "zone %@ 送信 (triggers %d件)",
+    "en": "zone %@ sent (%d triggers)"
+  },
+  "coord.zoneRetryOK": {
+    "ko": "zone %@ 재시도 성공",
+    "ja": "zone %@ 再試行成功",
+    "en": "zone %@ retry succeeded"
+  },
+  "coord.zoneDropNet": {
+    "ko": "zone %@ 전송 실패 (network) — 드랍",
+    "ja": "zone %@ 送信失敗 (network) — ドロップ",
+    "en": "zone %@ send failed (network) — dropped"
+  },
+  "coord.zoneDropErr": {
+    "ko": "zone %@ 전송 실패 — 드랍",
+    "ja": "zone %@ 送信失敗 — ドロップ",
+    "en": "zone %@ send failed — dropped"
+  },
+  "coord.zonesApply": {
+    "ko": "🗺 존 %d개 주입 — 판정 시작",
+    "ja": "🗺 ゾーン %d件を適用 — 判定開始",
+    "en": "🗺 Applied %d zones — judgment started"
+  },
+  "coord.autoSelect": {
+    "ko": "🏠 자동 선택: %@ · %@",
+    "ja": "🏠 自動選択: %@ · %@",
+    "en": "🏠 Auto-selected: %@ · %@"
+  },
+  "coord.autoSelectFail": {
+    "ko": "⚠️ 층 자동 선택 실패 — loadFloor 로 수동 선택 필요: %@",
+    "ja": "⚠️ 階の自動選択に失敗 — loadFloor で手動選択してください: %@",
+    "en": "⚠️ Floor auto-select failed — select manually via loadFloor: %@"
+  },
+  "zone.refreshSkipped": {
+    "ko": "⚠️ 존 재조회 건너뜀 — 선택된 층이 없음",
+    "ja": "⚠️ ゾーン再取得をスキップ — 階が選択されていません",
+    "en": "⚠️ Zone refresh skipped — no floor selected"
+  },
+  "zone.refreshEmpty": {
+    "ko": "🔄 존 재조회 — 등록된 존 없음",
+    "ja": "🔄 ゾーン再取得 — 登録されたゾーンなし",
+    "en": "🔄 Zone refresh — no zones registered"
+  },
+  "zone.refreshOk": {
+    "ko": "🔄 존 재조회 — %d개: %@",
+    "ja": "🔄 ゾーン再取得 — %d件: %@",
+    "en": "🔄 Zone refresh — %d zone(s): %@"
+  },
+  "zone.refreshFail": {
+    "ko": "⚠️ 존 재조회 실패 — 기존 %d개 유지: %@",
+    "ja": "⚠️ ゾーン再取得に失敗 — 既存 %d件を維持: %@",
+    "en": "⚠️ Zone refresh failed — keeping existing %d zone(s): %@"
+  },
+  "zone.defaultsApplied": {
+    "ko": "ℹ️ [%@] 미설정 항목에 기본값 적용 — %@",
+    "ja": "ℹ️ [%@] 未設定項目にデフォルト値を適用 — %@",
+    "en": "ℹ️ [%@] Defaults applied to unset fields — %@"
+  },
+  "zone.notRunning": {
+    "ko": "⚠️ PRM 미가동 — 좌표 폐기 (존 미주입 또는 start 실패)",
+    "ja": "⚠️ PRM 未稼働 — 座標を破棄 (ゾーン未適用または start 失敗)",
+    "en": "⚠️ PRM not running — coordinate discarded (no zones applied or start failed)"
+  },
+  "zone.count": {
+    "ko": "적립 [%@] %d/%d",
+    "ja": "カウント [%@] %d/%d",
+    "en": "Count [%@] %d/%d"
+  },
+  "zone.countConfirmed": {
+    "ko": "적립 [%@] %d/%d ✓ → PRM IN 대기",
+    "ja": "カウント [%@] %d/%d ✓ → PRM IN 待ち",
+    "en": "Count [%@] %d/%d ✓ → awaiting PRM IN"
+  },
+  "zone.countReset": {
+    "ko": "↩︎ [%@] 적립 리셋 (%d개 소실) — %@",
+    "ja": "↩︎ [%@] カウントをリセット (%d件を破棄) — %@",
+    "en": "↩︎ [%@] Count reset (%d discarded) — %@"
+  },
+  "gs.idle": {
+    "ko": "대기",
+    "ja": "待機",
+    "en": "Idle"
+  },
+  "gs.loading": {
+    "ko": "도면 로딩 중…",
+    "ja": "フロアマップ読み込み中…",
+    "en": "Loading floor plan…"
+  },
+  "gs.done": {
+    "ko": "완료 (앵커 %d개 · 존 %d개)",
+    "ja": "完了 (アンカー %d台 · ゾーン %d件)",
+    "en": "Done (%d anchors · %d zones)"
+  },
+  "provider.anchorScan": {
+    "ko": "📡 앵커 0x%012llX  RSSI %.1f  %@",
+    "ja": "📡 アンカー 0x%012llX  RSSI %.1f  %@",
+    "en": "📡 Anchor 0x%012llX  RSSI %.1f  %@"
+  },
+  "provider.anchorMatched": {
+    "ko": "✓매칭",
+    "ja": "✓一致",
+    "en": "✓matched"
+  },
+  "provider.anchorUnmatched": {
+    "ko": "✗미매칭",
+    "ja": "✗不一致",
+    "en": "✗unmatched"
+  },
+  "zone.paramDump": {
+    "ko": "PRM → %@ 진입거리 %.2f · 확정 %d회/%d초 · 이탈유예 %d초",
+    "ja": "PRM → %@ 進入距離 %.2f · 確定 %d回/%d秒 · 離脱猶予 %d秒",
+    "en": "PRM → %@ inDist %.2f · confirm %d×/%ds · outPeriod %ds"
+  },
+  "zone.intervalTooShort": {
+    "ko": "⚠️ [%@] 집계간격 %d초 ≤ 좌표 주기 %.2f초 — 카운트가 매번 리셋되어 IN 발화 불가",
+    "ja": "⚠️ [%@] 集計間隔 %d秒 ≤ 座標周期 %.2f秒 — カウントが毎回リセットされ IN が発火しません",
+    "en": "⚠️ [%@] Interval %ds ≤ coordinate period %.2fs — count resets every time, IN can never fire"
+  },
+  "zone.confirmEstimate": {
+    "ko": "ℹ️ [%@] 진입확정 %d회 → 존 안 약 %.1f초 연속 체류 시 IN (좌표 %.2f초 주기)",
+    "ja": "ℹ️ [%@] 進入確定 %d回 → ゾーン内に約 %.1f秒 連続滞在で IN (座標 %.2f秒周期)",
+    "en": "ℹ️ [%@] Confirm %d× → IN after ~%.1fs continuous stay inside (%.2fs coordinate period)"
+  },
+  "zone.defaultInDist": {
+    "ko": "진입거리 %@m",
+    "ja": "進入距離 %@m",
+    "en": "inDist %@m"
+  },
+  "zone.defaultInCount": {
+    "ko": "진입확정 %d회",
+    "ja": "進入確定 %d回",
+    "en": "confirm %d×"
+  },
+  "zone.defaultInterval": {
+    "ko": "집계간격 %d초",
+    "ja": "集計間隔 %d秒",
+    "en": "interval %ds"
+  },
+  "zone.defaultOutPeriod": {
+    "ko": "이탈유예 %d초",
+    "ja": "離脱猶予 %d秒",
+    "en": "outPeriod %ds"
+  },
+  "zone.defaultPriority": {
+    "ko": "우선순위 %d",
+    "ja": "優先度 %d",
+    "en": "priority %d"
+  },
+  "zone.resetGap": {
+    "ko": "공백 %.2f초 > 집계간격 %d초",
+    "ja": "空白 %.2f秒 > 集計間隔 %d秒",
+    "en": "gap %.2fs > interval %ds"
+  },
+  "zone.resetMove": {
+    "ko": "이동 %.2fm > 진입거리 %.2fm",
+    "ja": "移動 %.2fm > 進入距離 %.2fm",
+    "en": "moved %.2fm > inDist %.2fm"
+  }
+}
