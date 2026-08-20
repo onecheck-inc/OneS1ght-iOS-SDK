@@ -18,8 +18,8 @@ import UIKit
 
 /// 서버 에러(ApiError) 밖의 SDK 수준 실패
 public enum SdkError: Error, Equatable {
-    case notInitialized        // initialize() 안 하고 start() 호출
-    case notIdentified         // identify(profileId:) 없이 start() 호출
+    case notInitialized        // initialize() 안 하고 begin() 호출
+    case notIdentified         // identify(profileId:) 없이 begin() 호출
     case positioningDisabled   // verify는 통과했으나 positioning_enabled=false
     case deviceNotSupported    // UWB 칩 없음 (측위 불가 기기)
     case osVersionTooLow       // iOS 27 미만
@@ -128,7 +128,7 @@ final class SessionCoordinator {
     /// 초기화(앱 시작 시 1회) — 키 검증 + 테넌트 SDK 설정 수신. 이게 전부다.
     /// 통과 = "세션 가능" 확정. 실패 사유는 throw (invalidKey/positioningDisabled/network).
     ///
-    /// 건물·층은 여기서 건드리지 않는다 — 공간 선택은 buildings()/loadFloor() 라는
+    /// 건물·층은 여기서 건드리지 않는다 — 공간 선택은 buildings()/setFloorMap() 이라는
     /// 별도 메서드의 책임이고, 어느 층을 쓸지는 호스트 앱만 안다. 자동 선택을 두면
     /// 앱이 고르는 중에 SDK 가 다른 층으로 덮어쓰는 경합이 생긴다(08-11 실기기 확인).
     func prepare() async throws {
