@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.1",
+  "currentVersion": "0.1.2",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -13,6 +13,14 @@
       "to": "0.1.1",
       "breaking": false,
       "summary": "공개 API 변경 없음. 연동 스니펫(Snippets/ios.json)이 태그에 실린 것이 이 판올림의 내용이다.",
+      "action": "의존성 해석만 다시 하면 된다. 코드는 고칠 것이 없다.",
+      "changes": []
+    },
+    {
+      "from": "0.1.1",
+      "to": "0.1.2",
+      "breaking": false,
+      "summary": "공개 API 변경 없음. 마이그레이션 지침(이 파일)과 CHANGELOG 가 태그에 실렸다.",
       "action": "의존성 해석만 다시 하면 된다. 코드는 고칠 것이 없다.",
       "changes": []
     }
