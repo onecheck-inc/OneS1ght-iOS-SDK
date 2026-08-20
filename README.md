@@ -41,7 +41,7 @@ await OneS1ght.stop()
 |---|---|
 | 함수 | `initialize(sdkKey:)` · `start(consent:)` · `stop()` · `identify(customerId:)` |
 | 콜백 | `onZoneEvent` · `onTriggers` · `onDebugLog` |
-| 조회 | `isInitialized` · `isPositioningAvailable` · `anonUserId` |
+| 조회 | `isInitialized` · `isDeviceAvailable` · `anonUserId` |
 
 자세한 연동 절차(콘솔 설정·키 발급·Zone 구성)는 OneS1ght 연동 가이드 문서를 참조하세요.
 

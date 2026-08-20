@@ -2,7 +2,7 @@
 //  SdkGateTests.swift
 //  initialize 기기 게이트 검증 — 시뮬레이터 예외가 실제로 동작하는가.
 //
-//  시뮬레이터는 UWB 칩이 없어 positioningAvailability == .deviceNotSupported 이지만,
+//  시뮬레이터는 UWB 칩이 없어 deviceAvailability == .deviceNotSupported 이지만,
 //  initialize 의 게이트는 #if !targetEnvironment(simulator) 라 통과해야 한다.
 //  (통과 증거 = 실패하더라도 그 사유가 기기 게이트가 아닌 네트워크/키 쪽이어야 함)
 //
@@ -36,9 +36,9 @@ final class SdkGateTests: XCTestCase {
     /// 조회 API 는 시뮬레이터에서도 정직해야 한다 — 사유는 런타임에 따라 다르되 available 은 아니어야 함.
     /// (iOS 26 런타임 시뮬레이터 → osVersionTooLow · iOS 27+ 시뮬레이터 → deviceNotSupported(칩 없음))
     func testAvailabilityIsHonestOnSimulator() {
-        XCTAssertNotEqual(OneS1ght.positioningAvailability, .available,
+        XCTAssertNotEqual(OneS1ght.deviceAvailability, .available,
                           "시뮬레이터에 UWB 가 있을 수 없음 — 조회가 거짓말 중")
-        XCTAssertFalse(OneS1ght.isPositioningAvailable)
+        XCTAssertFalse(OneS1ght.isDeviceAvailable)
     }
 }
 

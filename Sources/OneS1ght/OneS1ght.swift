@@ -57,7 +57,7 @@ public final class OneS1ght {
     public static var isInitialized: Bool { coordinator?.isPrepared ?? false }
 
     /// 측위 가능 여부 — 사유 포함. 앱이 사전 안내 UI 를 분기할 때 쓴다.
-    public enum PositioningAvailability: Equatable {
+    public enum DeviceAvailability: Equatable {
         case available            // 측위 가능
         case osVersionTooLow      // iOS 27 미만 — "OS 업데이트 후 사용 가능" 안내
         case deviceNotSupported   // UWB(DL-TDoA) 칩 미지원 — "iPhone 12 이상 필요" 안내
@@ -66,7 +66,7 @@ public final class OneS1ght {
     /// 이 기기에서 측위가 가능한가 + 불가 사유. initialize 전에도 호출 가능 (throw 없음).
     /// OS 버전을 먼저 검사한다 — 구 OS 에선 칩 지원 여부를 물을 API 자체가 없어,
     /// 업데이트로 해결될 수 있는 기기에 deviceNotSupported 를 잘못 알려주지 않기 위함.
-    public static var positioningAvailability: PositioningAvailability {
+    public static var deviceAvailability: DeviceAvailability {
         #if os(iOS)
         guard #available(iOS 27.0, *) else { return .osVersionTooLow }
         return UwbPositioningProvider.isSupported ? .available : .deviceNotSupported
@@ -75,8 +75,8 @@ public final class OneS1ght {
         #endif
     }
 
-    /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 positioningAvailability 사용.
-    public static var isPositioningAvailable: Bool { positioningAvailability == .available }
+    /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 deviceAvailability 사용.
+    public static var isDeviceAvailable: Bool { deviceAvailability == .available }
 
     // MARK: - 권한
 
@@ -99,7 +99,7 @@ public final class OneS1ght {
     ///   (30초 안에 응답이 없으면 보수적으로 `.denied`)
     public static func permissions() async -> PermissionStatus {
         #if os(iOS)
-        guard positioningAvailability == .available else { return .unsupported }
+        guard deviceAvailability == .available else { return .unsupported }
         guard #available(iOS 27.0, *) else { return .unsupported }
         return await NIPermissionProbe().run()
         #else
@@ -128,7 +128,7 @@ public final class OneS1ght {
         //    시뮬레이터는 예외: 개발·테스트 환경 전용이고 스토어 배포가 불가능해 프로덕션 우회 경로가 없다.
         //    (시뮬레이터에서도 실측위는 start()의 내장 UWB 게이트가 막는다 — Mock provider 주입만 가능)
         #if os(iOS) && !targetEnvironment(simulator)
-        switch positioningAvailability {
+        switch deviceAvailability {
         case .osVersionTooLow:    throw SdkError.osVersionTooLow
         case .deviceNotSupported: throw SdkError.deviceNotSupported
         case .available:          break
