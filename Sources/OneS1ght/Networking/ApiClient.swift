@@ -17,7 +17,30 @@ public enum ApiError: Error, Equatable {
     case unprocessable(detail: String?)      // 422 — 페이로드 문제 (개발 버그)
     case server(status: Int, detail: String?) // 5xx 등 그 외
     case network(URLError)                   // 오프라인·타임아웃 등 전송 실패
-    case decoding                            // 응답 JSON 형태 불일치
+    /// 응답 JSON 형태 불일치. `detail` 에 **무엇을 못 읽었는지** 담는다 —
+    /// 이게 없으면 화면에 "decoding" 넉 자만 떠서 어느 응답의 어느 필드인지 알 길이 없다.
+    case decoding(detail: String?)
+}
+
+extension ApiError: CustomStringConvertible {
+    /// 앱이 `\(error)` 로 화면에 그대로 찍는다 — 개발자가 보고 바로 움직일 수 있어야 한다.
+    /// ⚠️ 키·좌표 같은 값은 담지 않는다. 담는 것은 "무엇이" 잘못됐는지까지다.
+    public var description: String {
+        switch self {
+        case .invalidKey(let d):     return "SDK 키가 무효하거나 폐기됨" + Self.suffix(d)
+        case .forbidden(let d):      return "접근 권한 없음 (다른 고객사 자원)" + Self.suffix(d)
+        case .notFound(let d):       return "대상을 찾을 수 없음" + Self.suffix(d)
+        case .unprocessable(let d):  return "서버가 요청을 거절함" + Self.suffix(d)
+        case .server(let s, let d):  return "서버 오류 (HTTP \(s))" + Self.suffix(d)
+        case .network(let e):        return "네트워크 실패 (\(e.code.rawValue))"
+        case .decoding(let d):       return "응답 해석 실패" + Self.suffix(d)
+        }
+    }
+
+    private static func suffix(_ detail: String?) -> String {
+        guard let detail, !detail.isEmpty else { return "" }
+        return " — " + detail
+    }
 }
 
 /// 에러 본문 { "detail": "..." }
@@ -136,14 +159,17 @@ public final class ApiClient {
         } catch let e as URLError {
             throw ApiError.network(e)
         }
-        guard let http = response as? HTTPURLResponse else { throw ApiError.decoding }
+        guard let http = response as? HTTPURLResponse else {
+            throw ApiError.decoding(detail: "HTTP 응답이 아님")
+        }
 
         switch http.statusCode {
         case 200..<300:
-            guard let decoded = try? JSONDecoder().decode(R.self, from: data) else {
-                throw ApiError.decoding
+            do {
+                return try JSONDecoder().decode(R.self, from: data)
+            } catch {
+                throw ApiError.decoding(detail: Self.describe(error, as: R.self))
             }
-            return decoded
         case 401: throw ApiError.invalidKey(detail: detail(data))
         case 403: throw ApiError.forbidden(detail: detail(data))
         case 404: throw ApiError.notFound(detail: detail(data))
@@ -155,5 +181,28 @@ public final class ApiClient {
     /// 에러 본문에서 detail 추출 (형태 다르면 nil — 실패해도 에러 매핑은 유지)
     private func detail(_ data: Data) -> String? {
         (try? JSONDecoder().decode(ErrorBody.self, from: data))?.detail
+    }
+
+    /// 디코드 실패를 사람이 읽을 한 줄로. ⚠️ 값은 넣지 않는다 — 응답에 개인정보가 섞일 수 있다.
+    private static func describe<R>(_ error: Error, as type: R.Type) -> String {
+        let what = String(describing: type)
+        guard let e = error as? DecodingError else { return "\(what): \(error)" }
+        func path(_ ctx: DecodingError.Context) -> String {
+            ctx.codingPath.map(\.stringValue).joined(separator: ".")
+        }
+        switch e {
+        case .keyNotFound(let key, let ctx):
+            let at = path(ctx)
+            return "\(what): 필드 누락 \(at.isEmpty ? key.stringValue : at + "." + key.stringValue)"
+        case .typeMismatch(let expected, let ctx):
+            return "\(what): \(path(ctx)) 의 타입이 다름 (기대 \(expected))"
+        case .valueNotFound(let expected, let ctx):
+            return "\(what): \(path(ctx)) 가 null (기대 \(expected))"
+        case .dataCorrupted(let ctx):
+            let at = path(ctx)
+            return "\(what): JSON 이 깨짐\(at.isEmpty ? "" : " (\(at))")"
+        @unknown default:
+            return "\(what): 디코드 실패"
+        }
     }
 }
