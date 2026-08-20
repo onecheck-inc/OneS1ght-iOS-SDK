@@ -34,6 +34,73 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(body.platform_name, "iOS")
     }
 
+    /// ⚠️ 2026-08-21 운영 사고 재현 — 이미 배포된 앱의 initialize 가 전부 실패했다.
+    ///
+    /// 서버 remote_config 에 정수·불리언이 섞여 있는데 SDK 가 `[String: String]` 로 좁게 받아
+    /// **응답 전체 디코드가 실패**했다. 정작 SDK 는 이 값을 저장만 하고 읽지도 않는다.
+    /// 아래 JSON 은 그날 서버가 실제로 보낸 본문 그대로다.
+    ///
+    /// 기존 verify 테스트는 remote_config 가 없는 최소 응답을 써서 이 사고를 못 잡았다 —
+    /// 서버가 실제로 보내는 모양으로 시험하지 않으면 시험한 것이 아니다.
+    func testVerify_mixedTypeRemoteConfig_doesNotBreakInitialisation() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"""
+            {"valid":true,"tenant_code":"onecheck-internal","positioning_enabled":true,
+             "position_rate_hz":4,
+             "remote_config":{"environment":"production","logLevel":"INFO",
+                              "dataCollectionInterval":30,"enableSpatialSensing":true,
+                              "enableAiPrediction":false,"autoCrashReport":true,
+                              "customPayload":"{}"}}
+            """#.utf8))
+        }
+        let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x", client: nil))
+
+        // 초기화를 가르는 값은 그대로 살아 있어야 한다.
+        XCTAssertTrue(res.valid)
+        XCTAssertTrue(res.positioning_enabled)
+        XCTAssertEqual(res.tenant_code, "onecheck-internal")
+        XCTAssertEqual(res.position_rate_hz, 4)
+
+        // 섞인 값은 문자열로 접혀 들어온다.
+        let cfg = try XCTUnwrap(res.remote_config)
+        XCTAssertEqual(cfg["environment"], "production")
+        XCTAssertEqual(cfg["logLevel"], "INFO")
+        XCTAssertEqual(cfg["dataCollectionInterval"], "30")
+        XCTAssertEqual(cfg["enableSpatialSensing"], "true")
+        XCTAssertEqual(cfg["enableAiPrediction"], "false")
+    }
+
+    /// 설정 자루가 어떤 모양이든 초기화를 막지 않는다 — 서버가 뭘 넣을지 SDK 는 모른다.
+    func testVerify_unreadableRemoteConfig_stillInitialises() async throws {
+        for weird in [#""문자열""#, "123", "null", #"{"nested":{"a":1}}"#, #"["배열"]"#] {
+            StubURLProtocol.handler = { _ in
+                (200, Data(#"{"valid":true,"positioning_enabled":true,"remote_config":\#(weird)}"#.utf8))
+            }
+            let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x", client: nil))
+            XCTAssertTrue(res.valid, "remote_config=\(weird) 때문에 초기화가 막혔다")
+        }
+    }
+
+    /// 디코드가 정말 실패할 때는 **무엇을 못 읽었는지** 남아야 한다.
+    /// "decoding" 넉 자만 뜨면 현장에서 원인을 좁힐 수 없다.
+    func testDecodingFailure_carriesWhatWentWrong() async {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"{"tenant_code":"t"}"#.utf8))     // valid·positioning_enabled 없음
+        }
+        do {
+            _ = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x", client: nil))
+            XCTFail("디코드가 실패했어야 한다")
+        } catch let e as ApiError {
+            guard case .decoding(let detail) = e else { return XCTFail("decoding 이 아님: \(e)") }
+            let d = detail ?? ""
+            XCTAssertTrue(d.contains("ResVerify"), "어느 응답인지 없다: \(d)")
+            XCTAssertTrue(d.contains("valid"), "어느 필드인지 없다: \(d)")
+            XCTAssertTrue("\(e)".contains("응답 해석 실패"), "사람이 읽을 문장이 아니다: \(e)")
+        } catch {
+            XCTFail("ApiError 가 아님: \(error)")
+        }
+    }
+
     // ② buildings — GET 경로
     func testBuildings_isGET() async throws {
         StubURLProtocol.handler = { _ in
@@ -79,6 +146,47 @@ final class ApiClientTests: XCTestCase {
                          status: .enter, occurred_at: "T", platform_name: "iOS"))
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/sdk/v1/events/zone")
         XCTAssertEqual(res.triggers.first?.type, "coupon")
+    }
+
+    /// payload 에 문자열 아닌 값이 섞여도 존 이벤트가 통째로 날아가면 안 된다.
+    ///
+    /// ⚠️ `remote_config` 와 같은 구조의 자루다(서버 선언이 Map&lt;String, Object&gt;).
+    /// 여기서 디코드가 깨지면 triggers 가 통째로 사라져 **쿠폰·사이니지가 조용히 끊긴다.**
+    /// 측위는 그대로 돌기 때문에 초기화 실패보다 오히려 발견이 늦다.
+    func testZoneEvent_mixedTypePayload_stillDelivers() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"""
+            { "accepted": true, "event_id": "e1",
+              "triggers": [ { "trigger_id": "a1", "type": "coupon",
+                              "payload": { "title": "10% 할인", "amount": 1000,
+                                           "stackable": false, "ratio": 0.1 } } ] }
+            """#.utf8))
+        }
+        let res = try await client.sendZoneEvent(
+            ReqZoneEvent(profile_id: "A", visitor_id: "V", floor_id: "F", zone_id: "Z",
+                         status: .enter, occurred_at: "T", platform_name: "iOS"))
+
+        XCTAssertEqual(res.triggers.count, 1, "payload 때문에 트리거가 통째로 사라졌다")
+        let payload = try XCTUnwrap(res.triggers.first?.payload)
+        XCTAssertEqual(payload["title"], "10% 할인")
+        XCTAssertEqual(payload["amount"], "1000")
+        XCTAssertEqual(payload["stackable"], "false")
+    }
+
+    /// payload 가 어떤 모양이든 트리거 자체는 살아 있어야 한다.
+    func testZoneEvent_unreadablePayload_keepsTrigger() async throws {
+        for weird in ["123", #""문자열""#, #"{"nested":{"a":1}}"#, #"["배열"]"#] {
+            StubURLProtocol.handler = { _ in
+                (200, Data(#"""
+                { "accepted": true, "event_id": "e1",
+                  "triggers": [ { "trigger_id": "a1", "type": "coupon", "payload": \#(weird) } ] }
+                """#.utf8))
+            }
+            let res = try await client.sendZoneEvent(
+                ReqZoneEvent(profile_id: "A", visitor_id: "V", floor_id: "F", zone_id: "Z",
+                             status: .enter, occurred_at: "T", platform_name: "iOS"))
+            XCTAssertEqual(res.triggers.first?.type, "coupon", "payload=\(weird) 때문에 트리거가 날아갔다")
+        }
     }
 
     // ⑤ position logs — 경로 + 422 매핑

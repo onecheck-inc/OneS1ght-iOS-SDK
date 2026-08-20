@@ -132,7 +132,64 @@ public struct ResVerify: Codable {
     /// 구서버는 이 필드를 안 주므로 옵셔널. 없거나 범위 밖이면 SdkDefaults.positionRateHz.
     public let position_rate_hz: Int?
     /// SDK 키별 원격 설정 (environment · logLevel 등). 앱 재배포 없이 서버가 제어.
+    ///
+    /// ⚠️ **이 필드 때문에 초기화가 실패해서는 안 된다.** 서버가 마음대로 늘리는 자루이고,
+    /// SDK 는 아직 이 값을 읽지도 않는다. 그런데 2026-08-21 에 서버가 정수·불리언을 담자
+    /// `[String: String]` 디코드가 깨지면서 **이미 배포된 앱의 initialize 가 전부 실패**했다.
+    /// 그래서 아래 init 에서 이 항목만 최선노력으로 읽는다 — 못 읽으면 nil 로 두고 넘어간다.
     public let remote_config: [String: String]?
+
+    public init(valid: Bool, tenant_code: String?, positioning_enabled: Bool,
+                position_rate_hz: Int?, remote_config: [String: String]?) {
+        self.valid = valid
+        self.tenant_code = tenant_code
+        self.positioning_enabled = positioning_enabled
+        self.position_rate_hz = position_rate_hz
+        self.remote_config = remote_config
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // 측위 가부를 가르는 값이라 여기는 엄격하게 — 없으면 초기화가 실패하는 게 맞다.
+        valid = try c.decode(Bool.self, forKey: .valid)
+        positioning_enabled = try c.decode(Bool.self, forKey: .positioning_enabled)
+        tenant_code = try? c.decode(String.self, forKey: .tenant_code)
+        position_rate_hz = try? c.decode(Int.self, forKey: .position_rate_hz)
+        // 설정 자루는 실패해도 초기화를 막지 않는다.
+        remote_config = (try? c.decode(LenientStringMap.self, forKey: .remote_config))?.values
+    }
+}
+
+/// 값 종류가 섞인 JSON 객체를 `[String: String]` 으로 접어 읽는다.
+///
+/// 서버가 돌려주는 설정 자루는 문자열·정수·불리언이 함께 온다. 좁은 타입으로 받으면
+/// **항목 하나가 늘 때마다 이미 나간 앱이 깨지므로**, 넓게 받아 문자열로 통일한다.
+/// 중첩 객체·배열은 문자열로 옮길 마땅한 표현이 없어 건너뛴다 — 빠뜨려도 초기화는 살아야 한다.
+struct LenientStringMap: Decodable {
+    let values: [String: String]
+
+    private struct AnyKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        guard let c = try? decoder.container(keyedBy: AnyKey.self) else {
+            values = [:]                       // 객체가 아니면 빈 설정 — 그래도 초기화는 계속된다
+            return
+        }
+        var out: [String: String] = [:]
+        for key in c.allKeys {
+            // JSONDecoder 는 이 툴체인에서 엄격하다 — true 가 Int 로, 1 이 Bool 로 넘어오지 않는다(실측).
+            if let v = try? c.decode(String.self, forKey: key) { out[key.stringValue] = v }
+            else if let v = try? c.decode(Bool.self, forKey: key) { out[key.stringValue] = v ? "true" : "false" }
+            else if let v = try? c.decode(Int.self, forKey: key) { out[key.stringValue] = String(v) }
+            else if let v = try? c.decode(Double.self, forKey: key) { out[key.stringValue] = String(v) }
+        }
+        values = out
+    }
 }
 
 /// 서버가 값을 주지 않을 때 쓰는 기본값 — 종전 SDK 하드코딩과 같아 동작이 바뀌지 않는다.
@@ -186,7 +243,26 @@ public struct ResFloorConfig: Codable {
 public struct Trigger: Codable {
     public let trigger_id: String
     public let type: String                 // signage | coupon | tracking | merch | generic
+    /// 액션 내용(title·rule 등). 서버 선언이 느슨한 자루라 **여기서 실패하면 안 된다.**
+    ///
+    /// ⚠️ `remote_config` 와 완전히 같은 구조다. 오늘은 서버가 문자열 2개만 담아서 안 깨지지만,
+    /// 쿠폰 금액(숫자)이나 다국어 블록을 하나 얹는 순간 존 이벤트 응답 **전체** 디코드가 깨진다.
+    /// 그러면 이미 배포된 앱에서 쿠폰·사이니지가 조용히 끊기고, 측위는 그대로 돌아서
+    /// 초기화 실패보다 오히려 발견이 늦다.
     public let payload: [String: String]?
+
+    public init(trigger_id: String, type: String, payload: [String: String]?) {
+        self.trigger_id = trigger_id
+        self.type = type
+        self.payload = payload
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        trigger_id = try c.decode(String.self, forKey: .trigger_id)
+        type = try c.decode(String.self, forKey: .type)
+        payload = (try? c.decode(LenientStringMap.self, forKey: .payload))?.values
+    }
 }
 public struct ResZoneEvent: Codable {
     public let accepted: Bool

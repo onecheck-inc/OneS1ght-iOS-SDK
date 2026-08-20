@@ -1,11 +1,18 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.1.3",
+  "sdkVersion": "0.1.4",
   "language": "swift",
   "requirements": {
-    "positioning": { "os": "iOS 27.0+", "device": "iPhone 12 or later (UWB)" },
-    "package": { "os": "iOS 15.0+" },
-    "build": { "xcode": "26.6+" }
+    "positioning": {
+      "os": "iOS 27.0+",
+      "device": "iPhone 12 or later (UWB)"
+    },
+    "package": {
+      "os": "iOS 15.0+"
+    },
+    "build": {
+      "xcode": "26.6+"
+    }
   },
   "notes": [
     "measured: 위치 권한이 없으면 UWB 세션이 INVALID_CONFIGURATION 으로 실패한다 — DL-TDoA 의 시스템 전제 조건이다.",
@@ -48,7 +55,13 @@
       "order": 3,
       "language": "swift",
       "code": "import OneS1ght\n\ntry await OneS1ght.initialize(\n    sdkKey: \"ock_sdk_...\",        // OneS1ght 콘솔 발급\n    geoSdkKey: \"gsk_...\"          // 임시 인자 — 생략 시 측위만 비활성\n)",
-      "throws": ["E2001", "E2002", "E1002", "E1003", "E5001"],
+      "throws": [
+        "E2001",
+        "E2002",
+        "E1002",
+        "E1003",
+        "E5001"
+      ],
       "warning": "initialize 는 건물·층을 조회하지 않는다. 공간 선택은 별도 단계다.",
       "expectedLog": "[I1001] 초기화 완료 — tenant=…"
     },
@@ -58,7 +71,9 @@
       "order": 4,
       "language": "swift",
       "code": "// 최초 1회 — 발급받아 앱에 저장(UserDefaults·Keychain 등)\nlet profileId = savedProfileId ?? (try await OneS1ght.createProfile([\n    \"gender\":  \"F\",\n    \"ageBand\": \"20s\"          // 정확한 나이가 아니라 연령대\n]))\n\n// 매 실행 — 저장해 둔 값을 연결\nOneS1ght.identify(profileId: profileId)",
-      "throws": ["E1001"],
+      "throws": [
+        "E1001"
+      ],
       "warning": "발급받은 profileId 를 반드시 앱에 보관해 재사용할 것. 매번 새로 만들면 같은 사람이 방문 수만큼 갈라진다. 고객사 회원 ID 는 서버로 보내지 않는다.",
       "expectedLog": "[I1002] 프로필 연결"
     },
@@ -68,7 +83,11 @@
       "order": 5,
       "language": "swift",
       "code": "let buildings = try await OneS1ght.buildings()\nlet floors    = try await OneS1ght.floors(buildings[0].id)\n\ntry await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)",
-      "throws": ["E1001", "E3002", "E3003"],
+      "throws": [
+        "E1001",
+        "E3002",
+        "E3003"
+      ],
       "warning": "이 단계를 건너뛰면 측위는 시작되지만 좌표가 나오지 않는다 (E3001).",
       "expectedLog": "[I3001] 층 지정 — building=… floor=… locators=N zones=M"
     },
@@ -85,7 +104,14 @@
       "order": 7,
       "language": "swift",
       "code": "let session = try OneS1ght.floorSession()\n\nsession.onPosition  = { coord in mapView.moveMarker(coord) }\nsession.onZoneEnter = { zone in showCoupon(zone) }\nsession.onZoneExit  = { zone in hideCoupon(zone) }\nsession.onZoneDwell = { zone, seconds in logDwell(zone, seconds) }\nsession.onTriggers  = { zoneId, triggers in handle(triggers) }\n\ntry await session.begin()",
-      "throws": ["E1001", "E1004", "E2001", "E2002", "E2003", "E3001"],
+      "throws": [
+        "E1001",
+        "E1004",
+        "E2001",
+        "E2002",
+        "E2003",
+        "E3001"
+      ],
       "warning": "floorSession() 은 항상 같은 인스턴스를 돌려준다. UWB 라디오·판정 엔진·좌표 버퍼가 기기당 하나뿐이다.",
       "expectedLog": "[I4001] 측위 시작 — visitor=v-20260820-001"
     },
