@@ -9,6 +9,22 @@
 
 ---
 
+## [0.1.2] — 2026-08-20
+
+공개 API 변경 없음. 의존성 해석만 다시 하면 됩니다.
+
+### Added
+- `Migrations/ios.json` — 버전 간 코드 수정 지침. 코딩 에이전트(MCP)가 읽어
+  "지금 0.1.0 인데 최신으로 올리려면" 에 답합니다.
+- `CHANGELOG.md` — 이 파일.
+- `Scripts/release.sh` — 태그를 단 뒤 **그 태그가 실제로 무엇을 담았는지 확인**합니다.
+
+### Fixed
+- `v0.1.1` 태그가 마이그레이션 파일보다 먼저 만들어져 그 파일을 담고 있지 않았습니다.
+  v0.1.0 → v0.1.1 과 같은 일이 반복된 것이라, 이번에는 릴리스 스크립트로 절차를 고정했습니다.
+
+---
+
 ## [0.1.1] — 2026-08-20
 
 공개 API 변경 없음. 의존성 해석만 다시 하면 됩니다.
@@ -58,5 +74,6 @@
 - **위치 권한이 측위의 전제 조건**입니다. 없으면 세션이 `INVALID_CONFIGURATION` 으로 실패합니다.
 - LICENSE 는 아직 없습니다. 사용 조건은 별도 계약을 따릅니다.
 
+[0.1.2]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.2
 [0.1.1]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.1
 [0.1.0]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.0
