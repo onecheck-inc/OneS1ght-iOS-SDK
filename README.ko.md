@@ -1,9 +1,12 @@
-# OneS1ght SDK — iOS (Swift)
+# OneS1ght SDK for iOS
 
 [English](README.md) | **한국어** | [日本語](README.ja.md)
 
-실내 위치 인텔리전스 SDK입니다. 앱에 추가하면 UWB(DL-TDoA) 실내 측위로 방문·동선
-데이터를 수집하고, 존(Zone) 진입·이탈·체류 이벤트를 온디바이스로 받습니다.
+OneS1ght SDK for iOS는 iOS 모바일 환경에서 UWB 통신을 통해 실시간으로 정확도가 높은 측위 데이터를 제공하고 제공된 데이터를 통해 세밀한 마케팅 인사이트를 제공합니다. 
+
+SDK 에 대해 
+- GitHub: https://github.com/onecheck-inc/onesight-mobile-swift
+- 개발자 문서: https://docs.ones1ght.com/sdk/overview 
 
 ---
 
