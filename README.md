@@ -9,7 +9,8 @@ Xcode → **File → Add Package Dependencies** →
 ```
 https://github.com/onecheck-inc/onesight-mobile-swift
 ```
-측위 엔진(gpi-dltdoa)을 xcframework로 내장하여, 이 패키지 하나만 추가하면 됩니다.
+측위 엔진(gpi-dltdoa)과 진출입 판정 엔진(gpi-prm)은 SPM이 자동으로 함께 받아오므로,
+이 패키지 하나만 추가하면 됩니다.
 
 ## 빠른 시작
 ```swift

@@ -9,7 +9,7 @@
 //    (반복 발화 금지 — 서버 시책 매칭에 중복 억제가 없어 반복 전송은 트리거 도배가 된다)
 //  · AreaInfo 에는 ID 필드가 없다 → name 을 매핑 키로 쓴다 (중복 시 #n 접미사로 유일화).
 //  · PRM 콜백은 백그라운드 큐 → 메인으로 디스패치해 onEvent 발행.
-//  · PRM 은 싱글턴 — 층 전환(apply)마다 stop → start 로 존 교체.
+//  · PRM 2.0.0 부터 인스턴스 단위(Prm.create) — 층 전환(apply)마다 stop → start 로 존 교체.
 //
 
 #if os(iOS)
@@ -26,11 +26,11 @@ public final class PrmZoneEngine: ZoneJudging {
     public var onJudge: ((ZoneJudge) -> Void)?   // PRM 은 틱 단위 판단을 노출하지 않음 — 미발행
     public var onLog: ((String) -> Void)?        // PRM 수명주기·오류 진단 (조용한 실패 금지)
 
-    private let prm: Prm = PrmFactory.getInstance()
-    /// pushEvent 태그 = 기기 익명 ID(UUID) — PRM 내부 파일로그(gpi-logger)와
-    /// 서버 존 이벤트(anon_user_id)를 같은 키로 대조할 수 있게 한다.
-    private lazy var tagId: String = IdentityStore().anonUserId
-    private let bridge = CallbackBridge()
+    /// 인스턴스 이름 = 기기 익명 ID(UUID). 2.0.0 에서 pushEvent 의 tagId 가 사라지면서
+    /// 그 자리를 이 이름이 잇는다 — PRM 내부 파일로그(gpi-logger)·콜백의 prmName 으로 나와
+    /// 서버 존 이벤트(anon_user_id)와 같은 키로 대조할 수 있다.
+    private let prm: Prm
+    private let bridge: CallbackBridge
     private var nameToZone: [String: Zone] = [:]
 
     // DWELL 파생 상태
@@ -52,8 +52,11 @@ public final class PrmZoneEngine: ZoneJudging {
     static let defaultPriority: Int         = 1
 
     public init() {
+        // prm 이 stored property 라 self 사용 전에 채워야 한다 → bridge 를 지역에서 먼저 만든다.
+        let bridge = CallbackBridge()
+        self.bridge = bridge
+        self.prm = Prm.create(name: IdentityStore().anonUserId, callback: bridge)
         bridge.owner = self
-        prm.setCallback(callback: bridge)
     }
 
     // MARK: - ZoneJudging
@@ -72,18 +75,17 @@ public final class PrmZoneEngine: ZoneJudging {
             while nameToZone[key] != nil { key = "\(z.name)#\(n)"; n += 1 }
             nameToZone[key] = z
 
-            let a = AreaInfo()
-            a.name = key
-            a.points = z.polygon.map { CGPoint(x: $0.x, y: $0.y) }
             // 미설정(0) 필드는 기본값으로 대체 — 콘솔의 0 은 "설정 안 함"이지만
             // PRM 은 그대로 받으면 판정이 죽는다: 확정 0·간격 0 은 무발화, 거리 0 은 0.01m 치환이라
             // 정지 지터(0.05~0.09m)에도 매번 리셋된다 (08-11 실측). 원본 Zone 은 두고 주입값만 보정.
-            a.inDist = z.inDist > 0 ? z.inDist : Self.defaultInDist
-            a.inCount = z.inCount > 0 ? z.inCount : Self.defaultInCount
-            a.inCountInterval = z.inCountInterval > 0 ? z.inCountInterval : Self.defaultInCountInterval
-            a.outPeriod = z.outPeriod > 0 ? z.outPeriod : Self.defaultOutPeriod
-            a.priority = z.priority > 0 ? z.priority : Self.defaultPriority
-            a.callInout = z.callInout
+            let a = AreaInfo.Builder(name: key, points: z.polygon.map { CGPoint(x: $0.x, y: $0.y) })
+                .inDist(z.inDist > 0 ? z.inDist : Self.defaultInDist)
+                .inCount(z.inCount > 0 ? z.inCount : Self.defaultInCount)
+                .inCountInterval(z.inCountInterval > 0 ? z.inCountInterval : Self.defaultInCountInterval)
+                .outPeriod(z.outPeriod > 0 ? z.outPeriod : Self.defaultOutPeriod)
+                .priority(z.priority > 0 ? z.priority : Self.defaultPriority)
+                .callInout(z.callInout)
+                .build()
             areas.append(a)
         }
         warnedNotRunning = false
@@ -106,7 +108,7 @@ public final class PrmZoneEngine: ZoneJudging {
             onLog?(String(format: SdkLocalized.text("zone.paramDump"),
                           z.name, z.inDist, z.inCount, z.inCountInterval, z.outPeriod))
         }
-        prm.start(areaInfoList: areas, wallInfoList: [])
+        prm.start(areaInfoList: areas)
     }
 
     public func ingest(_ p: Position, now: Date = Date()) {
@@ -136,8 +138,7 @@ public final class PrmZoneEngine: ZoneJudging {
             }
         }
         // logShadowCount(p, now: now)   // 적립 그림자 카운트 로그 — 필요할 때만 주석 해제 (4Hz 로그량 큼)
-        // 직접 주입 모드의 spaceId 는 1 고정 (PRM README 컨벤션)
-        prm.pushEvent(spaceId: 1, tagId: tagId, x: p.x, y: p.y, z: 0)
+        prm.pushEvent(x: p.x, y: p.y, z: 0)
     }
 
     // ── 진입 적립 그림자 카운트 — 엔진이 내부 카운트를 노출하지 않아 SDK 가 같은 규칙으로 병행 계산.
@@ -222,17 +223,18 @@ public final class PrmZoneEngine: ZoneJudging {
     /// (PrmCallback 이 AnyObject 요구라 엔진 본체와 분리 — retain cycle 도 회피)
     private final class CallbackBridge: PrmCallback {
         weak var owner: PrmZoneEngine?
-        func onStart() { relay("▶︎ PRM start") }
-        func onStop()  { relay("■ PRM stop") }
-        func onError(msg: String) { relay("⚠️ PRM error: \(msg)") }
+        func onStart(prmName: String) { relay("▶︎ PRM start") }
+        func onStop(prmName: String)  { relay("■ PRM stop") }
+        func onError(prmName: String, msg: String) { relay("⚠️ PRM error: \(msg)") }
         private func relay(_ msg: String) {
             Task { @MainActor [weak owner] in owner?.onLog?(msg) }
         }
-        func onReceivedInout(inoutStr: String, tagId: String, workspaceId: Int64, workspaceName: String) {
+        func onReceivedInout(prmName: String, inoutStr: String, areaName: String) {
             Task { @MainActor [weak owner] in
                 // 원본 콜백 증적 — 어댑터 번역 전 PRM 이 준 그대로 (판정 주체가 PRM 임을 파일로 증명)
-                owner?.onLog?("PRM ← \(inoutStr) tag=\(tagId) ws#\(workspaceId) \(workspaceName)")
-                owner?.handleInout(inoutStr, areaName: workspaceName)
+                // prmName = 인스턴스 이름 = anon_user_id (2.0.0 이전의 tagId 자리)
+                owner?.onLog?("PRM ← \(inoutStr) tag=\(prmName) area=\(areaName)")
+                owner?.handleInout(inoutStr, areaName: areaName)
             }
         }
     }
