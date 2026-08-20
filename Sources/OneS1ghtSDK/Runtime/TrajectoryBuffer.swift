@@ -4,7 +4,7 @@
 //
 //  · add로 축적 → flush 시 오래된 것부터 maxPerRequest(500)씩 잘라 전송 (사양서 §6.5 상한)
 //  · 전송 성공(200)한 배치만 제거 — 실패하면 유지 → 다음 flush 때 재시도 (사양서 §9)
-//  · flush "트리거"(100건/5분/종료/백그라운드)는 SessionCoordinator가 당긴다
+//  · flush "트리거"(300건/60초/종료/백그라운드)는 SessionCoordinator가 당긴다
 //
 
 import Foundation

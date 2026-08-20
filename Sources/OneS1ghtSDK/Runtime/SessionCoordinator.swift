@@ -4,7 +4,7 @@
 //
 //  verify(키검증) → buildings(1회) → provider 가동
 //    ├ didEnter(빌딩)   → buildings 캐시 보정
-//    ├ didUpdate(좌표)  → 층 설정 lazy 로드 + 버퍼 적재 → 100건/5분/종료/백그라운드에 벌크 전송
+//    ├ didUpdate(좌표)  → 층 설정 lazy 로드 + 버퍼 적재 → 300건/60초/종료/백그라운드에 벌크 전송
 //    └ didDetectZone    → events/zone 즉시 전송 (+network 1회 재시도) → triggers 호스트 전달
 //
 //  · 동의 게이팅: consent=false면 수집 미시작 (결정사항 5 — 서버는 기록만 하므로 클라가 막음)
@@ -34,7 +34,9 @@ final class SessionCoordinator {
     private var geospace: GeospaceClient?        // initialize(geospaceKey:)가 있을 때만 — 앵커·세션·층 (과도기)
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
 
-    // 배치 정책 (사양서 §6.5·§9 — 테스트에서 작게 주입)
+    // 배치 정책 (사양서 §6.8 은 100건/5분 "권장" — 2026-08-20 300건/60초로 조정.
+    // 4Hz 에서는 300건(=75초)보다 60초 타이머가 먼저 걸려 실질 60초·240건 주기가 된다.
+    // 종전 100건/300초는 25초마다 100건 → 요청 수가 2.4배였다. 테스트에서 작게 주입.)
     private let flushThreshold: Int
     private let flushInterval: TimeInterval
     private(set) var buffer: TrajectoryBuffer!
@@ -66,8 +68,8 @@ final class SessionCoordinator {
     init(api: ApiClient,
          identity: IdentityStore,
          geospace: GeospaceClient? = nil,
-         flushThreshold: Int = 100,
-         flushInterval: TimeInterval = 300,
+         flushThreshold: Int = 300,
+         flushInterval: TimeInterval = 60,
          maxPerRequest: Int = 500) {
         self.api = api
         self.identity = identity
@@ -308,7 +310,7 @@ final class SessionCoordinator {
         return ReqVerify(platform_name: "iOS", app_id: Self.appId, client: client)
     }
 
-    // MARK: - 배치 트리거 (100건 / 5분 / 백그라운드)
+    // MARK: - 배치 트리거 (300건 / 60초 / 백그라운드)
 
     private func startFlushTimer() {
         flushTimer = Timer.scheduledTimer(withTimeInterval: flushInterval, repeats: true) { [weak self] _ in
