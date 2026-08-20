@@ -10,12 +10,21 @@
       }
     },
     {
-      "identity" : "geoswift",
+      "identity" : "gpi-dltdoa",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/GEOSwift/GEOSwift.git",
+      "location" : "https://github.com/Geoplan-Mobile/gpi-dltdoa",
       "state" : {
-        "revision" : "9ddf733b9f72799eb7651d1e0d322f2426b36a06",
-        "version" : "11.2.0"
+        "revision" : "34064ce39247255d29d64e2093c3f207e5d96ad9",
+        "version" : "2.1.0"
+      }
+    },
+    {
+      "identity" : "gpi-logger",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Geoplan-Mobile/gpi-logger",
+      "state" : {
+        "revision" : "e3797d00b11baf3be75de4f82d009a7115c34f11",
+        "version" : "1.0.1"
       }
     },
     {
@@ -23,8 +32,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Geoplan-Mobile/gpi-prm",
       "state" : {
-        "revision" : "4e1fe6117671cb711edaa87d51b8628610da5463",
-        "version" : "1.1.0"
+        "revision" : "2339f4352a1be39e6f898d388b5fd6f29c2b1ce7",
+        "version" : "2.0.0"
       }
     }
   ],
