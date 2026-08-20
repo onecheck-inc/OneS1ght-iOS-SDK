@@ -109,11 +109,6 @@
     "ja": "verify 通過 (tenant: %@)",
     "en": "verify passed (tenant: %@)"
   },
-  "coord.buildingsLoaded": {
-    "ko": "buildings %d건 로드 — 세션 가능",
-    "ja": "buildings %d件をロード — セッション可能",
-    "en": "Loaded %d buildings — session ready"
-  },
   "coord.consent": {
     "ko": "consent 기록됨",
     "ja": "consent 記録済み",
@@ -173,16 +168,6 @@
     "ko": "🗺 존 %d개 주입 — 판정 시작",
     "ja": "🗺 ゾーン %d件を適用 — 判定開始",
     "en": "🗺 Applied %d zones — judgment started"
-  },
-  "coord.autoSelect": {
-    "ko": "🏠 자동 선택: %@ · %@",
-    "ja": "🏠 自動選択: %@ · %@",
-    "en": "🏠 Auto-selected: %@ · %@"
-  },
-  "coord.autoSelectFail": {
-    "ko": "⚠️ 층 자동 선택 실패 — loadFloor 로 수동 선택 필요: %@",
-    "ja": "⚠️ 階の自動選択に失敗 — loadFloor で手動選択してください: %@",
-    "en": "⚠️ Floor auto-select failed — select manually via loadFloor: %@"
   },
   "zone.refreshSkipped": {
     "ko": "⚠️ 존 재조회 건너뜀 — 선택된 층이 없음",
@@ -308,5 +293,10 @@
     "ko": "이동 %.2fm > 진입거리 %.2fm",
     "ja": "移動 %.2fm > 進入距離 %.2fm",
     "en": "moved %.2fm > inDist %.2fm"
+  },
+  "coord.noFloorLoaded": {
+    "ko": "⚠️ 선택된 층이 없어 측위 좌표가 나오지 않습니다 — loadFloor 를 먼저 호출하세요",
+    "ja": "⚠️ 選択された階がないため測位座標が出ません — 先に loadFloor を呼び出してください",
+    "en": "⚠️ No floor selected — positions will not be produced. Call loadFloor first."
   }
 }

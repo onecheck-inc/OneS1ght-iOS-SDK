@@ -9,12 +9,12 @@
 //  세션이 여럿이면 서로 충돌한다.
 //
 //  사용 (호스트 앱):
-//    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 층 자동 선택(첫 건물·첫 층). 이것만으로 측위 준비 끝.
+//    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 테넌트 설정 수신
 //    try await OneS1ght.initialize(sdkKey: "ock_…", geospaceKey: "gsk_…")
-//    // (선택) 층을 직접 고르는 앱만 — 자동 선택을 덮어쓴다
+//    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
 //    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
-//    // ② 매장 진입 시 — 측위 가동 (initialize가 미리 끝나 있어 즉시 시작)
+//    // ③ 매장 진입 시 — 측위 가동
 //    OneS1ght.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
 //    try await OneS1ght.start(consent: userConsented)
 //    OneS1ght.identify(customerId: "cust_123")           // (선택) 로그인 시
@@ -80,19 +80,21 @@ public final class OneS1ght {
 
     // MARK: - 생명주기
 
-    /// 초기화 (앱 시작 시 1회) — 기기 게이트 → 키 검증 + 설정 프리페치.
+    /// 초기화 (앱 시작 시 1회) — 기기 게이트 → 키 검증 + 테넌트 SDK 설정 수신.
     /// 통과하면 "이 기기에서 이 키로 측위 세션 가능" 확정.
+    /// verify 한 번으로 키 유효성과 백엔드 도달 가능 여부를 함께 확인한다.
     /// 실패 사유는 throw (osVersionTooLow/deviceNotSupported/invalidKey/positioningDisabled/network).
     /// 실패 시 재호출 = 재시도 · 성공 후 재호출 = 무시(멱등) · 다른 키로 재호출 = 세션 재구성.
     /// - sdkKey: OneS1ght 콘솔 발급 (ock_) — 인증·존·수집·이벤트·도면
     /// - geospaceKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
     ///   서버 통합이 끝나면 불필요해지는 과도기 인자 — 생략 시 측위만 비활성, 나머진 동작.
-    /// 통과 시 첫 건물·층을 자동 선택해 측위 준비까지 마친다 — start() 만 부르면 가동.
-    /// 다른 층을 원하면 buildings()/loadFloor() 로 덮어쓴다.
+    /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
+    ///   콘솔이 발급하는 키(production/development)가 가른다.
+    /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/loadFloor() 의 책임이다.
+    /// loadFloor 없이 start() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(로그로 통지).
     public static func initialize(sdkKey: String,
                                   geospaceKey: String? = nil,
-                                  baseURL: URL = ApiClient.defaultBaseURL,
-                                  session: URLSession = .shared) async throws {
+                                  baseURL: URL = ApiClient.defaultBaseURL) async throws {
         // ① 기기 게이트 — 측위 불가 기기는 세션 전체가 무의미하므로 네트워크 타기 전에 사유와 함께 거부.
         //    시뮬레이터는 예외: 개발·테스트 환경 전용이고 스토어 배포가 불가능해 프로덕션 우회 경로가 없다.
         //    (시뮬레이터에서도 실측위는 start()의 내장 UWB 게이트가 막는다 — Mock provider 주입만 가능)
@@ -116,7 +118,7 @@ public final class OneS1ght {
             let geospace = geospaceKey.map {
                 GeospaceClient(keys: .init(sdk: sdkKey, geospace: $0))
             }
-            let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL, session: session),
+            let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
                                        identity: identity,
                                        geospace: geospace)
             c.onTriggers = { zoneId, triggers in OneS1ght.onTriggers?(zoneId, triggers) }

@@ -15,10 +15,16 @@ https://github.com/onecheck-inc/onesight-mobile-swift
 ```swift
 import OneS1ght
 
-// ① 앱 시작 시 — 키 검증 + 설정 로드
-try await OneS1ght.initialize(sdkKey: "ock_sdk_...")
+// ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신
+try await OneS1ght.initialize(sdkKey: "ock_sdk_...", geospaceKey: "gsk_...")
 
-// ② 매장 화면 진입 시 — 측위 시작 (위치 권한·수집 동의 후)
+// ② 공간 선택 — 필수 (이걸 안 하면 좌표가 나오지 않습니다)
+let buildings = try await OneS1ght.buildings()
+if let b = buildings.first, let f = b.floors.first {
+    try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
+}
+
+// ③ 매장 화면 진입 시 — 측위 시작 (위치 권한·수집 동의 후)
 try await OneS1ght.start(consent: true)
 
 // 구역 이벤트 수신
@@ -26,7 +32,7 @@ OneS1ght.onZoneEvent = { event in
     if case .enter(let zone, _) = event { print("진입: \(zone.name)") }
 }
 
-// ③ 매장 화면 이탈 시
+// ④ 매장 화면 이탈 시
 await OneS1ght.stop()
 ```
 

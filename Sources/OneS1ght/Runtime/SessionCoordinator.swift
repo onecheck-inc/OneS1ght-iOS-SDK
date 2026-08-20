@@ -45,12 +45,10 @@ final class SessionCoordinator {
     private(set) var isPrepared = false           // initialize(=prepare) 성공 여부 = "세션 가능"
     /// 호스트가 loadFloor 를 호출한 적 있나 — **호출 진입 시점**에 세운다.
     /// 완료 시점(currentInfra)만 보면 자동 선택과 동시에 진행돼 늦게 끝난 쪽이 이기는 경합이 생긴다.
-    private var hostDidSelectFloor = false
     private(set) var isRunning = false
     private(set) var visitorId = ""
     private(set) var floorConfigs: [String: ResFloorConfig] = [:]   // 층별 존 설정 (lazy)
     private var loadingFloors: Set<String> = []
-    private var buildingsCache: ResBuildings?
     private(set) var currentInfra: FloorInfra?   // loadFloor 결과 — start 시 provider 에 주입
     private var flushTimer: Timer?
     private var lifecycleObservers: [NSObjectProtocol] = []
@@ -83,44 +81,23 @@ final class SessionCoordinator {
 
     // MARK: - 라이프사이클 (도식 1~5)
 
-    /// 초기화(앱 시작 시 1회) — 키 검증 + buildings 프리페치.
+    /// 초기화(앱 시작 시 1회) — 키 검증 + 테넌트 SDK 설정 수신. 이게 전부다.
     /// 통과 = "세션 가능" 확정. 실패 사유는 throw (invalidKey/positioningDisabled/network).
+    ///
+    /// 건물·층은 여기서 건드리지 않는다 — 공간 선택은 buildings()/loadFloor() 라는
+    /// 별도 메서드의 책임이고, 어느 층을 쓸지는 호스트 앱만 안다. 자동 선택을 두면
+    /// 앱이 고르는 중에 SDK 가 다른 층으로 덮어쓰는 경합이 생긴다(08-11 실기기 확인).
     func prepare() async throws {
         guard !isPrepared else { return }                            // 멱등
 
-        // ③ 키 검증 + 클라 등록 (consent는 아직 모름 → 생략, 서버 기존값 보존)
+        // 키 검증 + 클라 등록 (consent는 아직 모름 → 생략, 서버 기존값 보존)
+        // verify 성공 = 키 유효 + 백엔드 도달 가능 두 가지를 한 번에 확인한 것.
         let verified = try await api.verify(makeVerifyRequest(consent: nil))
         guard verified.valid, verified.positioning_enabled else {
             throw SdkError.positioningDisabled
         }
         log(SdkLocalized.format("coord.verifyPass", verified.tenant_code ?? "?"))
-
-        // ④ 빌딩·층 목록 프리페치 (경량, 1회)
-        buildingsCache = try await api.buildings()
-        log(SdkLocalized.format("coord.buildingsLoaded", buildingsCache?.buildings.count ?? 0))
         isPrepared = true
-
-        // 층 자동 해석 — initialize 만으로 측위 준비가 끝나게 (start 는 바로 가동).
-        // 실패해도 prepare 는 성공 — 앱이 buildings()/loadFloor() 로 수동 선택하면 된다.
-        await autoSelectFloorIfNeeded()
-    }
-
-    /// 층 자동 해석 — 현재는 "첫 건물 · 도면 있는 첫 층" (단일 현장 가정).
-    /// 지오펜스(가까운 건물)·BLE(층 판별)가 들어오면 정확히 이 지점이 똑똑해진다.
-    private func autoSelectFloorIfNeeded() async {
-        guard currentInfra == nil, !hostDidSelectFloor, let geospace else { return }
-        do {
-            guard let b = try await geospace.loadBuildings().first,
-                  let f = b.floors.first(where: { $0.hasPlan }) ?? b.floors.first else { return }
-            // 목록을 받아오는 동안 호스트가 loadFloor 를 호출했을 수 있다 — 그러면 물러난다.
-            // (08-11 실기기: 앱이 DNP 를 고르는 중에 자동 선택이 607호로 덮어써 앵커 0개 수신.
-            //  완료 여부(currentInfra)가 아니라 호출 여부로 판정해야 동시 진행 경합이 잡힌다)
-            guard currentInfra == nil, !hostDidSelectFloor else { return }
-            _ = try await performLoadFloor(buildingId: b.id, floorId: f.id)
-            log(SdkLocalized.format("coord.autoSelect", b.name, f.name))
-        } catch {
-            log(SdkLocalized.format("coord.autoSelectFail", "\(error)"))
-        }
     }
 
     /// 빌딩/층 트리 — 선택 UI용. geospaceKey 없으면 빈 배열 (측위 미사용 통합)
@@ -133,11 +110,9 @@ final class SessionCoordinator {
     /// start 전에 부르면 start 가 주입하고, 가동 중에 부르면 즉시 갈아끼운다(층 전환).
     @discardableResult
     func loadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
-        hostDidSelectFloor = true                    // 자동 선택보다 호스트 선택이 항상 우선
         return try await performLoadFloor(buildingId: buildingId, floorId: floorId)
     }
 
-    /// 실제 로드 — 자동 선택도 이 경로를 쓴다(표식은 세우지 않음).
     @discardableResult
     private func performLoadFloor(buildingId: String, floorId: String) async throws -> FloorInfra {
         guard let geospace else { throw SdkError.notInitialized }
@@ -205,16 +180,13 @@ final class SessionCoordinator {
         _ = try await api.verify(makeVerifyRequest(consent: consent))
         log(SdkLocalized.text("coord.consent"))
 
-        if currentInfra == nil { await autoSelectFloorIfNeeded() }   // 재시도 안전망
-
-        // 인프라 주입 — loadFloor 로 받아둔 층(앵커·세션·존)이 있으면 그걸로,
-        // 없으면 구버전 폴백(콘솔 첫 건물·첫 층 ID만 — 앵커는 호스트 apply 의존)
+        // 인프라 주입 — loadFloor 로 받아둔 층(앵커·세션·존)이 있을 때만.
+        // 층 미선택이면 측위 파이프라인은 돌되 좌표가 나오지 않는다 → 조용히 두지 않고 알린다.
         self.provider = provider
         if currentInfra != nil {
             applyInfraToProvider()
-        } else if let building = buildingsCache?.buildings.first,
-                  let floor = building.floors?.first {
-            provider.apply(buildingId: building.building_id, floorId: floor.floor_id)
+        } else {
+            log(SdkLocalized.text("coord.noFloorLoaded"))
         }
 
         // 방문 시작
@@ -362,12 +334,8 @@ final class SessionCoordinator {
 
 extension SessionCoordinator: PositioningProviderDelegate {
 
-    /// 입장 트리거 — 빌딩 목록 캐시 보정 (start에서 이미 로드, 실패했었다면 재시도)
-    func provider(_ p: PositioningProvider, didEnter buildingId: String) {
-        if buildingsCache == nil {
-            Task { buildingsCache = try? await api.buildings() }
-        }
-    }
+    /// 입장 트리거 — 통지만 받는다. 건물·층 조회는 호스트 앱의 몫이라 SDK 는 움직이지 않는다.
+    func provider(_ p: PositioningProvider, didEnter buildingId: String) {}
 
     /// 좌표 fix — 층 설정 확보 + 버퍼 적재, 임계 도달 시 flush
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,

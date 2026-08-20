@@ -72,8 +72,9 @@ final class SessionCoordinatorTests: XCTestCase {
         }
     }
 
-    // prepare: verify → buildings 순서, "세션 가능" 확정. 측위는 아직 안 돎
-    func testPrepare_verifiesAndPrefetchesBuildings() async throws {
+    // prepare: verify 만. "세션 가능" 확정, 측위는 아직 안 돎.
+    // 건물·층 조회는 prepare 의 책임이 아니다 — buildings()/loadFloor() 로 분리돼 있다.
+    func testPrepare_verifiesKeyOnly() async throws {
         routeDefaults()
         let c = makeCoordinator()
         try await c.prepare()
@@ -81,7 +82,7 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(c.isPrepared)                              // 세션 가능
         XCTAssertFalse(provider.isRunning)                       // 측위는 아직
         XCTAssertEqual(StubURLProtocol.requests.map(\.path),
-                       ["/api/sdk/v1/auth/verify", "/api/sdk/v1/positioning/buildings"])
+                       ["/api/sdk/v1/auth/verify"])        // buildings 는 부르지 않는다
         // prepare 시점엔 consent 미전송 (필드 생략 — 기존값 보존)
         let body = try JSONDecoder().decode(ReqVerify.self,
                                             from: XCTUnwrap(StubURLProtocol.requests[0].body))
@@ -95,8 +96,9 @@ final class SessionCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(provider.isRunning)
         XCTAssertTrue(c.visitorId.hasPrefix("v-"))
-        XCTAssertEqual(provider.appliedBuildingId, "B1")         // buildings 값 주입
-        XCTAssertEqual(provider.appliedFloorId, "F")
+        // 층 미선택 상태 — SDK 가 임의로 건물·층을 고르지 않는다 (호스트가 loadFloor 를 부를 때까지)
+        XCTAssertNil(provider.appliedBuildingId)
+        XCTAssertNil(provider.appliedFloorId)
         // 요청: prepare 2회 + start의 consent 기록 1회
         let verifies = StubURLProtocol.requests.filter { $0.path.hasSuffix("/auth/verify") }
         XCTAssertEqual(verifies.count, 2)
