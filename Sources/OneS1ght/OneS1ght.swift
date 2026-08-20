@@ -13,13 +13,15 @@
 //    try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
 //    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
-//    let infra = try await OneS1ght.loadFloor(buildingId: b.id, floorId: f.id)
+//    let floors = try await OneS1ght.floors(buildings[0].id)
+//    try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
 //    // ③ 프로필 연결 — createProfile 로 발급받아 앱이 보관한 값
 //    OneS1ght.identify(profileId: "pf_8a3c")
 //    // ④ 매장 진입 시 — 측위 가동
-//    OneS1ght.onTriggers = { zoneId, triggers in ... }   // 쿠폰 등 액션 수신
-//    try await OneS1ght.start()
-//    await OneS1ght.stop()                               // 재시작 가능 (초기화 유지)
+//    let session = try OneS1ght.floorSession()
+//    session.onTriggers = { zoneId, triggers in ... }    // 쿠폰 등 액션 수신
+//    try await session.begin()
+//    await session.end()                                 // 재시작 가능 (초기화 유지)
 //
 
 import Foundation
@@ -106,14 +108,14 @@ public final class OneS1ght {
     ///   서버 통합이 끝나면 불필요해지는 과도기 인자 — 생략 시 측위만 비활성, 나머진 동작.
     /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
     ///   콘솔이 발급하는 키(production/development)가 가른다.
-    /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/loadFloor() 의 책임이다.
-    /// loadFloor 없이 start() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(로그로 통지).
+    /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/setFloorMap() 의 책임이다.
+    /// setFloorMap 없이 begin() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(E3001 로 통지).
     public static func initialize(sdkKey: String,
                                   geoSdkKey: String? = nil,
                                   baseURL: URL = ApiClient.defaultBaseURL) async throws {
         // ① 기기 게이트 — 측위 불가 기기는 세션 전체가 무의미하므로 네트워크 타기 전에 사유와 함께 거부.
         //    시뮬레이터는 예외: 개발·테스트 환경 전용이고 스토어 배포가 불가능해 프로덕션 우회 경로가 없다.
-        //    (시뮬레이터에서도 실측위는 start()의 내장 UWB 게이트가 막는다 — Mock provider 주입만 가능)
+        //    (시뮬레이터에서도 실측위는 begin()의 내장 UWB 게이트가 막는다 — Mock provider 주입만 가능)
         #if os(iOS) && !targetEnvironment(simulator)
         switch deviceAvailability {
         case .osVersionTooLow:    throw SdkError.osVersionTooLow
@@ -284,7 +286,7 @@ public final class OneS1ght {
     /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
     /// createProfile() 로 발급받아 앱이 보관한 값을 넘긴다(로그아웃 등 해제는 nil).
     /// 고객사 회원 ID ↔ profileId 매핑은 고객사만 보관한다 — 회원 ID 는 OneS1ght 에 오지 않는다.
-    /// start() 전에 반드시 호출해야 한다 (없으면 .notIdentified).
+    /// begin() 전에 반드시 호출해야 한다 (없으면 .notIdentified · E1004).
     public static func identify(profileId: String?) {
         self.profileId = profileId
         coordinator?.identify(profileId: profileId)
