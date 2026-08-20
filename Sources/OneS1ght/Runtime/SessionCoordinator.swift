@@ -58,6 +58,10 @@ final class SessionCoordinator {
     private(set) var floorState: FloorState?    // setFloorMap 결과 — start 시 provider 에 주입
     private(set) var currentFloor: Floor?        // setFloorMap 이 받은 Floor (floorSession 노출용)
     private var flushTimer: Timer?
+    /// 수신 진단 1회 확인 — 측위 시작 후 이 시간 뒤에 본다.
+    /// 7초는 데모 앱이 현장에서 쓰던 값이다(5초 자동진단 직후).
+    private var receptionCheckTask: Task<Void, Never>?
+    private let receptionCheckDelay: TimeInterval
     private var lifecycleObservers: [NSObjectProtocol] = []
 
     /// 존 이벤트 응답의 개인화 액션 → 호스트 전달 (zoneId, triggers)
@@ -109,7 +113,9 @@ final class SessionCoordinator {
          geospace: GeospaceClient? = nil,
          flushThreshold: Int = 300,
          flushInterval: TimeInterval = 60,
-         maxPerRequest: Int = 500) {
+         maxPerRequest: Int = 500,
+         receptionCheckDelay: TimeInterval = 7) {
+        self.receptionCheckDelay = receptionCheckDelay
         self.api = api
         self.identity = identity
         self.geospace = geospace
@@ -276,7 +282,43 @@ final class SessionCoordinator {
         provider.start()
         isRunning = true
         startFlushTimer()
+        startReceptionCheck()
         observeAppLifecycle()
+    }
+
+    /**
+     * 측위를 켠 뒤 한 번, 신호가 실제로 잡히고 있는지 본다.
+     *
+     * 로케이터가 죽어도 앱에서는 "좌표가 그냥 안 나온다" 로만 보인다. 원인을 현장에서
+     * 특정할 유일한 온디바이스 단서가 이 비교(등록 vs 수신)라, 로그에 남겨 둔다.
+     * 개발자는 Console.app 에서, 관리자는 콘솔 로그 분석기에서 같은 줄을 본다.
+     *
+     * ⚠️ **미수신을 고장으로 단정하지 않는다.** 앵커 세트는 마스터 1대와 서브 여러 대로
+     * 이루어지고, 마스터가 살아 있는 한 서브가 빠져도 측위는 계속된다 — 감도가 떨어질 뿐이다.
+     * 그래서 WARN 으로 남긴다: 지금 당장 막힌 것은 아니지만 손볼 것이 생겼다는 뜻이다.
+     * ERROR 로 올리면 멀쩡한 현장에서 계속 울려 진짜 문제가 났을 때 아무도 안 본다.
+     *
+     * 한 번만 본다. 주기적으로 남기면 같은 줄이 로그를 덮어 정작 필요한 것이 묻힌다.
+     */
+    private func startReceptionCheck() {
+        receptionCheckTask?.cancel()
+        receptionCheckTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(receptionCheckDelay * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.isRunning else { return }
+            guard let d = self.provider?.positioningDiagnostic else { return }   // 진단 없는 provider
+
+            if !d.missingAddresses.isEmpty {
+                // 마스터가 빠졌는지 서브가 빠졌는지는 SDK 가 알 수 없다(주소만 안다).
+                // 그래서 판정하지 않고 사실만 적는다 — 판단은 현장 기기 라벨과 대조해야 한다.
+                report(.locatorNotReceived,
+                       "registered=\(d.registeredCount) received=\(d.receivedCount) missing=\(d.missingLabel)")
+            }
+            // 신호는 충분히 잡히는데 좌표가 안 나오면 등록 좌표와 실제 배치가 어긋났을 수 있다.
+            // 이건 측위가 실제로 막힌 상태라 ERROR 다.
+            if !d.hasFix && d.matchedCount >= 3 {
+                report(.noPositionFix, "matched=\(d.matchedCount) fix=none")
+            }
+        }
     }
 
     /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
@@ -312,6 +354,7 @@ final class SessionCoordinator {
         guard isRunning else { return }
         provider?.stop()
         flushTimer?.invalidate(); flushTimer = nil
+        receptionCheckTask?.cancel(); receptionCheckTask = nil
         removeLifecycleObservers()
         let pending = buffer.count
         log(SdkLocalized.format("coord.stopFlush", pending))
