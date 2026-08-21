@@ -147,11 +147,18 @@ UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
 이 키로 귀속됩니다.
 
 ```swift
-let profileId = savedProfileId ?? (try await OneS1ght.createProfile([
-    "gender":   "F",
-    "ageBand":  "20s",        // 정확한 나이가 아니라 연령대
-    "interest": "cosmetics",
-]))
+// ⚠️ `savedProfileId ?? (try await ...)` 는 컴파일되지 않는다 —
+//    `??` 오른쪽은 autoclosure 라 try/await 를 담을 수 없다.
+let profileId: String
+if let saved = savedProfileId {
+    profileId = saved
+} else {
+    profileId = try await OneS1ght.createProfile([
+        "gender":   "F",
+        "ageBand":  "20s",        // 정확한 나이가 아니라 연령대
+        "interest": "cosmetics",
+    ])
+}
 OneS1ght.identify(profileId: profileId)
 ```
 

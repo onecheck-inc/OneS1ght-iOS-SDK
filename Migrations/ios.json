@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.5",
+  "currentVersion": "0.1.6",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -45,6 +45,13 @@
       "breaking": false,
       "summary": "SDK 저장소 주소가 바뀌었다: onecheck-inc/onesight-mobile-swift → onecheck-inc/OneS1ght-iOS-SDK. 코드 동작은 그대로다.",
       "action": "Package.swift 의 .package(url:) 를 새 주소로 바꾸고, .product(package:) 식별자도 \"OneS1ght-iOS-SDK\" 로 함께 바꾼다 — SPM 은 패키지 식별자를 저장소 이름에서 뽑으므로 URL 만 고치면 \"unknown package\" 로 빌드가 깨진다. Xcode 프로젝트라면 패키지 의존성을 지웠다가 새 주소로 다시 추가한다. 옛 주소는 GitHub 이 리다이렉트해 주지만 영구 보장은 아니다."
+    },
+    {
+      "from": "0.1.5",
+      "to": "0.1.6",
+      "breaking": false,
+      "summary": "프로필 발급 예제가 컴파일되지 않던 것을 고쳤다. 코드 동작은 그대로다.",
+      "action": "스니펫대로 붙였다면 프로필 발급 부분이 컴파일되지 않았을 것이다. `savedProfileId ?? (try await ...)` 는 `??` 오른쪽이 autoclosure 라 try/await 를 담을 수 없다. if let 으로 풀어 쓴 새 스니펫으로 교체하라."
     }
   ]
 }

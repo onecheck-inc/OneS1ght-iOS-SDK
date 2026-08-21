@@ -145,11 +145,18 @@ UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
 訪問・動線データはこのキーに紐づきます。
 
 ```swift
-let profileId = savedProfileId ?? (try await OneS1ght.createProfile([
-    "gender":   "F",
-    "ageBand":  "20s",        // 正確な年齢ではなく年代
-    "interest": "cosmetics",
-]))
+// ⚠️ `savedProfileId ?? (try await ...)` はコンパイルできません —
+//    `??` の右辺は autoclosure のため try/await を含められません。
+let profileId: String
+if let saved = savedProfileId {
+    profileId = saved
+} else {
+    profileId = try await OneS1ght.createProfile([
+        "gender":   "F",
+        "ageBand":  "20s",        // 正確な年齢ではなく年代
+        "interest": "cosmetics",
+    ])
+}
 OneS1ght.identify(profileId: profileId)
 ```
 
