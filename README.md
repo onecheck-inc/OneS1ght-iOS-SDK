@@ -147,11 +147,18 @@ The server issues a `profileId`. **Store it in your app and reuse it** — it is
 that visit and movement data is attributed to.
 
 ```swift
-let profileId = savedProfileId ?? (try await OneS1ght.createProfile([
-    "gender":   "F",
-    "ageBand":  "20s",        // age band, not exact age
-    "interest": "cosmetics",
-]))
+// ⚠️ `savedProfileId ?? (try await ...)` does not compile — the right-hand side of `??`
+//    is an autoclosure and cannot carry try/await.
+let profileId: String
+if let saved = savedProfileId {
+    profileId = saved
+} else {
+    profileId = try await OneS1ght.createProfile([
+        "gender":   "F",
+        "ageBand":  "20s",        // age band, not exact age
+        "interest": "cosmetics",
+    ])
+}
 OneS1ght.identify(profileId: profileId)
 ```
 

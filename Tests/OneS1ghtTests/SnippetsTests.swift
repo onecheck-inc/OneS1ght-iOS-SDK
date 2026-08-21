@@ -89,6 +89,41 @@ final class SnippetsTests: XCTestCase {
         }
     }
 
+    /**
+     * ⚠️ 컴파일되지 않는 패턴이 스니펫에 들어가면 안 된다.
+     *
+     * `savedProfileId ?? (try await ...)` 가 실제로 들어 있었고, 그대로는 컴파일되지 않는다 —
+     * `??` 오른쪽은 autoclosure 라 try/await 를 담을 수 없다.
+     *
+     * ```
+     * error: operator can throw but expression is not marked with 'try'
+     * error: 'async' call in an autoclosure that does not support concurrency
+     * ```
+     *
+     * 스니펫은 코딩 에이전트가 **그대로 복사해 고객 코드에 넣는다.** 눈으로 읽어서는
+     * 멀쩡해 보이므로, 알려진 함정은 이렇게 못 박아 둔다.
+     */
+    func testNoUncompilablePatterns() throws {
+        // ⚠️ 주석은 걸러낸다 — 함정을 설명하는 주석에 그 패턴이 그대로 나온다.
+        //    검사 대상은 "컴파일되는 부분" 이지 설명이 아니다.
+        let code = try allCode
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> Substring in
+                guard let slash = line.range(of: "//") else { return line }
+                return line[line.startIndex..<slash.lowerBound]
+            }
+            .joined(separator: "\n")
+        let patterns = [
+            ("?? (try", "`??` 오른쪽은 autoclosure — try 를 담을 수 없다"),
+            ("?? (await", "`??` 오른쪽은 autoclosure — await 를 담을 수 없다"),
+            ("?? try", "`??` 오른쪽은 autoclosure — try 를 담을 수 없다"),
+        ]
+        for (pattern, why) in patterns {
+            XCTAssertFalse(code.contains(pattern),
+                           "스니펫에 컴파일되지 않는 패턴이 있다: \(pattern) — \(why)")
+        }
+    }
+
     /// 연동에 반드시 필요한 단계가 빠지지 않았는가.
     /// 특히 profile·selectFloor 는 빠뜨리면 조용히 실패하는 단계다(E1004·E3001).
     func testRequiredStepsArePresent() throws {

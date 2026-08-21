@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.1.5",
+  "sdkVersion": "0.1.6",
   "language": "swift",
   "requirements": {
     "positioning": {
@@ -70,7 +70,7 @@
       "title": "프로필 연결 — 데이터 귀속 대상",
       "order": 4,
       "language": "swift",
-      "code": "// 최초 1회 — 발급받아 앱에 저장(UserDefaults·Keychain 등)\nlet profileId = savedProfileId ?? (try await OneS1ght.createProfile([\n    \"gender\":  \"F\",\n    \"ageBand\": \"20s\"          // 정확한 나이가 아니라 연령대\n]))\n\n// 매 실행 — 저장해 둔 값을 연결\nOneS1ght.identify(profileId: profileId)",
+      "code": "// 최초 1회 — 발급받아 앱에 저장(UserDefaults·Keychain 등)\n// ⚠️ `savedProfileId ?? (try await ...)` 는 컴파일되지 않는다 —\n//    `??` 오른쪽은 autoclosure 라 try/await 를 담을 수 없다.\nlet profileId: String\nif let saved = savedProfileId {\n    profileId = saved\n} else {\n    profileId = try await OneS1ght.createProfile([\n        \"gender\":  \"F\",\n        \"ageBand\": \"20s\"          // 정확한 나이가 아니라 연령대\n    ])\n}\n\n// 매 실행 — 저장해 둔 값을 연결\nOneS1ght.identify(profileId: profileId)",
       "throws": [
         "E1001"
       ],

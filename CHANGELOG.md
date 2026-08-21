@@ -9,6 +9,36 @@
 
 ---
 
+## [0.1.6] — 2026-08-21
+
+코드 변경 없음. **연동 예제가 컴파일되지 않던 것을 고쳤습니다.**
+
+### Fixed
+- 프로필 발급 예제가 그대로는 컴파일되지 않았습니다.
+
+  ```swift
+  let profileId = savedProfileId ?? (try await OneS1ght.createProfile([...]))
+  // error: operator can throw but expression is not marked with 'try'
+  // error: 'async' call in an autoclosure that does not support concurrency
+  ```
+
+  `??` 오른쪽은 autoclosure 라 `try`/`await` 를 담을 수 없습니다. `if let` 으로 풀어 씁니다.
+
+  ```swift
+  let profileId: String
+  if let saved = savedProfileId {
+      profileId = saved
+  } else {
+      profileId = try await OneS1ght.createProfile(["gender": "F", "ageBand": "20s"])
+  }
+  OneS1ght.identify(profileId: profileId)
+  ```
+
+  README 3개 언어와 코딩 에이전트용 스니펫 모두 고쳤습니다. 스니펫에 컴파일되지 않는 패턴이
+  들어가면 테스트가 잡습니다.
+
+---
+
 ## [0.1.5] — 2026-08-21
 
 코드 변경 없음. **저장소 주소가 바뀌었습니다.**
