@@ -5,7 +5,7 @@
 OneS1ght SDK for iOS는 iOS 모바일 환경에서 UWB 통신을 통해 실시간으로 정확도가 높은 측위 데이터를 제공하고 제공된 데이터를 통해 세밀한 마케팅 인사이트를 제공합니다. 
 
 SDK 에 대해 
-- GitHub: https://github.com/onecheck-inc/onesight-mobile-swift
+- GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 - 개발자 문서: https://docs.ones1ght.com/sdk/overview 
 
 ---
@@ -34,14 +34,14 @@ SDK가 실제로 동작하려면 키와 공간 설정이 먼저 준비되어야 
 Xcode → **File → Add Package Dependencies…** 에서 아래 주소를 입력합니다.
 
 ```
-https://github.com/onecheck-inc/onesight-mobile-swift
+https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 ```
 
 `Package.swift` 로 붙이는 경우:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/onesight-mobile-swift", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [

@@ -31,14 +31,14 @@ SDK が実際に動作するには、キーと空間設定が先に用意され�
 Xcode → **File → Add Package Dependencies…** で以下の URL を入力します。
 
 ```
-https://github.com/onecheck-inc/onesight-mobile-swift
+https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 ```
 
 `Package.swift` で追加する場合:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/onesight-mobile-swift", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [

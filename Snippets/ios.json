@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.1.4",
+  "sdkVersion": "0.1.5",
   "language": "swift",
   "requirements": {
     "positioning": {
@@ -30,7 +30,7 @@
         {
           "path": "Package.swift",
           "language": "swift",
-          "code": "dependencies: [\n    .package(url: \"https://github.com/onecheck-inc/onesight-mobile-swift\", from: \"0.1.0\"),\n],\ntargets: [\n    .target(name: \"YourApp\", dependencies: [\n        .product(name: \"OneS1ght\", package: \"onesight-mobile-swift\"),\n    ])\n]"
+          "code": "dependencies: [\n    .package(url: \"https://github.com/onecheck-inc/OneS1ght-iOS-SDK\", from: \"0.1.0\"),\n],\ntargets: [\n    .target(name: \"YourApp\", dependencies: [\n        .product(name: \"OneS1ght\", package: \"OneS1ght-iOS-SDK\"),\n    ])\n]"
         },
         {
           "path": "Info.plist",
@@ -38,7 +38,7 @@
           "code": "<key>NSLocationWhenInUseUsageDescription</key>\n<string>매장 내 위치 확인을 위해 사용합니다.</string>\n<key>NSNearbyInteractionUsageDescription</key>\n<string>UWB 정밀 측위를 위해 사용합니다.</string>"
         }
       ],
-      "xcode": "File → Add Package Dependencies… 에 https://github.com/onecheck-inc/onesight-mobile-swift 를 입력하고 Dependency Rule 을 Up to Next Major Version · 0.1.0 으로 둔다. OneS1ght 라이브러리를 앱 타깃에 추가한다.",
+      "xcode": "File → Add Package Dependencies… 에 https://github.com/onecheck-inc/OneS1ght-iOS-SDK 를 입력하고 Dependency Rule 을 Up to Next Major Version · 0.1.0 으로 둔다. OneS1ght 라이브러리를 앱 타깃에 추가한다.",
       "warning": "권한 문구 두 개가 모두 필요하다. 없으면 권한 요청 시점에 앱이 종료된다."
     },
     {

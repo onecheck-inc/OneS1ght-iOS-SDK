@@ -25,7 +25,7 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 cd "$(dirname "$0")/.."
-REPO="onecheck-inc/onesight-mobile-swift"
+REPO="onecheck-inc/OneS1ght-iOS-SDK"
 TAG="v$VERSION"
 FAIL=0
 

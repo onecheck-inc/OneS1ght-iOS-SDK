@@ -32,14 +32,14 @@ You also need keys and a configured space before the SDK does anything useful:
 Xcode → **File → Add Package Dependencies…** and enter:
 
 ```
-https://github.com/onecheck-inc/onesight-mobile-swift
+https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 ```
 
 Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/onesight-mobile-swift", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
