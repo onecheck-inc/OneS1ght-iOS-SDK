@@ -5,7 +5,7 @@
 OneS1ght SDK for iOS는 iOS 모바일 환경에서 UWB 통신을 통해 실시간으로 정확도가 높은 측위 데이터를 제공하고 제공된 데이터를 통해 세밀한 마케팅 인사이트를 제공합니다. 
 
 SDK 에 대해 
-- GitHub: https://github.com/onecheck-inc/onesight-mobile-swift
+- GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 - 개발자 문서: https://docs.ones1ght.com/sdk/overview 
 
 ---
@@ -34,18 +34,18 @@ SDK가 실제로 동작하려면 키와 공간 설정이 먼저 준비되어야 
 Xcode → **File → Add Package Dependencies…** 에서 아래 주소를 입력합니다.
 
 ```
-https://github.com/onecheck-inc/onesight-mobile-swift
+https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 ```
 
 `Package.swift` 로 붙이는 경우:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/onesight-mobile-swift", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
-        .product(name: "OneS1ght", package: "OneS1ght")
+        .product(name: "OneS1ght", package: "OneS1ght-iOS-SDK")
     ])
 ]
 ```
@@ -54,9 +54,13 @@ targets: [
 
 ### Info.plist
 
+**두 개 모두** 필요합니다. 없으면 권한을 요청하는 순간 앱이 종료됩니다.
+
 ```xml
-<key>NSNearbyInteractionUsageDescription</key>
+<key>NSLocationWhenInUseUsageDescription</key>
 <string>매장 내 위치를 파악하는 데 사용합니다.</string>
+<key>NSNearbyInteractionUsageDescription</key>
+<string>UWB 정밀 측위에 사용합니다.</string>
 ```
 
 ---
@@ -98,6 +102,24 @@ throw 하지 않고 `initialize` 전에도 호출할 수 있어, 네트워크를
 ---
 
 ## Step 3: 권한
+
+### 위치 권한 — 측위의 전제 조건
+
+위치 권한을 먼저 받으세요. 이것이 없으면 UWB 세션이 시작되지 않습니다.
+
+```swift
+import CoreLocation
+
+let locationManager = CLLocationManager()
+locationManager.requestWhenInUseAuthorization()
+```
+
+⚠️ **사용자가 응답한 뒤에 측위를 시작하세요.** 위치 권한은 UWB 세션의 전제 조건이라,
+응답 전에 `begin()` 을 부르면 세션이 `INVALID_CONFIGURATION` 으로 실패합니다.
+`CLLocationManagerDelegate` 의 `locationManagerDidChangeAuthorization` 으로 허용 상태를
+확인한 뒤 시작하세요.
+
+### Nearby Interaction 권한
 
 ```swift
 switch await OneS1ght.permissions() {
@@ -290,7 +312,7 @@ initialize ─→ begin ─→ [UWB 좌표] ─┬─→ onPosition            (
 | `E3004` | 층에 존 없음 |
 | `E4001` | UWB 세션 실패 |
 | `E4002` | 좌표 미산출 |
-| `E4003` | 로케이터 일부 미수신 |
+| `E4003` | 로케이터 일부 미수신 — **WARN, 측위는 계속됩니다** |
 | `E5001` | 네트워크 실패 |
 | `E5002` | 서버 오류 |
 | `E5003` | 요청 형식 불일치 |

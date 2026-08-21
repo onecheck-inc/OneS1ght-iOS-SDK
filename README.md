@@ -32,18 +32,18 @@ You also need keys and a configured space before the SDK does anything useful:
 Xcode → **File → Add Package Dependencies…** and enter:
 
 ```
-https://github.com/onecheck-inc/onesight-mobile-swift
+https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 ```
 
 Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/onesight-mobile-swift", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
-        .product(name: "OneS1ght", package: "OneS1ght")
+        .product(name: "OneS1ght", package: "OneS1ght-iOS-SDK")
     ])
 ]
 ```
@@ -53,9 +53,14 @@ add this one package.
 
 ### Info.plist
 
+**Both** keys are required. Without them the app is terminated the moment permission is
+requested.
+
 ```xml
-<key>NSNearbyInteractionUsageDescription</key>
+<key>NSLocationWhenInUseUsageDescription</key>
 <string>Used to determine your position inside the store.</string>
+<key>NSNearbyInteractionUsageDescription</key>
+<string>Used for precise UWB positioning.</string>
 ```
 
 ---
@@ -97,6 +102,24 @@ touching the network.
 ---
 
 ## Step 3: Permissions
+
+### Location — a prerequisite for UWB
+
+Ask for location permission first. The UWB session cannot start without it.
+
+```swift
+import CoreLocation
+
+let locationManager = CLLocationManager()
+locationManager.requestWhenInUseAuthorization()
+```
+
+⚠️ **Start positioning only after the user has answered.** Location permission is a
+prerequisite of the UWB session, so calling `begin()` before the user responds fails the
+session with `INVALID_CONFIGURATION`. Confirm the authorized state through
+`CLLocationManagerDelegate`'s `locationManagerDidChangeAuthorization`, then start.
+
+### Nearby Interaction
 
 ```swift
 switch await OneS1ght.permissions() {
@@ -288,7 +311,7 @@ Every failure carries a code. Include it when contacting support.
 | `E3004` | No zones on floor |
 | `E4001` | UWB session failed |
 | `E4002` | No position fix |
-| `E4003` | Some locators not received |
+| `E4003` | Some locators not received — **WARN, positioning continues** |
 | `E5001` | Network failure |
 | `E5002` | Server error |
 | `E5003` | Payload mismatch |

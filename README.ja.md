@@ -31,18 +31,18 @@ SDK が実際に動作するには、キーと空間設定が先に用意され�
 Xcode → **File → Add Package Dependencies…** で以下の URL を入力します。
 
 ```
-https://github.com/onecheck-inc/onesight-mobile-swift
+https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 ```
 
 `Package.swift` で追加する場合:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/onesight-mobile-swift", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
-        .product(name: "OneS1ght", package: "OneS1ght")
+        .product(name: "OneS1ght", package: "OneS1ght-iOS-SDK")
     ])
 ]
 ```
@@ -52,9 +52,13 @@ targets: [
 
 ### Info.plist
 
+**両方**必要です。無いと権限を要求した瞬間にアプリが終了します。
+
 ```xml
-<key>NSNearbyInteractionUsageDescription</key>
+<key>NSLocationWhenInUseUsageDescription</key>
 <string>店舗内での位置を把握するために使用します。</string>
+<key>NSNearbyInteractionUsageDescription</key>
+<string>UWB による精密測位に使用します。</string>
 ```
 
 ---
@@ -96,6 +100,24 @@ throw せず `initialize` の前でも呼べるため、ネットワークにア
 ---
 
 ## Step 3: 権限
+
+### 位置情報の権限 — 測位の前提条件
+
+先に位置情報の権限を取得してください。これが無いと UWB セッションは開始できません。
+
+```swift
+import CoreLocation
+
+let locationManager = CLLocationManager()
+locationManager.requestWhenInUseAuthorization()
+```
+
+⚠️ **ユーザーが応答してから測位を開始してください。** 位置情報の権限は UWB セッションの
+前提条件のため、応答前に `begin()` を呼ぶとセッションが `INVALID_CONFIGURATION` で
+失敗します。`CLLocationManagerDelegate` の `locationManagerDidChangeAuthorization` で
+許可状態を確認してから開始してください。
+
+### Nearby Interaction の権限
 
 ```swift
 switch await OneS1ght.permissions() {
@@ -288,7 +310,7 @@ initialize ─→ begin ─→ [UWB 座標] ─┬─→ onPosition            (
 | `E3004` | フロアにゾーンがない |
 | `E4001` | UWB セッション失敗 |
 | `E4002` | 座標が算出されない |
-| `E4003` | 一部のロケーターが受信できない |
+| `E4003` | 一部のロケーターが受信できない — **WARN、測位は継続します** |
 | `E5001` | ネットワーク失敗 |
 | `E5002` | サーバーエラー |
 | `E5003` | リクエスト形式の不一致 |

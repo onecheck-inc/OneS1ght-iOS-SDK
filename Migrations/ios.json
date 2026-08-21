@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.4",
+  "currentVersion": "0.1.5",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -38,6 +38,13 @@
       "breaking": false,
       "summary": "서버 원격 설정(remote_config)에 문자열이 아닌 값이 섞여 있어도 초기화가 실패하지 않는다. 0.1.3 이하는 이 자루를 [String: String] 로 좁게 읽어, 서버가 정수·불리언 설정을 하나 켜는 순간 initialize 가 통째로 실패했다.",
       "action": "코드는 고칠 것이 없다. 0.1.3 이하를 쓰고 있고 initialize 가 \"응답 해석 실패(E5005)\" 로 떨어진다면 이 판올림이 해결책이다."
+    },
+    {
+      "from": "0.1.4",
+      "to": "0.1.5",
+      "breaking": false,
+      "summary": "SDK 저장소 주소가 바뀌었다: onecheck-inc/onesight-mobile-swift → onecheck-inc/OneS1ght-iOS-SDK. 코드 동작은 그대로다.",
+      "action": "Package.swift 의 .package(url:) 를 새 주소로 바꾸고, .product(package:) 식별자도 \"OneS1ght-iOS-SDK\" 로 함께 바꾼다 — SPM 은 패키지 식별자를 저장소 이름에서 뽑으므로 URL 만 고치면 \"unknown package\" 로 빌드가 깨진다. Xcode 프로젝트라면 패키지 의존성을 지웠다가 새 주소로 다시 추가한다. 옛 주소는 GitHub 이 리다이렉트해 주지만 영구 보장은 아니다."
     }
   ]
 }

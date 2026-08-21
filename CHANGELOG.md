@@ -9,6 +9,33 @@
 
 ---
 
+## [0.1.5] — 2026-08-21
+
+코드 변경 없음. **저장소 주소가 바뀌었습니다.**
+
+```
+onecheck-inc/onesight-mobile-swift  →  onecheck-inc/OneS1ght-iOS-SDK
+```
+
+### Changed
+- `Package.swift` 의 의존성 주소를 새 저장소로 바꿔 주세요.
+
+  ```swift
+  .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0"),
+  .product(name: "OneS1ght", package: "OneS1ght-iOS-SDK"),
+  ```
+
+  ⚠️ **`package:` 식별자도 함께 바꿔야 합니다.** SPM 은 패키지 식별자를 저장소 이름에서
+  뽑으므로, URL 만 고치면 `unknown package 'onesight-mobile-swift'` 로 빌드가 깨집니다.
+
+  Xcode 프로젝트라면 패키지 의존성을 지웠다가 새 주소로 다시 추가하세요.
+
+### 알아둘 것
+옛 주소는 GitHub 이 리다이렉트해 주므로 당장 깨지지는 않습니다. 다만 그 이름으로 누가 새
+저장소를 만들면 리다이렉트가 끊기므로, 지금 옮겨 두시는 편이 안전합니다.
+
+---
+
 ## [0.1.4] — 2026-08-21
 
 공개 API 변경 없음. 코드는 고칠 것이 없습니다.
@@ -135,7 +162,7 @@
 - **위치 권한이 측위의 전제 조건**입니다. 없으면 세션이 `INVALID_CONFIGURATION` 으로 실패합니다.
 - LICENSE 는 아직 없습니다. 사용 조건은 별도 계약을 따릅니다.
 
-[0.1.3]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.3
-[0.1.2]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.2
-[0.1.1]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.1
-[0.1.0]: https://github.com/onecheck-inc/onesight-mobile-swift/releases/tag/v0.1.0
+[0.1.3]: https://github.com/onecheck-inc/OneS1ght-iOS-SDK/releases/tag/v0.1.3
+[0.1.2]: https://github.com/onecheck-inc/OneS1ght-iOS-SDK/releases/tag/v0.1.2
+[0.1.1]: https://github.com/onecheck-inc/OneS1ght-iOS-SDK/releases/tag/v0.1.1
+[0.1.0]: https://github.com/onecheck-inc/OneS1ght-iOS-SDK/releases/tag/v0.1.0
