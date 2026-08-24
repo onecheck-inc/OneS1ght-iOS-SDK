@@ -36,12 +36,10 @@ final class LiveConfigStream {
         self.session = session
     }
 
-    /// 안전망 — `stop()` 을 거쳐 정상 종료되는 경로에서 task 정리를 한 번 더 보장한다.
-    /// ⚠️ `start()` 의 재연결 루프는 `[weak self]` 로 캡처하지만 `guard let self` 로
-    /// 언랩한 뒤로는 루프가 도는 내내 스스로를 강하게 쥔다 — 그래서 소유자가 `stop()`
-    /// 없이 참조만 놓으면 이 인스턴스는 그 루프에 의해 계속 살아 있고, 이 경우
-    /// `deinit` 도 불리지 않는다(참조가 완전히 사라져야 실행되는데, 그 참조를
-    /// 이 루프 자신이 쥐고 있기 때문). 소유자는 여전히 `stop()` 을 반드시 불러야 한다.
+    /// 안전망 — `stop()` 을 거치는 정상 종료 경로에서 task 정리를 한 번 더 보장하는
+    /// 이중 안전장치일 뿐이다. 재연결 루프(아래 `start()`) 는 이제 반복마다 `self` 를
+    /// 새로 얻으므로, 참조가 끊기면 그 자체로 다음 반복에서 스스로 빠진다 — 이 `deinit`
+    /// 이 참조 누수를 막아 주는 장치는 아니다.
     deinit { task?.cancel() }
 
     // MARK: - 수명주기
@@ -49,16 +47,28 @@ final class LiveConfigStream {
     func start(buildingId: String?, floorId: String?) {
         stop()
         lastSeq = nil
+        // 루프 본문이 self 없이도 백오프 한계값을 읽을 수 있도록 미리 지역변수로 뗀다 —
+        // 그래야 대기(sleep) 구간에서 self 를 붙잡고 있을 이유가 하나도 남지 않는다.
+        let minBackoff = self.minBackoff
+        let maxBackoff = self.maxBackoff
         task = Task { [weak self] in
-            guard let self else { return }
-            var backoff = self.minBackoff
+            var backoff = minBackoff
             while !Task.isCancelled {
-                let connected = await self.consume(buildingId: buildingId, floorId: floorId)
+                var connected = false
+                do {
+                    // self 를 이 블록 안에서만 강하게 쥔다 — 블록이 끝나면(= sleep 에 들어가기
+                    // 전에) 곧바로 풀린다. 그래서 재연결 대기 중에 소유자가 참조를 놓으면,
+                    // 다음 반복의 guard 가 self 를 다시 얻지 못하고 루프가 빠진다.
+                    // (연결이 실제로 살아있어 consume() 이 아직 안 끝난 동안은 그 구간만큼은
+                    // self 가 강하게 쥐어진다 — 무한이 아니라 그 접속이 끝날 때까지로 한정된다.)
+                    guard let self else { return }
+                    connected = await self.consume(buildingId: buildingId, floorId: floorId)
+                }
                 if Task.isCancelled { return }
-                if connected { backoff = self.minBackoff }
+                if connected { backoff = minBackoff }
                 let wait = Self.jitter(backoff)
                 try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-                backoff = min(backoff * 2, self.maxBackoff)
+                backoff = min(backoff * 2, maxBackoff)
             }
         }
     }
