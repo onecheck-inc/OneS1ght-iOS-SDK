@@ -198,10 +198,12 @@ final class SessionCoordinator {
     /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
     /// 가동 중에 부르면 즉시 층 전환 — 세션은 그대로, 엔진 주입값만 갈린다.
     func setFloorMap(_ floor: Floor?, buildingId: String?) async throws {
+        let previousFloor = floorState
         guard let floor, let buildingId else {
             floorState = nil
             currentFloor = nil
             provider?.apply(config: PositioningConfig())   // 엔진에서 층 설정 해제
+            restartLiveStreamIfFloorChanged(previousFloor: previousFloor)
             return
         }
         guard let geospace else { throw SdkError.notInitialized }
@@ -216,6 +218,7 @@ final class SessionCoordinator {
         if state.sessionId == nil { report(.sessionIdMissing, "floor=\(floor.id)") }
         if state.zones.isEmpty    { report(.zonesEmpty,      "floor=\(floor.id)") }
         if isRunning { applyFloorStateToProvider() }      // 가동 중 층 전환
+        restartLiveStreamIfFloorChanged(previousFloor: previousFloor)
     }
 
     /// 존만 재조회 (도면 재다운로드 없음 — 폴링용). 받은 존은 엔진에도 즉시 반영.
@@ -381,7 +384,10 @@ final class SessionCoordinator {
     // MARK: - 실시간 수신 (SSE)
 
     /// 콘솔 변경 수신 시작 — 측위 세션 구간에만 붙어 있는다.
+    /// ⚠️ 기존 연결이 있으면 먼저 끊는다 — 안 그러면 층 전환·포그라운드 복귀마다 이전 연결이
+    /// 옛 필터를 문 채 살아남아 스트림이 중복으로 쌓인다.
     private func startLiveStream() {
+        live?.stop()
         let s = LiveConfigStream(baseURL: api.baseURL, apiKey: api.apiKey)
         s.onLog = { [weak self] line in self?.log(line) }
         s.onChange = { [weak self] change in
@@ -395,6 +401,28 @@ final class SessionCoordinator {
     /// 전달 외에 하는 일이 없어 분기할 이유가 없다.
     func deliverConfigChangeForTest(_ change: ConfigChange) {
         onConfigChange?(change)
+    }
+
+    /// setFloorMap 이 건물·층을 실제로 바꿨을 때만 스트림을 다시 붙인다.
+    /// 가동 중이 아니면 아직 스트림이 없다 — start(provider:) 가 그때 맞는 필터로 새로 만든다.
+    ///
+    /// 재연결 자체가 LiveConfigStream 안에서 .resyncNeeded 를 올린다. 이건 부작용이 아니라
+    /// 의도다 — 층이 바뀌면 고객사는 어차피 새 층 기준으로 다시 받아야 한다.
+    ///
+    /// 층을 비우는 것(setFloorMap(nil, ...))도 "바뀜"으로 센다. 세션이 끝난 게 아니라 다음 층을
+    /// 고르는 중일 수 있어, 스트림을 멈추지 않고 테넌트 전체 필터(nil)로 계속 받는다 —
+    /// 그래야 다음 setFloorMap 전까지 놓치는 변경이 없다.
+    private func restartLiveStreamIfFloorChanged(previousFloor: FloorState?) {
+        guard isRunning, floorFilterChangedForTest(from: previousFloor, to: floorState) else { return }
+        startLiveStream()
+    }
+
+    /// 스트림이 다시 구독해야 할 만큼 건물·층이 바뀌었는지 — 네트워크가 없는 순수 판정이라
+    /// 유닛 테스트로 그대로 검증한다. buildingId·floorId 만 본다: 같은 층이면 zones 등
+    /// 나머지 필드가 바뀌어도 구독 자체는 바뀔 이유가 없다(그건 refreshZones() 의 몫).
+    /// 이름에 ForTest 가 붙어 있지만 운영 경로(restartLiveStreamIfFloorChanged)도 이것을 쓴다.
+    func floorFilterChangedForTest(from previous: FloorState?, to next: FloorState?) -> Bool {
+        previous?.buildingId != next?.buildingId || previous?.floorId != next?.floorId
     }
 
     // MARK: - 전송
