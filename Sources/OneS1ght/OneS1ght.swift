@@ -142,6 +142,7 @@ public final class OneS1ght {
             // 좌표·트리거는 세션 콜백으로 흘린다 (전역 훅은 onDebugLog 만 남았다)
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
+            c.onConfigChange = { change in FloorSession.shared.onConfigChanged?(change) }
             c.onLog = { line in OneS1ght.onDebugLog?(line) }
             coordinator = c
             storedKeys = (sdkKey, geoSdkKey)
