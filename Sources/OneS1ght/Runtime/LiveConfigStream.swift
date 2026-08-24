@@ -36,6 +36,14 @@ final class LiveConfigStream {
         self.session = session
     }
 
+    /// 안전망 — `stop()` 을 거쳐 정상 종료되는 경로에서 task 정리를 한 번 더 보장한다.
+    /// ⚠️ `start()` 의 재연결 루프는 `[weak self]` 로 캡처하지만 `guard let self` 로
+    /// 언랩한 뒤로는 루프가 도는 내내 스스로를 강하게 쥔다 — 그래서 소유자가 `stop()`
+    /// 없이 참조만 놓으면 이 인스턴스는 그 루프에 의해 계속 살아 있고, 이 경우
+    /// `deinit` 도 불리지 않는다(참조가 완전히 사라져야 실행되는데, 그 참조를
+    /// 이 루프 자신이 쥐고 있기 때문). 소유자는 여전히 `stop()` 을 반드시 불러야 한다.
+    deinit { task?.cancel() }
+
     // MARK: - 수명주기
 
     func start(buildingId: String?, floorId: String?) {
@@ -73,7 +81,12 @@ final class LiveConfigStream {
         guard let url = comps?.url else { return false }
 
         var req = URLRequest(url: url)
-        req.timeoutInterval = 0                       // 스트림은 idle 타임아웃을 두지 않는다
+        // timeoutInterval 은 기본값(60초)을 그대로 쓴다. 이건 "요청 전체" 타임아웃이 아니라
+        // "직전 데이터 수신 이후 무응답" 타임아웃(inactivity timeout)이라서 — 서버가 20초마다
+        // `: ping` 을 보내 이 시계를 계속 되돌려 주므로, 살아있는 스트림은 절대 타임아웃되지
+        // 않고 서버가 조용히 죽은 스트림은 60초 안에 감지돼 재연결된다.
+        // ⚠️ 서버 ping 주기가 이 60초에 근접하거나 넘어가면 연결이 주기적으로
+        // 타임아웃→재연결을 반복하게 된다 — 그 상수를 바꿀 땐 이 커플링을 먼저 볼 것.
         req.setValue(apiKey, forHTTPHeaderField: "X-SDK-Key")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
