@@ -270,19 +270,7 @@ final class GeospaceClient {
 
     // MARK: - DTO
 
-    private struct BuildingsResponse: Decodable {
-        let buildings: [BuildingDTO]
-        struct BuildingDTO: Decodable {
-            let buildingId: String
-            let buildingName: String
-            let floors: [FloorDTO]
-        }
-        struct FloorDTO: Decodable {
-            let floorId: String
-            let floorName: String
-            let hasPlan: Bool
-        }
-    }
+    private typealias BuildingsResponse = GeospaceBuildingsResponse
 
     private struct PlanResponse: Decodable {
         let plan: PlanBody
