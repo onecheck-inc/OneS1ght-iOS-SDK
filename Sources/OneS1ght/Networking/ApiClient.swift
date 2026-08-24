@@ -50,8 +50,10 @@ public final class ApiClient {
 
     public static let defaultBaseURL = URL(string: "https://console.ones1ght.com/api/sdk/v1")!
 
-    private let apiKey: String
-    private let baseURL: URL
+    // 같은 모듈의 LiveConfigStream 이 스트림 요청을 만들 때 쓴다.
+    // ⚠️ internal 까지만 — public 으로 올리면 SDK 키가 고객사 코드에 노출된다.
+    let apiKey: String
+    let baseURL: URL
     private let session: URLSession
     private let timeout: TimeInterval = 10
 
