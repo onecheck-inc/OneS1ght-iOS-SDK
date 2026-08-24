@@ -482,14 +482,18 @@ final class SessionCoordinator {
                     guard let self, self.isRunning else { return }
                     self.provider?.stop()
                     await self.buffer.flush()
+                    self.live?.stop()
                 }
             },
-            // 포그라운드 복귀: 측위 재개
+            // 포그라운드 복귀: 측위 재개 + 실시간 수신 재연결
+            // 재연결 자체가 LiveConfigStream 쪽에서 .resyncNeeded 를 올린다 — 배경에 있던
+            // 동안의 변경을 고객사가 따라잡는 유일한 경로다.
             nc.addObserver(forName: UIApplication.willEnterForegroundNotification,
                            object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.isRunning else { return }
                     self.provider?.start()
+                    self.startLiveStream()
                 }
             },
         ]
