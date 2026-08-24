@@ -74,6 +74,12 @@ final class SessionCoordinator {
     var onLog: ((String) -> Void)?
     private func log(_ msg: String) { onLog?(msg) }
 
+    /// 콘솔 변경 → 고객사 전달. SDK 는 이 신호로 아무것도 하지 않는다 —
+    /// 무엇을 다시 받을지는 앱이 정한다.
+    var onConfigChange: ((ConfigChange) -> Void)?
+
+    private var live: LiveConfigStream?
+
     // MARK: - 서버 로그 (콘솔 로그 분석기)
 
     private(set) var logBuffer: SdkLogBuffer!
@@ -224,7 +230,9 @@ final class SessionCoordinator {
             let zones = try await geospace.loadZones(buildingId: state.buildingId,
                                                      floorId: state.floorId)
             floorState?.zones = zones
-            if isRunning, !zones.isEmpty {
+            // 구역을 전부 지웠을 때도 엔진에 반영해야 한다 — 안 그러면 판정 엔진이 삭제된 구역을
+            // 계속 물고 있어 지도에서 사라진 자리에서 없어진 시책이 계속 발화한다.
+            if isRunning {
                 provider?.apply(config: PositioningConfig(zones: zones))
             }
             let names = zones.map(\.name).joined(separator: ", ")
@@ -283,6 +291,7 @@ final class SessionCoordinator {
         isRunning = true
         startFlushTimer()
         startReceptionCheck()
+        startLiveStream()
         observeAppLifecycle()
     }
 
@@ -356,6 +365,7 @@ final class SessionCoordinator {
         flushTimer?.invalidate(); flushTimer = nil
         receptionCheckTask?.cancel(); receptionCheckTask = nil
         removeLifecycleObservers()
+        live?.stop(); live = nil
         let pending = buffer.count
         log(SdkLocalized.format("coord.stopFlush", pending))
         await buffer.flush()
@@ -366,6 +376,25 @@ final class SessionCoordinator {
         report(.positioningOff, "visitor=\(visitorId)")
         await logBuffer.flush()          // 세션 종료 — 잔여 로그도 내보낸다
         isRunning = false
+    }
+
+    // MARK: - 실시간 수신 (SSE)
+
+    /// 콘솔 변경 수신 시작 — 측위 세션 구간에만 붙어 있는다.
+    private func startLiveStream() {
+        let s = LiveConfigStream(baseURL: api.baseURL, apiKey: api.apiKey)
+        s.onLog = { [weak self] line in self?.log(line) }
+        s.onChange = { [weak self] change in
+            Task { @MainActor in self?.deliverConfigChangeForTest(change) }
+        }
+        s.start(buildingId: floorState?.buildingId, floorId: floorState?.floorId)
+        live = s
+    }
+
+    /// 고객사에게 그대로 넘긴다. 이름에 ForTest 가 붙어 있지만 운영 경로도 이것을 쓴다 —
+    /// 전달 외에 하는 일이 없어 분기할 이유가 없다.
+    func deliverConfigChangeForTest(_ change: ConfigChange) {
+        onConfigChange?(change)
     }
 
     // MARK: - 전송
