@@ -111,9 +111,23 @@ final class LiveConfigStream {
             onChange?(.resyncNeeded)                  // 붙었다 = 그 사이를 놓쳤을 수 있다
 
             var parser = SseFrameParser()
-            for try await line in bytes.lines {
+            /* ⚠️ bytes.lines 를 쓰지 않는다.
+               SSE 는 **빈 줄**로 프레임이 끝나는데 AsyncLineSequence 는 그 빈 줄을 돌려주지
+               않는다. 그러면 파서 버퍼에 \n\n 이 영영 만들어지지 않아 프레임이 하나도
+               완성되지 않는다 — 연결도 되고 하트비트도 받는데 이벤트만 조용히 사라진다.
+               연결 직후의 .resyncNeeded 는 파서를 거치지 않고 나가므로 정상으로 보여
+               증상이 더 헷갈렸다(2026-08-25 실기기).
+               줄 끝(\n)을 만날 때마다 그 줄을 그대로 넘긴다 — 빈 줄이면 "\n" 하나가
+               넘어가고, 직전 줄의 \n 과 합쳐져 경계가 된다. */
+            var pending = Data()
+            for try await byte in bytes {
                 if Task.isCancelled { return true }
-                for frame in parser.feed(line + "\n") { accept(frame) }
+                pending.append(byte)
+                guard byte == 0x0A else { continue }          // 줄이 끝날 때만 넘긴다
+                if let line = String(data: pending, encoding: .utf8) {
+                    for frame in parser.feed(line) { accept(frame) }
+                }
+                pending.removeAll(keepingCapacity: true)
             }
             return true
         } catch {

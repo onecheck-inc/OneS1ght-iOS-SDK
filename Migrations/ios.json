@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.8",
+  "currentVersion": "0.1.9",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -66,6 +66,13 @@
       "breaking": false,
       "summary": "실시간 수신이 측위 시작 전에도 붙는다. 층을 지정하면 그 시점부터 콘솔 변경이 온다.",
       "action": "고칠 것 없다. onConfigChanged 를 걸어 두었는데 측위를 시작하기 전에는 신호가 오지 않았다면 이 판올림으로 해결된다. 층을 지정(setFloorMap)하는 순간부터 연결된다."
+    },
+    {
+      "from": "0.1.8",
+      "to": "0.1.9",
+      "breaking": false,
+      "summary": "실시간 변경 이벤트가 하나도 도착하지 않던 것을 고쳤다. 연동 코드는 그대로다.",
+      "action": "고칠 것 없다. onConfigChanged 를 걸어 뒀는데 연결은 되고(.resyncNeeded 는 오고) 정작 zones.changed·rules.changed 가 오지 않았다면 이 판올림으로 해결된다."
     }
   ]
 }
