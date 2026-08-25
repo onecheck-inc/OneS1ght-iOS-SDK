@@ -76,3 +76,30 @@ final class SessionCoordinatorLiveTests: XCTestCase {
         XCTAssertFalse(coord.floorFilterChangedForTest(from: a, to: a2))
     }
 }
+
+/**
+ 스트림을 언제 붙여 둘 것인가.
+
+ 처음에는 측위 세션 구간에만 붙였다 — 동시 연결 수를 동시 체류 인원으로 묶으려는 의도였다.
+ 실기기에서 바로 드러났다: 초기화만 하고 층을 골라 도면을 보는 동안에는 콘솔에서 무엇을 바꿔도
+ 앱이 모른다. 수동 새로고침만 동작했다. 층을 띄워 둔 기기는 이미 "쓰고 있는" 기기라
+ 연결 수는 여전히 유계다.
+ */
+@MainActor
+final class SessionCoordinatorStreamLifetimeTests: XCTestCase {
+
+    /// 이번 수정의 핵심 — 측위를 시작하지 않아도 층만 정해지면 붙는다.
+    func testStreamWantedWhenFloorSetWithoutSession() {
+        XCTAssertTrue(SessionCoordinator.streamWantedForTest(floorSet: true, running: false))
+    }
+
+    /// 종전 동작도 그대로 — 층이 아직 없어도 측위가 돌면 붙는다(상위집합이라 회귀가 없다).
+    func testStreamWantedWhileRunningWithoutFloor() {
+        XCTAssertTrue(SessionCoordinator.streamWantedForTest(floorSet: false, running: true))
+    }
+
+    /// 둘 다 아니면 붙이지 않는다 — 앱만 켜 둔 기기까지 연결을 잡지는 않는다.
+    func testStreamNotWantedWhenIdle() {
+        XCTAssertFalse(SessionCoordinator.streamWantedForTest(floorSet: false, running: false))
+    }
+}
