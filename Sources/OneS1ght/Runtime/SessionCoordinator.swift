@@ -294,8 +294,8 @@ final class SessionCoordinator {
         isRunning = true
         startFlushTimer()
         startReceptionCheck()
-        startLiveStream()
-        observeAppLifecycle()
+        ensureLiveStream()
+        observeAppLifecycleIfNeeded()
     }
 
     /**
@@ -367,8 +367,10 @@ final class SessionCoordinator {
         provider?.stop()
         flushTimer?.invalidate(); flushTimer = nil
         receptionCheckTask?.cancel(); receptionCheckTask = nil
-        removeLifecycleObservers()
-        live?.stop(); live = nil
+        // 층을 계속 보고 있으면 스트림은 그대로 둔다 — 측위를 껐다고 콘솔 변경까지
+        // 안 받을 이유는 없다. 관찰자도 그래서 남긴다(reset 에서 정리).
+        ensureLiveStream()
+        if !liveStreamWanted { removeLifecycleObservers() }
         let pending = buffer.count
         log(SdkLocalized.format("coord.stopFlush", pending))
         await buffer.flush()
@@ -386,7 +388,28 @@ final class SessionCoordinator {
     /// 콘솔 변경 수신 시작 — 측위 세션 구간에만 붙어 있는다.
     /// ⚠️ 기존 연결이 있으면 먼저 끊는다 — 안 그러면 층 전환·포그라운드 복귀마다 이전 연결이
     /// 옛 필터를 문 채 살아남아 스트림이 중복으로 쌓인다.
-    private func startLiveStream() {
+    /// 스트림이 붙어 있어야 하는가 — **층이 정해졌거나 측위가 도는 동안**.
+    ///
+    /// 처음에는 측위 세션 구간에만 붙였다. 동시 연결 수를 동시 체류 인원으로 묶어 서버 부하를
+    /// 통제하려는 의도였는데, 그러면 **층을 골라 도면을 보고 있는 동안에는 콘솔 변경이 오지
+    /// 않는다.** 실기기에서 바로 드러났다 — 초기화만 된 상태로는 아무리 기다려도 반영이 없고
+    /// 수동 새로고침만 동작했다. 층을 띄워 둔 기기는 이미 "쓰고 있는" 기기라, 연결 수는
+    /// 여전히 유계다.
+    private var liveStreamWanted: Bool {
+        Self.streamWantedForTest(floorSet: floorState != nil, running: isRunning)
+    }
+
+    /// 스트림을 붙여 둘 조건 — 네트워크가 없는 순수 판정이라 유닛 테스트로 그대로 검증한다.
+    /// 이름에 ForTest 가 붙어 있지만 운영 경로(liveStreamWanted)도 이것을 쓴다.
+    static func streamWantedForTest(floorSet: Bool, running: Bool) -> Bool {
+        floorSet || running
+    }
+
+    /// 필요하면 붙이고, 필터가 그대로면 아무것도 하지 않는다.
+    /// 멱등이라 세션 시작·층 지정·포그라운드 복귀가 겹쳐 불려도 연결이 요동치지 않는다.
+    private func ensureLiveStream() {
+        guard liveStreamWanted else { live?.stop(); live = nil; return }
+        if live != nil, !floorFilterChangedForTest(from: liveFilter, to: floorState) { return }
         live?.stop()
         let s = LiveConfigStream(baseURL: api.baseURL, apiKey: api.apiKey)
         s.onLog = { [weak self] line in self?.log(line) }
@@ -395,6 +418,19 @@ final class SessionCoordinator {
         }
         s.start(buildingId: floorState?.buildingId, floorId: floorState?.floorId)
         live = s
+        liveFilter = floorState
+    }
+
+    /// 지금 붙어 있는 스트림이 어떤 층으로 구독했는지 — 재연결 여부 판단용.
+    private var liveFilter: FloorState?
+
+    /// 코디네이터를 버리기 전 정리. stop() 은 층이 남아 있으면 스트림을 일부러 살려 두므로,
+    /// 참조를 놓는 쪽에서 이걸 부르지 않으면 열린 연결이 다음 재연결 회차까지 남는다.
+    func teardown() {
+        live?.stop()
+        live = nil
+        liveFilter = nil
+        removeLifecycleObservers()
     }
 
     /// 고객사에게 그대로 넘긴다. 이름에 ForTest 가 붙어 있지만 운영 경로도 이것을 쓴다 —
@@ -413,8 +449,9 @@ final class SessionCoordinator {
     /// 고르는 중일 수 있어, 스트림을 멈추지 않고 테넌트 전체 필터(nil)로 계속 받는다 —
     /// 그래야 다음 setFloorMap 전까지 놓치는 변경이 없다.
     private func restartLiveStreamIfFloorChanged(previousFloor: FloorState?) {
-        guard isRunning, floorFilterChangedForTest(from: previousFloor, to: floorState) else { return }
-        startLiveStream()
+        guard floorFilterChangedForTest(from: previousFloor, to: floorState) else { return }
+        observeAppLifecycleIfNeeded()   // 측위 없이 층만 봐도 배경 전환을 다뤄야 한다
+        ensureLiveStream()
     }
 
     /// 스트림이 다시 구독해야 할 만큼 건물·층이 바뀌었는지 — 네트워크가 없는 순수 판정이라
@@ -499,18 +536,21 @@ final class SessionCoordinator {
         }
     }
 
-    private func observeAppLifecycle() {
+    private func observeAppLifecycleIfNeeded() {
         #if canImport(UIKit)
+        guard lifecycleObservers.isEmpty else { return }
         let nc = NotificationCenter.default
         lifecycleObservers = [
             // 백그라운드: UWB는 어차피 정지(포그라운드 전용) → 측위 pause + 잔여 flush
             nc.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                            object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, self.isRunning else { return }
-                    self.provider?.stop()
-                    await self.buffer.flush()
-                    self.live?.stop()
+                    guard let self else { return }
+                    if self.isRunning {                 // 측위는 세션이 돌 때만
+                        self.provider?.stop()
+                        await self.buffer.flush()
+                    }
+                    self.live?.stop()                   // 스트림은 언제나 끊는다
                 }
             },
             // 포그라운드 복귀: 측위 재개 + 실시간 수신 재연결
@@ -519,9 +559,10 @@ final class SessionCoordinator {
             nc.addObserver(forName: UIApplication.willEnterForegroundNotification,
                            object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, self.isRunning else { return }
-                    self.provider?.start()
-                    self.startLiveStream()
+                    guard let self else { return }
+                    if self.isRunning { self.provider?.start() }
+                    self.live = nil                     // 배경에서 끊긴 것 — 새로 붙인다
+                    self.ensureLiveStream()
                 }
             },
         ]

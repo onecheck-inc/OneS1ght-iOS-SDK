@@ -32,7 +32,7 @@ public final class OneS1ght {
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
     /// SDK 버전 (verify의 client.sdk_version에 실림)
-    public static let sdkVersion = "0.1.7"
+    public static let sdkVersion = "0.1.8"
 
     // MARK: - 콜백
 
@@ -156,6 +156,7 @@ public final class OneS1ght {
     /// (앱 재빌드 없이 런타임에 키 교체용).
     public static func reset() async {
         await coordinator?.stop()
+        coordinator?.teardown()   // 스트림·관찰자 정리 — 참조를 놓기 전에 끊어야 한다
         coordinator = nil
         storedKeys = nil
     }
