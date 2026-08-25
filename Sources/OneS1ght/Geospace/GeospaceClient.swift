@@ -23,7 +23,11 @@ final class GeospaceClient {
     /// 호스트가 initialize 로 넘긴 키 묶음
     struct Keys { let sdk: String; let geospace: String }
     private let keys: Keys
-    init(keys: Keys) { self.keys = keys }
+    /// session 은 테스트에서 URLProtocol 스텁을 물리기 위한 주입점이다(ApiClient 와 같은 방식).
+    init(keys: Keys, session: URLSession = .shared) {
+        self.keys = keys
+        self.session = session
+    }
 
     private let host = "geospace.geoplan.io"
 
@@ -33,7 +37,7 @@ final class GeospaceClient {
     private(set) var status: String = SdkLocalized.text("gs.idle")
 
     // TLS 검증은 표준 그대로 — SDK 는 인증서 우회를 하지 않는다 (ApiClient 와 동일 원칙)
-    private let session = URLSession.shared
+    private let session: URLSession
 
     enum GsError: Error { case badResponse(Int), noImage, decode }
 
@@ -57,28 +61,29 @@ final class GeospaceClient {
         }
     }
 
-    /// 층 목록 — 이름·hasPlan 채움, **도면 이미지는 비움**(목록이 층 수 × 수백 KB 가 되는 것 방지).
-    /// 이름이 plan 응답에만 있는 서버 구조라 층마다 plan 을 부르지만, 캐시에 남아
-    /// floor(단건)·setFloorMap 때 재사용된다 — 총 왕복 수는 종전과 같다.
-    /// 콘솔 층은 존에서 파생돼 존 0개면 빈 목록(08-03) → GeoSpace 모바일 API 로 층만 우회.
+    /// 층 목록 — 이름·hasPlan 만 채우고 **도면은 받지 않는다.**
+    ///
+    /// 예전에는 이름을 얻으려고 층마다 plan 을 불렀다. plan 응답은 prod 실측 888KB 라
+    /// 층이 N개면 드롭다운이 뜨기 전에 888KB × N 을 순서대로 받았다 — "빌딩을 고르면 층이
+    /// 한참 뒤에 뜬다"의 원인이다. 이름은 이 응답이 이미 주고 있었고, 도면 유무도 서버가
+    /// 실어 주게 됐다. 도면은 실제로 열 층 하나만 floor(단건)에서 받으면 된다.
+    ///
+    /// 콘솔 층이 비면(존 0개 등) GeoSpace 건물 트리로 우회한다 — 그쪽도 이름·도면 유무를 준다.
     func loadFloors(buildingId: String) async throws -> [Floor] {
         let base = ApiClient.defaultBaseURL.absoluteString
-        var floorIds: [String] = []
         if let fl: ConsoleFloorsResponse =
-            try? await consoleGet("\(base)/positioning/buildings/\(buildingId)/floors") {
-            floorIds = fl.floors.map(\.floorId)
+            try? await consoleGet("\(base)/positioning/buildings/\(buildingId)/floors"),
+           !fl.floors.isEmpty {
+            return fl.floors.map {
+                Floor(id: $0.floorId,
+                      name: $0.name ?? String($0.floorId.prefix(8)),
+                      hasPlan: $0.hasPlan ?? false)
+            }
         }
-        if floorIds.isEmpty {
-            let res: BuildingsResponse = try await get("api/m/buildings")
-            floorIds = res.buildings.first { $0.buildingId == buildingId }?
-                .floors.map(\.floorId) ?? []
-        }
-        var out: [Floor] = []
-        for id in floorIds {
-            let plan = try? await consolePlan(buildingId, id)   // 이름 획득 + 도면 선로딩 캐시
-            out.append(makeFloor(id: id, from: plan, withImage: false))
-        }
-        return out
+        // 콘솔 미러가 비었을 때만 — GeoSpace 건물 트리도 이름·도면 유무를 함께 준다.
+        let res: BuildingsResponse = try await get("api/m/buildings")
+        let floors = res.buildings.first { $0.buildingId == buildingId }?.floors ?? []
+        return floors.map { Floor(id: $0.floorId, name: $0.floorName, hasPlan: $0.hasPlan) }
     }
 
     /// 층 단건 — 도면 이미지까지 채워 반환. loadFloors 가 캐시를 데워 두면 왕복 없음.
@@ -316,7 +321,12 @@ final class GeospaceClient {
     }
     private struct ConsoleFloorsResponse: Decodable {
         let floors: [F]
-        struct F: Decodable { let floorId: String }
+        /// name·hasPlan 은 콘솔 배포 시차를 고려해 옵셔널로 둔다 — 없던 시절 응답에도 깨지지 않는다.
+        struct F: Decodable {
+            let floorId: String
+            let name: String?
+            let hasPlan: Bool?
+        }
     }
     private struct PlanImage: Decodable {
         let dataUrl: String
