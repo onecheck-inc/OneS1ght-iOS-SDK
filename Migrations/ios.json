@@ -72,7 +72,24 @@
       "to": "0.1.9",
       "breaking": true,
       "summary": "initialize 가 더 이상 기기 미지원으로 실패하지 않는다. 측위 불가 기기에서도 도면·존을 받아올 수 있고, 차단은 begin() 한 곳으로 모였다. 실시간 변경 이벤트가 하나도 도착하지 않던 것과 층 목록이 도면을 통째로 받던 것도 함께 고쳤다.",
-      "action": "initialize 의 성공을 '이 기기에서 측위 가능' 으로 읽고 있었다면 고쳐야 한다. initialize 는 이제 키·설정만 확인하고 osVersionTooLow(E2001)·deviceNotSupported(E2002) 를 던지지 않는다. 측위 가능 여부는 ① 미리 알고 싶으면 OneS1ght.deviceAvailability / isDeviceAvailable (initialize 전에도 호출 가능, throw 없음), ② 시작할 때 알아도 되면 FloorSession.begin() 의 throw 로 확인한다. 둘 다 이전부터 있던 API 다. initialize 의 catch 에서 E2001·E2002 를 다루던 분기가 있다면 그 분기는 이제 도달하지 않는다 — begin() 쪽으로 옮긴다. 그대로 두어도 앱이 깨지지는 않지만, 미지원 기기에서 '초기화 실패' 로 화면을 막고 있었다면 그 화면이 이제 잘못된 안내가 된다."
+      "action": "initialize 의 성공을 '이 기기에서 측위 가능' 으로 읽고 있었다면 고쳐야 한다. initialize 는 이제 키·설정만 확인하고 osVersionTooLow(E2001)·deviceNotSupported(E2002) 를 던지지 않는다. 측위 가능 여부는 ① 미리 알고 싶으면 OneS1ght.deviceAvailability / isDeviceAvailable (initialize 전에도 호출 가능, throw 없음), ② 시작할 때 알아도 되면 FloorSession.begin() 의 throw 로 확인한다. 둘 다 이전부터 있던 API 다. initialize 의 catch 에서 E2001·E2002 를 다루던 분기가 있다면 그 분기는 이제 도달하지 않는다 — begin() 쪽으로 옮긴다. 그대로 두어도 앱이 깨지지는 않지만, 미지원 기기에서 '초기화 실패' 로 화면을 막고 있었다면 그 화면이 이제 잘못된 안내가 된다.",
+      "changes": [
+        {
+          "why": "initialize 는 이제 기기 지원 여부를 보지 않는다. 측위 불가 기기에서도 도면·존을 받아야 하기 때문이다. E2001·E2002 를 여기서 잡던 분기는 도달하지 않는다.",
+          "before": "do {\n    try await OneS1ght.initialize(sdkKey: key)\n} catch SdkError.deviceNotSupported {\n    showUnsupportedScreen()      // 여기로 오지 않는다\n} catch SdkError.osVersionTooLow {\n    showOsTooLowScreen()         // 여기로 오지 않는다\n} catch {\n    showError(error)\n}",
+          "after": "// 기기 지원 여부는 초기화 전에 따로 묻는다 (throw 없음)\nswitch OneS1ght.deviceAvailability {\ncase .deviceNotSupported: markPositioningUnavailable()   // 화면은 계속 쓴다\ncase .osVersionTooLow:    markOsTooLow()\ncase .available:          break\n}\n\ndo {\n    try await OneS1ght.initialize(sdkKey: key)   // 키·설정만 확인한다\n} catch {\n    showError(error)\n}"
+        },
+        {
+          "why": "미지원 기기라고 화면을 막지 않는다. 초기화가 통과하므로 건물·층·도면·존을 평소대로 받을 수 있고, 막아야 하는 것은 측위 시작뿐이다.",
+          "before": "guard OneS1ght.isInitialized else { return }   // 미지원 기기에선 여기서 끝났다\nlet buildings = try await OneS1ght.buildings()",
+          "after": "// 미지원 기기에서도 여기까지 온다 — 지도와 존은 그려도 된다\nlet buildings = try await OneS1ght.buildings()\nlet floor = try await OneS1ght.floor(buildingId, floorId)\nlet zones = try await OneS1ght.zones(buildingId, floorId)"
+        },
+        {
+          "why": "차단은 begin() 한 곳으로 모였다. 측위 시작 실패를 여기서 잡아 사용자에게 알린다.",
+          "before": "try await OneS1ght.floorSession().begin()   // 미지원은 initialize 에서 이미 걸러졌다고 가정",
+          "after": "do {\n    try await OneS1ght.floorSession().begin()\n} catch SdkError.deviceNotSupported {\n    // 이 기기는 UWB 가 없다 — 측위만 끄고 나머지 화면은 그대로 둔다\n    markPositioningUnavailable()\n} catch SdkError.osVersionTooLow {\n    markOsTooLow()\n}"
+        }
+      ]
     }
   ]
 }
