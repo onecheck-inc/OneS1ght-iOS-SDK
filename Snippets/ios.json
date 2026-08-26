@@ -56,13 +56,11 @@
       "language": "swift",
       "code": "import OneS1ght\n\ntry await OneS1ght.initialize(\n    sdkKey: \"ock_sdk_...\",        // OneS1ght 콘솔 발급\n    geoSdkKey: \"gsk_...\"          // 임시 인자 — 생략 시 측위만 비활성\n)",
       "throws": [
-        "E2001",
-        "E2002",
         "E1002",
         "E1003",
         "E5001"
       ],
-      "warning": "initialize 는 건물·층을 조회하지 않는다. 공간 선택은 별도 단계다.",
+      "warning": "initialize 는 건물·층을 조회하지 않는다. 공간 선택은 별도 단계다. 기기 지원 여부도 여기서 보지 않는다 — UWB 없는 기기도 통과하고, 측위 시작(begin) 에서만 E2001/E2002 로 막힌다.",
       "expectedLog": "[I1001] 초기화 완료 — tenant=…"
     },
     {

@@ -9,7 +9,7 @@
 //  세션이 여럿이면 서로 충돌한다.
 //
 //  사용 (호스트 앱):
-//    // ① 앱 시작 시 — 기기 게이트 + 키 검증 + 테넌트 설정 수신
+//    // ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신 (기기 게이트는 여기 없다 — ④ begin() 이 담당)
 //    try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
 //    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
@@ -42,7 +42,8 @@ public final class OneS1ght {
 
     // MARK: - 상태
 
-    /// 세션 가능 상태인가 (initialize 성공 = 기기 통과 + 키 유효 + 설정 로드됨)
+    /// 세션 가능 상태인가 (initialize 성공 = 키 유효 + 설정 로드됨). 기기 지원 여부는 별개 —
+    /// deviceAvailability 로 물어보거나 begin() 의 throw 로 확인한다.
     public static var isInitialized: Bool { coordinator?.isPrepared ?? false }
 
     /// 측위 가능 여부 — 사유 포함. 앱이 사전 안내 UI 를 분기할 때 쓴다.
@@ -98,10 +99,12 @@ public final class OneS1ght {
 
     // MARK: - 생명주기
 
-    /// 초기화 (앱 시작 시 1회) — 기기 게이트 → 키 검증 + 테넌트 SDK 설정 수신.
-    /// 통과하면 "이 기기에서 이 키로 측위 세션 가능" 확정.
+    /// 초기화 (앱 시작 시 1회) — 키 검증 + 테넌트 SDK 설정 수신.
+    /// **기기 지원 여부는 여기서 보지 않는다** — UWB 없는 기기에서도 통과해야 도면·존 조회가
+    /// 열린다. 측위 가능 여부가 궁금하면 deviceAvailability 를 보거나 begin() 의 throw 를 본다.
+    /// 통과하면 "이 키로 서버 연결 가능 + 테넌트 설정 로드됨" 확정 (측위 가능 여부는 별개).
     /// verify 한 번으로 키 유효성과 백엔드 도달 가능 여부를 함께 확인한다.
-    /// 실패 사유는 throw (osVersionTooLow/deviceNotSupported/invalidKey/positioningDisabled/network).
+    /// 실패 사유는 throw (invalidKey/positioningDisabled/network).
     /// 실패 시 재호출 = 재시도 · 성공 후 재호출 = 무시(멱등) · 다른 키로 재호출 = 세션 재구성.
     /// - sdkKey: OneS1ght 콘솔 발급 (ock_) — 인증·존·수집·이벤트·도면
     /// - geoSdkKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
@@ -113,25 +116,20 @@ public final class OneS1ght {
     public static func initialize(sdkKey: String,
                                   geoSdkKey: String? = nil,
                                   baseURL: URL = ApiClient.defaultBaseURL) async throws {
-        // ① 기기 게이트 — 측위 불가 기기는 세션 전체가 무의미하므로 네트워크 타기 전에 사유와 함께 거부.
-        //    시뮬레이터는 예외: 개발·테스트 환경 전용이고 스토어 배포가 불가능해 프로덕션 우회 경로가 없다.
-        //    (시뮬레이터에서도 실측위는 begin()의 내장 UWB 게이트가 막는다 — Mock provider 주입만 가능)
-        #if os(iOS) && !targetEnvironment(simulator)
-        switch deviceAvailability {
-        case .osVersionTooLow:    throw SdkError.osVersionTooLow
-        case .deviceNotSupported: throw SdkError.deviceNotSupported
-        case .available:          break
-        }
-        #endif
+        // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.
+        // 여기서 막으면 세션이 안 만들어져 도면·존 조회까지 전부 닫힌다(coordinator != nil 가드).
+        // UWB 없는 기기에서도 지도와 존은 보여야 하고, 막혀야 하는 것은 측위뿐이다.
+        // 실제 차단은 FloorSession.begin() 의 isSupported 가드가 맡는다.
+        // 호출부가 미리 알고 싶으면 deviceAvailability / isDeviceAvailable 로 물어보면 된다.
 
-        // ② 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
+        // ① 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
         //    (재구성 없이 두면 이전 키로 만든 ApiClient 를 조용히 재사용해 '맞는 키인데 401' 함정이 생긴다)
         if let stored = storedKeys, stored != (sdkKey, geoSdkKey) {
             await coordinator?.stop()
             coordinator = nil
         }
 
-        // ③ 세션 구성 (최초 또는 재구성 후 1회)
+        // ② 세션 구성 (최초 또는 재구성 후 1회)
         if coordinator == nil {
             let geospace = geoSdkKey.map {
                 GeospaceClient(keys: .init(sdk: sdkKey, geospace: $0))
@@ -148,7 +146,7 @@ public final class OneS1ght {
             storedKeys = (sdkKey, geoSdkKey)
         }
 
-        // ④ 키 검증 + 설정 프리페치 (실패 시 throw — 재호출이 곧 재시도)
+        // ③ 키 검증 + 설정 프리페치 (실패 시 throw — 재호출이 곧 재시도)
         try await coordinator?.prepare()
     }
 
