@@ -253,7 +253,7 @@ await session.end()
 | 測位 | `floorSession()` → `begin()` · `end()` |
 | セッションコールバック | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | バッファ | `send()`（送信） · `empty()`（破棄） |
-| 状態 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `sdkVersion` |
+| 状態 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 
 ⚠️ `empty()` はバッファ内の座標を**送信せずに破棄します。** 送信は `send()` です。
 
@@ -331,7 +331,7 @@ initialize ─→ begin ─→ [UWB 座標] ─┬─→ onPosition            (
 ### 開発中に SDK ログを見る
 
 ```swift
-OneS1ght.onDebugLog = { line in print(line) }
+OneS1ght.onDebugLog = { level, line in print("[\(level)] \(line)") }
 ```
 
 ⚠️ 本番環境では登録しないことを推奨します。

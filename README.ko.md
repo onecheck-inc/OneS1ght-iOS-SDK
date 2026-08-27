@@ -255,7 +255,7 @@ await session.end()
 | 측위 | `floorSession()` → `begin()` · `end()` |
 | 세션 콜백 | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | 버퍼 | `send()`(전송) · `empty()`(폐기) |
-| 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `sdkVersion` |
+| 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 
 ⚠️ `empty()` 는 쌓인 좌표를 **전송하지 않고 버립니다.** 전송은 `send()` 입니다.
 
@@ -333,7 +333,7 @@ initialize ─→ begin ─→ [UWB 좌표] ─┬─→ onPosition            (
 ### 개발 중 SDK 로그 보기
 
 ```swift
-OneS1ght.onDebugLog = { line in print(line) }
+OneS1ght.onDebugLog = { level, line in print("[\(level)] \(line)") }
 ```
 
 ⚠️ 운영에서는 등록하지 않는 것을 권합니다.
