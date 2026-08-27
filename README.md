@@ -254,7 +254,7 @@ coordinates 240 sent → server accepted 240
 | Positioning | `floorSession()` → `begin()` · `end()` |
 | Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | Buffer | `send()` (upload now) · `empty()` (discard) |
-| Status | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `sdkVersion` |
+| Status | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 
 ⚠️ `empty()` **discards** buffered coordinates without sending. Use `send()` to upload.
 
@@ -332,7 +332,7 @@ see them without touching the app.
 ### Seeing SDK logs during development
 
 ```swift
-OneS1ght.onDebugLog = { line in print(line) }
+OneS1ght.onDebugLog = { level, line in print("[\(level)] \(line)") }
 ```
 
 ⚠️ Leave this unset in production.
