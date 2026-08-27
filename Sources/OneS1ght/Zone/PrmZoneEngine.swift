@@ -116,7 +116,12 @@ public final class PrmZoneEngine: ZoneJudging {
         guard prm.isRunning() else {
             if !warnedNotRunning {
                 warnedNotRunning = true
-                onLog?(SdkLocalized.text("zone.notRunning"))
+                // 예전엔 "존 미주입 또는 start 실패" 한 줄이라, 읽는 사람이 둘 중 어느
+                // 쪽인지 알 수 없었다. 둘은 할 일이 완전히 다르다 — 앞은 콘솔에서 구역을
+                // 그리면 되고, 뒤는 엔진 문제라 신고 대상이다. 실제 값으로 갈라 말한다.
+                onLog?(zones.isEmpty
+                       ? SdkLocalized.text("zone.noZones")
+                       : SdkLocalized.format("zone.startFailed", zones.count))
             }
             return
         }
