@@ -18,7 +18,7 @@ final class LiveConfigStream {
     /// 콘솔에서 무언가 바뀌었다 / 재동기화가 필요하다.
     var onChange: ((ConfigChange) -> Void)?
     /// 내부 활동 로그 — SessionCoordinator 의 onLog 로 이어진다.
-    var onLog: ((String) -> Void)?
+    var onLog: ((LogLevel, String) -> Void)?
 
     private let baseURL: URL
     private let apiKey: String
@@ -103,10 +103,10 @@ final class LiveConfigStream {
         do {
             let (bytes, resp) = try await session.bytes(for: req)
             guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                onLog?("live: 연결 거절 \((resp as? HTTPURLResponse)?.statusCode ?? -1)")
+                onLog?(.warn, "live: 연결 거절 \((resp as? HTTPURLResponse)?.statusCode ?? -1)")
                 return false
             }
-            onLog?("live: 연결됨")
+            onLog?(.info, "live: 연결됨")
             lastSeq = nil                             // 새 연결 = 새 기준선
             onChange?(.resyncNeeded)                  // 붙었다 = 그 사이를 놓쳤을 수 있다
 
@@ -131,7 +131,7 @@ final class LiveConfigStream {
             }
             return true
         } catch {
-            onLog?("live: 끊김 \(error)")
+            onLog?(.warn, "live: 끊김 \(error)")
             return false
         }
     }
@@ -141,7 +141,7 @@ final class LiveConfigStream {
         guard let signal = LiveSignal.parse(frame) else { return }
         if let seq = signal.seq {
             if let last = lastSeq, seq != last + 1 {
-                onLog?("live: 일련번호 갭 \(last) → \(seq), 재동기화 요청")
+                onLog?(.warn, "live: 일련번호 갭 \(last) → \(seq), 재동기화 요청")
                 onChange?(.resyncNeeded)
             }
             lastSeq = seq

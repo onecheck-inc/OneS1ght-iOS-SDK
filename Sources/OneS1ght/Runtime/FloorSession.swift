@@ -62,7 +62,7 @@ public final class FloorSession {
         let uwb = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
         builtInProvider = uwb
         uwb.onZoneEvent = { [weak self] event in self?.dispatch(event) }
-        uwb.onLog = { line in OneS1ght.onDebugLog?(line) }   // 엔진 로그 → 표준 디버그 훅
+        uwb.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }   // 엔진 로그 → 표준 디버그 훅
         try await begin(provider: uwb)
         #else
         throw SdkError.deviceNotSupported

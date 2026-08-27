@@ -32,13 +32,17 @@ public final class OneS1ght {
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
     /// SDK 버전 (verify의 client.sdk_version에 실림)
-    public static let sdkVersion = "0.1.11"
+    public static let sdkVersion = "0.1.12"
 
     // MARK: - 콜백
 
     /// SDK 내부 활동 로그 (디버그용) — verify·좌표 flush·zone 전송의 성공/실패 통지.
     /// 데모/개발 중 "전송이 실제로 되고 있나"를 눈으로 확인하는 용도. 운영에선 미등록 권장.
-    public static var onDebugLog: ((String) -> Void)?
+    /// SDK 내부 로그 — 등급과 글자가 함께 온다.
+    ///
+    /// ⚠️ v0.1.12 에서 `(String) -> Void` 에서 바뀌었다. 예전에는 글자만 왔고, 받는 쪽이
+    /// 맨 앞 이모지를 보고 등급을 짐작해야 했다 — 문구가 바뀌면 조용히 오분류됐다.
+    public static var onDebugLog: ((LogLevel, String) -> Void)?
 
     // MARK: - 상태
 
@@ -151,7 +155,7 @@ public final class OneS1ght {
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
             c.onConfigChange = { change in FloorSession.shared.onConfigChanged?(change) }
-            c.onLog = { line in OneS1ght.onDebugLog?(line) }
+            c.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }
             coordinator = c
             storedKeys = (sdkKey, geoSdkKey)
         }
