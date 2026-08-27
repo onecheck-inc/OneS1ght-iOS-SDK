@@ -50,7 +50,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
 
     /// 엔진 내부 로그 훅 — 표준 경로(start(consent:))에서 onDebugLog 로 이어진다.
     /// "세션 N으로 추적 시작 / 수신 대기 / 세션 오류" 가 앱에 보여야 무수신을 진단할 수 있다.
-    public var onLog: ((String) -> Void)?
+    public var onLog: ((LogLevel, String) -> Void)?
 
     // MARK: - 인프라 설정 (전부 주입 — 하드코딩 없음)
     //
@@ -92,7 +92,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
             self.forwardToSDK(event)
         }
         // PRM 수명주기·오류 진단 (조용한 실패 금지)
-        (zoneEngine as? PrmZoneEngine)?.onLog = { [weak self] msg in self?.addLog(msg) }
+        (zoneEngine as? PrmZoneEngine)?.onLog = { [weak self] level, msg in self?.addLog(level, msg) }
         // 1초 판단 로그 (디바운스 튜닝용)
         zoneEngine.onJudge = { [weak self] j in
             let inside = j.insideZone.map { SdkLocalized.format("provider.judgeInside", $0) }
@@ -124,7 +124,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     // MARK: - 로그
 
     /// 외부(호스트) 로그 합류 — SDK 코어 onDebugLog를 같은 로그 스트림에 끼울 때 사용
-    public func note(_ msg: String) { addLog(msg) }
+    public func note(_ msg: String) { addLog(.log, msg) }
+    public func note(_ level: LogLevel, _ msg: String) { addLog(level, msg) }
 
     /// ★ 측위 설정 주입 (공개 계약) — SDK 코어가 받아온 앵커·세션·존을 여기로 꽂는다.
     /// 소스가 콘솔이든 GeoSpace든 이 통로는 고정. start 전에 호출.
@@ -204,11 +205,15 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         )
     }
 
-    private func addLog(_ msg: String) {
+    /// 등급을 안 적으면 `.log` — 흐름 기록이 대다수라 그것만 생략한다.
+    /// (첫 인자 기본값은 Swift 가 못 가려서 오버로드로 둔다)
+    private func addLog(_ msg: String) { addLog(.log, msg) }
+
+    private func addLog(_ level: LogLevel, _ msg: String) {
         log.append(msg)
         if log.count > 200 { log.removeFirst(log.count - 200) }
         mlog.log("\(msg, privacy: .public)")
-        onLog?(msg)
+        onLog?(level, msg)
     }
 }
 
@@ -228,7 +233,7 @@ extension UwbPositioningProvider: PositioningProvider {
         guard !isRunning else { return }
         // 세션ID 미주입 = 측위 불가 (apply(config:) 먼저) — 하드코딩 폴백 없음
         guard let networkIdentifier else {
-            addLog(SdkLocalized.text("provider.noSession"))
+            addLog(.error, SdkLocalized.text("provider.noSession"))
             return
         }
 
@@ -271,7 +276,11 @@ extension UwbPositioningProvider: PositioningProvider {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             guard let self, self.isRunning else { return }
-            self.addLog(SdkLocalized.format("provider.diag", self.diagnostic.summary))
+            // 같은 한 줄이지만 내용이 "측위 정상" 인지 "측위 불가" 인지에 따라 등급이 갈린다.
+            // 진단 결과 자체가 판단이므로 그 판단을 그대로 등급으로 옮긴다.
+            let d = self.diagnostic
+            self.addLog(d.canPosition ? .info : .error,
+                        SdkLocalized.format("provider.diag", d.summary))
         }
     }
 
@@ -302,7 +311,7 @@ extension UwbPositioningProvider: NISessionDelegate {
                 if self.seenAddresses.insert(addr).inserted {
                     let matched = SdkLocalized.text(self.anchors[Int(addr)] != nil
                                                 ? "provider.anchorMatched" : "provider.anchorUnmatched")
-                    self.addLog(String(format: SdkLocalized.text("provider.anchorScan"),
+                    self.addLog(.info, String(format: SdkLocalized.text("provider.anchorScan"),
                                        addr, m.signalStrength, matched))
                 }
             }
@@ -338,7 +347,7 @@ extension UwbPositioningProvider: NISessionDelegate {
         // permissions() 로 미리 확인했더라도 사용자가 설정에서 나중에 끌 수 있어 이 경로는 계속 필요하다.
         let denied = (error as NSError).code == NIError.Code.userDidNotAllow.rawValue
         Task { @MainActor in
-            self.addLog(denied ? SdkLocalized.text("provider.permissionDenied")
+            self.addLog(.error, denied ? SdkLocalized.text("provider.permissionDenied")
                                : SdkLocalized.format("provider.invalid", error.localizedDescription))
             self.stop()
         }

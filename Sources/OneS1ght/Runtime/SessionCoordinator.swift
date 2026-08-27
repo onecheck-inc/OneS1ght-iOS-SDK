@@ -71,8 +71,11 @@ final class SessionCoordinator {
     var onPosition: ((Coordinates) -> Void)?
 
     /// SDK 내부 활동 로그 (디버그) — verify·flush·zone 전송의 성공/실패를 호스트에 노출
-    var onLog: ((String) -> Void)?
-    private func log(_ msg: String) { onLog?(msg) }
+    var onLog: ((LogLevel, String) -> Void)?
+    /// 등급은 부르는 쪽이 정한다. 등급을 안 적으면 `.log` — 흐름 기록이 대다수라 그것만 생략한다.
+    /// (첫 인자 기본값은 Swift 가 못 가려서 오버로드로 둔다)
+    private func log(_ msg: String) { onLog?(.log, msg) }
+    private func log(_ level: LogLevel, _ msg: String) { onLog?(level, msg) }
 
     /// 콘솔 변경 → 고객사 전달. SDK 는 이 신호로 아무것도 하지 않는다 —
     /// 무엇을 다시 받을지는 앱이 정한다.
@@ -226,7 +229,7 @@ final class SessionCoordinator {
     /// 로그는 "결과가 바뀔 때만" — 등록 감시가 1초마다 부르는 경로라 매번 찍으면 로그창이 덮인다.
     func refreshZones() async -> [Zone] {
         guard let geospace, let state = floorState else {
-            logZoneOutcome(SdkLocalized.text("zone.refreshSkipped"), key: "no-floor")
+            logZoneOutcome(.warn, SdkLocalized.text("zone.refreshSkipped"), key: "no-floor")
             return floorState?.zones ?? []
         }
         do {
@@ -239,12 +242,12 @@ final class SessionCoordinator {
                 provider?.apply(config: PositioningConfig(zones: zones))
             }
             let names = zones.map(\.name).joined(separator: ", ")
-            logZoneOutcome(zones.isEmpty ? SdkLocalized.text("zone.refreshEmpty")
+            logZoneOutcome(.info, zones.isEmpty ? SdkLocalized.text("zone.refreshEmpty")
                                          : SdkLocalized.format("zone.refreshOk", zones.count, names),
                            key: "ok:\(names)")
             return zones
         } catch {
-            logZoneOutcome(SdkLocalized.format("zone.refreshFail", state.zones.count, "\(error)"),
+            logZoneOutcome(.error, SdkLocalized.format("zone.refreshFail", state.zones.count, "\(error)"),
                            key: "err:\(error)")
             return state.zones
         }
@@ -253,9 +256,12 @@ final class SessionCoordinator {
     /// 직전과 결과가 같으면 침묵 (폴링 도배 방지). 호스트가 버튼으로 부른 건 앱이 따로 남긴다.
     private var lastZoneOutcome: String?
     private func logZoneOutcome(_ message: String, key: String) {
+        logZoneOutcome(.log, message, key: key)
+    }
+    private func logZoneOutcome(_ level: LogLevel, _ message: String, key: String) {
         guard lastZoneOutcome != key else { return }
         lastZoneOutcome = key
-        log(message)
+        log(level, message)
     }
 
     /// floorState → provider (로케이터·세션·존 + 건물·층 ID)
@@ -281,7 +287,7 @@ final class SessionCoordinator {
         if floorState != nil {
             applyFloorStateToProvider()
         } else {
-            log(SdkLocalized.text("coord.noFloorLoaded"))
+            log(.error, SdkLocalized.text("coord.noFloorLoaded"))
             report(.floorNotSet)
         }
 
@@ -375,7 +381,7 @@ final class SessionCoordinator {
         log(SdkLocalized.format("coord.stopFlush", pending))
         await buffer.flush()
         if buffer.count > 0 {
-            log(SdkLocalized.format("coord.pendingLost", buffer.count))
+            log(.warn, SdkLocalized.format("coord.pendingLost", buffer.count))
             report(.pendingDropped, "points=\(buffer.count)")
         }
         report(.positioningOff, "visitor=\(visitorId)")
@@ -412,7 +418,7 @@ final class SessionCoordinator {
         if live != nil, !floorFilterChangedForTest(from: liveFilter, to: floorState) { return }
         live?.stop()
         let s = LiveConfigStream(baseURL: api.baseURL, apiKey: api.apiKey)
-        s.onLog = { [weak self] line in self?.log(line) }
+        s.onLog = { [weak self] level, line in self?.log(level, line) }
         s.onChange = { [weak self] change in
             Task { @MainActor in self?.deliverConfigChangeForTest(change) }
         }
@@ -473,10 +479,10 @@ final class SessionCoordinator {
                                   points: batch)
         do {
             let res = try await api.sendPositionLogs(req)
-            log(SdkLocalized.format("coord.logsSent", batch.count, res.accepted_count))
+            log(.info, SdkLocalized.format("coord.logsSent", batch.count, res.accepted_count))
             return true
         } catch {
-            log(SdkLocalized.format("coord.logsFail", batch.count))
+            log(.warn, SdkLocalized.format("coord.logsFail", batch.count))
             reportApi(error, "positions=\(batch.count)")
             return false
         }
@@ -492,7 +498,7 @@ final class SessionCoordinator {
                 floorConfigs[floorId] = config
                 log(SdkLocalized.format("coord.floorLoaded", config.zones.count, String(floorId.prefix(8))))
             } catch ApiError.notFound {
-                log(SdkLocalized.text("coord.floorEmpty"))
+                log(.info, SdkLocalized.text("coord.floorEmpty"))
                 // 404 = 이 층에 존 없음 → "정상 분기" (사양서 §9). 빈 설정으로 마킹해 재조회 방지
                 floorConfigs[floorId] = ResFloorConfig(floor_id: floorId, building_id: nil,
                                                        name: floorId, synced_at: "",
@@ -637,14 +643,14 @@ extension SessionCoordinator: PositioningProviderDelegate {
             } catch ApiError.network {
                 // 소량 재시도 (사양서 §9) — 1회만, 그래도 실패면 드랍 (인메모리 v1)
                 if let res = try? await api.sendZoneEvent(req) {
-                    log(SdkLocalized.format("coord.zoneRetryOK", status.rawValue))
+                    log(.info, SdkLocalized.format("coord.zoneRetryOK", status.rawValue))
                     onTriggers?(zoneId, res.triggers)
                 } else {
-                    log(SdkLocalized.format("coord.zoneDropNet", status.rawValue))
+                    log(.error, SdkLocalized.format("coord.zoneDropNet", status.rawValue))
                     report(.network, "zone=\(zoneId) status=\(status.rawValue) dropped")
                 }
             } catch {
-                log(SdkLocalized.format("coord.zoneDropErr", status.rawValue))   // 서버 500이면 여기 찍힘
+                log(.error, SdkLocalized.format("coord.zoneDropErr", status.rawValue))   // 서버 500이면 여기 찍힘
                 reportApi(error, "zone=\(zoneId) status=\(status.rawValue) dropped")
             }
         }

@@ -52,7 +52,7 @@ final class ReceptionCheckTests: XCTestCase {
                                    identity: identity,
                                    receptionCheckDelay: 0.05)
         var lines: [String] = []
-        c.onLog = { lines.append($0) }
+        c.onLog = { _, line in lines.append(line) }
 
         try await c.prepare()
         c.identify(profileId: "pf_8a3c")

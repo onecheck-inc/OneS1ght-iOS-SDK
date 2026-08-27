@@ -24,7 +24,7 @@ public final class PrmZoneEngine: ZoneJudging {
     public private(set) var zones: [Zone] = []
     public var onEvent: ((ZoneEvent) -> Void)?
     public var onJudge: ((ZoneJudge) -> Void)?   // PRM 은 틱 단위 판단을 노출하지 않음 — 미발행
-    public var onLog: ((String) -> Void)?        // PRM 수명주기·오류 진단 (조용한 실패 금지)
+    public var onLog: ((LogLevel, String) -> Void)?   // PRM 수명주기·오류 진단 (조용한 실패 금지)
 
     /// PRM 인스턴스 이름 — 엔진 파일로그(gpi-logger)와 콜백의 prmName 으로 나오는 식별용.
     /// 기기 단위 익명 ID 를 없앴으므로 고정값을 쓴다. 인스턴스는 기기당 하나뿐이라
@@ -100,13 +100,13 @@ public final class PrmZoneEngine: ZoneJudging {
             if z.outPeriod <= 0        { filled.append(SdkLocalized.format("zone.defaultOutPeriod", Self.defaultOutPeriod)) }
             if z.priority <= 0         { filled.append(SdkLocalized.format("zone.defaultPriority", Self.defaultPriority)) }
             if !filled.isEmpty {
-                onLog?(SdkLocalized.format("zone.defaultsApplied", z.name, filled.joined(separator: " · ")))
+                onLog?(.log, SdkLocalized.format("zone.defaultsApplied", z.name, filled.joined(separator: " · ")))
             }
         }
         guard !areas.isEmpty else { return }
         // 주입 파라미터 증적 — 콘솔 값이 PRM 까지 실제로 도달했는지 파일로 확인
         for z in zones {
-            onLog?(String(format: SdkLocalized.text("zone.paramDump"),
+            onLog?(.log, String(format: SdkLocalized.text("zone.paramDump"),
                           z.name, z.inDist, z.inCount, z.inCountInterval, z.outPeriod))
         }
         prm.start(areaInfoList: areas)
@@ -119,9 +119,13 @@ public final class PrmZoneEngine: ZoneJudging {
                 // 예전엔 "존 미주입 또는 start 실패" 한 줄이라, 읽는 사람이 둘 중 어느
                 // 쪽인지 알 수 없었다. 둘은 할 일이 완전히 다르다 — 앞은 콘솔에서 구역을
                 // 그리면 되고, 뒤는 엔진 문제라 신고 대상이다. 실제 값으로 갈라 말한다.
-                onLog?(zones.isEmpty
-                       ? SdkLocalized.text("zone.noZones")
-                       : SdkLocalized.format("zone.startFailed", zones.count))
+                // 등급도 갈라진다 — 구역이 없는 건 정상 상태(info)이고,
+                // 넣었는데 엔진이 안 선 건 고장(error)이다.
+                if zones.isEmpty {
+                    onLog?(.info, SdkLocalized.text("zone.noZones"))
+                } else {
+                    onLog?(.error, SdkLocalized.format("zone.startFailed", zones.count))
+                }
             }
             return
         }
@@ -134,10 +138,10 @@ public final class PrmZoneEngine: ZoneJudging {
                 let gap = ingestStamps[19].timeIntervalSince(ingestStamps[0]) / 19.0
                 for z in zones where z.inCount >= 2 {
                     if Double(z.inCountInterval) <= gap {
-                        onLog?(String(format: SdkLocalized.text("zone.intervalTooShort"),
+                        onLog?(.warn, String(format: SdkLocalized.text("zone.intervalTooShort"),
                                       z.name, z.inCountInterval, gap))
                     } else {
-                        onLog?(String(format: SdkLocalized.text("zone.confirmEstimate"),
+                        onLog?(.log, String(format: SdkLocalized.text("zone.confirmEstimate"),
                                       z.name, z.inCount, Double(z.inCount) * gap, gap))
                     }
                 }
@@ -159,7 +163,7 @@ public final class PrmZoneEngine: ZoneJudging {
             guard z.contains(p) else { continue }              // 존 밖 = 무시 (적립 보존)
             guard let s = shadow[z.id] else {
                 shadow[z.id] = (1, p, now)
-                onLog?(SdkLocalized.format("zone.count", z.name, 1, z.inCount))
+                onLog?(.log, SdkLocalized.format("zone.count", z.name, 1, z.inCount))
                 continue
             }
             let gap = now.timeIntervalSince(s.at)
@@ -174,12 +178,12 @@ public final class PrmZoneEngine: ZoneJudging {
             }
             if let why {
                 shadow[z.id] = (1, p, now)
-                onLog?(SdkLocalized.format("zone.countReset", z.name, s.count, why))
+                onLog?(.log, SdkLocalized.format("zone.countReset", z.name, s.count, why))
             } else {
                 let next = s.count + 1
                 shadow[z.id] = (next, p, now)
                 if next <= z.inCount {                        // 도달 후엔 침묵 — IN 은 PRM 콜백이 알림
-                    onLog?(SdkLocalized.format(next == z.inCount ? "zone.countConfirmed" : "zone.count",
+                    onLog?(.log, SdkLocalized.format(next == z.inCount ? "zone.countConfirmed" : "zone.count",
                                               z.name, next, z.inCount))
                 }
             }
@@ -233,13 +237,13 @@ public final class PrmZoneEngine: ZoneJudging {
         func onStop(prmName: String)  { relay("■ PRM stop") }
         func onError(prmName: String, msg: String) { relay("⚠️ PRM error: \(msg)") }
         private func relay(_ msg: String) {
-            Task { @MainActor [weak owner] in owner?.onLog?(msg) }
+            Task { @MainActor [weak owner] in owner?.onLog?(.log, msg) }
         }
         func onReceivedInout(prmName: String, inoutStr: String, areaName: String) {
             Task { @MainActor [weak owner] in
                 // 원본 콜백 증적 — 어댑터 번역 전 PRM 이 준 그대로 (판정 주체가 PRM 임을 파일로 증명)
                 // prmName = 인스턴스 이름 = anon_profile_id (2.0.0 이전의 tagId 자리)
-                owner?.onLog?("PRM ← \(inoutStr) tag=\(prmName) area=\(areaName)")
+                owner?.onLog?(.log, "PRM ← \(inoutStr) tag=\(prmName) area=\(areaName)")
                 owner?.handleInout(inoutStr, areaName: areaName)
             }
         }
