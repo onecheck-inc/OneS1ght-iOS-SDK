@@ -194,11 +194,6 @@
     "ja": "ℹ️ [%@] 未設定項目にデフォルト値を適用 — %@",
     "en": "ℹ️ [%@] Defaults applied to unset fields — %@"
   },
-  "zone.notRunning": {
-    "ko": "⚠️ PRM 미가동 — 좌표 폐기 (존 미주입 또는 start 실패)",
-    "ja": "⚠️ PRM 未稼働 — 座標を破棄 (ゾーン未適用または start 失敗)",
-    "en": "⚠️ PRM not running — coordinate discarded (no zones applied or start failed)"
-  },
   "zone.count": {
     "ko": "적립 [%@] %d/%d",
     "ja": "カウント [%@] %d/%d",
@@ -308,5 +303,15 @@
     "ko": "좌표 전송 주기 %d회/초 적용 (서버 설정)",
     "ja": "座標送信レート %d回/秒 を適用（サーバー設定）",
     "en": "Position upload rate set to %d/s (server setting)"
+  },
+  "zone.noZones": {
+    "ko": "⚠️ 이 층에 등록된 구역이 없어 판정을 돌리지 않습니다 — 콘솔에서 구역을 만들어 주세요",
+    "ja": "⚠️ この階に登録されたエリアがないため判定を行いません — コンソールでエリアを作成してください",
+    "en": "⚠️ No zones on this floor, so judging is off — create a zone in the console"
+  },
+  "zone.startFailed": {
+    "ko": "⚠️ 구역 %d개를 넣었는데 판정 엔진이 시작되지 않았습니다 — 좌표를 버립니다",
+    "ja": "⚠️ エリアを %d 件投入しましたが判定エンジンが開始されていません — 座標を破棄します",
+    "en": "⚠️ %d zones were injected but the judging engine did not start — dropping coordinates"
   }
 }

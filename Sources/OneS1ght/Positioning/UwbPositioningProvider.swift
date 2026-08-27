@@ -131,10 +131,17 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     public func apply(config: PositioningConfig) {
         applyAnchors(config.anchors)
         if let sid = config.sessionId { applySessionId(sid) }
-        if !config.zones.isEmpty {
-            zoneEngine.apply(zones: config.zones)         // ← 온디바이스 존 판정 가동
-            addLog(SdkLocalized.format("coord.zonesApply", config.zones.count))
-        }
+        // **빈 목록도 그대로 넘긴다.** 예전엔 `if !config.zones.isEmpty` 로 걸러서, 구역을
+        // 전부 지운 상황이 엔진에 영영 전달되지 않았다 — SessionCoordinator.refreshZones()
+        // 가 바로 그걸 하려고 빈 목록을 보내는데(주석에 이유까지 적혀 있다) 여기서 조용히
+        // 버려져, 판정 엔진이 삭제된 구역을 계속 물고 지도에서 사라진 자리에서 없어진
+        // 시책이 계속 발화했다.
+        //
+        // 지금 호출부는 넷 다 "이 층의 구역은 이것이 전부다" 라는 뜻으로 부른다
+        // (층 해제 · 구역 새로고침 · 층 상태 주입 · 앱의 층 선택). 빈 목록은 "건드리지
+        // 말라" 가 아니라 "없다" 이므로, 그대로 반영하는 것이 맞다.
+        zoneEngine.apply(zones: config.zones)
+        addLog(SdkLocalized.format("coord.zonesApply", config.zones.count))
     }
 
     /// 외부(GeoSpace)에서 받은 앵커 좌표로 교체 (apply(config:) 내부에서 사용).
