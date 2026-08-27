@@ -306,8 +306,24 @@ extension UwbPositioningProvider: NISessionDelegate {
         Task { @MainActor in self.addLog(SdkLocalized.text("provider.suspended")) }
     }
 
+    /// 중단이 끝났다 — **여기서 같은 설정으로 run 을 다시 불러야 측정이 재개된다.**
+    ///
+    /// NearbyInteraction 은 중단이 풀렸다고 알아서 다시 재지 않는다. 이 델리게이트가
+    /// 오는 것 자체가 "이제 다시 run 해도 된다"는 신호이고, 재실행은 앱 몫이다
+    /// (Apple NISessionDelegate 계약). 이걸 빼먹으면 좌표가 그 자리에서 영영 멈춘다 —
+    /// 오류도 로그도 없고 isRunning 은 참이라, 화면상으로는 "측위 중"인데 점만 안 움직인다.
+    /// 중단은 앱이 백그라운드로 갔다 오는 것만으로도 일어나므로 증상이 간헐적으로 보인다.
+    ///
+    /// 이미 stop() 된 뒤에 늦게 도착한 콜백으로 세션이 되살아나지 않도록 isRunning 을 보고,
+    /// 우리가 들고 있는 세션이 맞을 때만 재실행한다(층을 갈아탄 뒤 옛 세션의 콜백 방지).
     public nonisolated func sessionSuspensionEnded(_ session: NISession) {
-        Task { @MainActor in self.addLog(SdkLocalized.text("provider.resumed")) }
+        Task { @MainActor in
+            self.addLog(SdkLocalized.text("provider.resumed"))
+            guard self.isRunning,
+                  session === self.session,
+                  let networkIdentifier = self.networkIdentifier else { return }
+            session.run(NIDLTDOAConfiguration(networkIdentifier: networkIdentifier))
+        }
     }
 
     public nonisolated func session(_ session: NISession, didInvalidateWith error: Error) {
