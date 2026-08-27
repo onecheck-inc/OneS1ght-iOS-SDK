@@ -97,6 +97,16 @@ public final class OneS1ght {
         #endif
     }
 
+    /// SDK 가 로그·안내 문구에 쓸 언어를 지정한다 — `"ko"` · `"ja"` · `"en"`.
+    /// `nil` 을 주면 기기 언어를 따른다(기본값).
+    ///
+    /// 앱이 자체 언어 설정을 가지고 있을 때 부른다. 앱은 영어로 바꿨는데 SDK 로그만
+    /// 기기 언어로 남는 것을 막기 위한 것이다. 언제든, 몇 번이든 부를 수 있다 —
+    /// 다음에 만들어지는 문구부터 바뀐다.
+    public static func setLanguage(_ code: String?) {
+        SdkLocalized.setLanguage(code)
+    }
+
     // MARK: - 생명주기
 
     /// 초기화 (앱 시작 시 1회) — 키 검증 + 테넌트 SDK 설정 수신.
