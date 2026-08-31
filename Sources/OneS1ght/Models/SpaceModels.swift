@@ -68,8 +68,17 @@ public struct Locator: Equatable {
     /// 도면 로컬 미터
     public let x, y, z: Double
 
-    public init(address: Int, x: Double, y: Double, z: Double) {
+    /// 서버가 이 로케이터를 **배치 완료로 보고 있는가**(GeoSpace `cluster_status == "auto_done"`).
+    ///
+    /// 거짓이면 설치·설정이 끝나지 않은 것이라 신호가 안 잡히는 게 정상이다 — 측위를
+    /// 시작해 보기 **전에도** 알 수 있는 유일한 고장 신호다(수신 여부는 세션을 켜야만 안다).
+    /// 서버가 이 값을 안 주던 시절의 응답과 옛 호출부를 위해 기본값은 `true`(=문제 없음)로
+    /// 둔다. 모르는 것을 고장으로 쳐서 멀쩡한 로케이터를 빨갛게 만들지 않는다.
+    public let isPlaced: Bool
+
+    public init(address: Int, x: Double, y: Double, z: Double, isPlaced: Bool = true) {
         self.address = address; self.x = x; self.y = y; self.z = z
+        self.isPlaced = isPlaced
     }
 }
 
@@ -99,4 +108,8 @@ struct FloorState {
     let locators: [Locator]
     /// 존은 폴링으로 늦게 채워질 수 있어 var
     var zones: [Zone]
+    /// 이 층에 도면이 등록돼 있는가. 거짓이면 지도는 배경 없이 그려야 한다
+    /// (앱은 격자를 깔고 앵커·존만 얹는다). **도면이 없어도 측위는 정상이다** —
+    /// 좌표는 도면이 아니라 로케이터 배치에서 나온다.
+    let hasPlan: Bool
 }

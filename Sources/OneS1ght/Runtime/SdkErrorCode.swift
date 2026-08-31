@@ -59,6 +59,10 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case sessionIdMissing    = "E3003"
     /// 층에 존이 하나도 없다 — 좌표는 쌓이지만 진출입 이벤트가 나오지 않는다. (WARN)
     case zonesEmpty          = "E3004"
+    /// 층에 도면이 없다 — 지도는 배경 없이 그려진다. **측위·판정은 정상이다**
+    /// (좌표는 도면이 아니라 로케이터 배치에서 나온다). 산업 현장처럼 올릴 도면이
+    /// 아예 없는 곳이 있어 오류가 아니라 상태 표시다. (WARN)
+    case planMissing         = "E3005"
 
     // MARK: 4xxx — 측위
 
@@ -87,7 +91,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 기본 레벨. 동작이 이어지는 것은 WARN, 그 외는 ERROR.
     public var level: SdkLogLevel {
         switch self {
-        case .zonesEmpty, .locatorNotReceived, .pendingDropped: return .warn
+        case .zonesEmpty, .planMissing, .locatorNotReceived, .pendingDropped: return .warn
         default:                                                return .error
         }
     }
@@ -106,6 +110,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .locatorsMissing:     return "층에 로케이터 없음"
         case .sessionIdMissing:    return "층에 UWB 세션 없음"
         case .zonesEmpty:          return "층에 존 없음"
+        case .planMissing:         return "층에 도면 없음 (측위는 정상)"
         case .uwbSessionFailed:    return "UWB 세션 실패"
         case .noPositionFix:       return "좌표 미산출"
         case .locatorNotReceived:  return "로케이터 일부 미수신"

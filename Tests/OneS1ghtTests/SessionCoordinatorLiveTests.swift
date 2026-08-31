@@ -39,7 +39,8 @@ final class SessionCoordinatorLiveTests: XCTestCase {
     // 리포트에 적힌 버그(층 전환 후 필터가 옛 층에 머무름)가 그대로 재발한다.
 
     private func floorState(building: String, floor: String, sessionId: Int? = nil) -> FloorState {
-        FloorState(buildingId: building, floorId: floor, sessionId: sessionId, locators: [], zones: [])
+        FloorState(buildingId: building, floorId: floor, sessionId: sessionId,
+                   locators: [], zones: [], hasPlan: true)
     }
 
     func testFloorFilterUnchangedWhenNothingSet() {
