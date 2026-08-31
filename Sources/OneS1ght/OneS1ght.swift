@@ -32,7 +32,7 @@ public final class OneS1ght {
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
     /// SDK 버전 (verify의 client.sdk_version에 실림)
-    public static let sdkVersion = "0.1.14"
+    public static let sdkVersion = "0.1.15"
 
     // MARK: - 콜백
 
