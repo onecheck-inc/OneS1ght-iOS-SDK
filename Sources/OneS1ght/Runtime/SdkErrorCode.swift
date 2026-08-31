@@ -59,10 +59,10 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case sessionIdMissing    = "E3003"
     /// 층에 존이 하나도 없다 — 좌표는 쌓이지만 진출입 이벤트가 나오지 않는다. (WARN)
     case zonesEmpty          = "E3004"
-    /// 층에 도면이 없다 — 지도는 배경 없이 그려진다. **측위·판정은 정상이다**
-    /// (좌표는 도면이 아니라 로케이터 배치에서 나온다). 산업 현장처럼 올릴 도면이
-    /// 아예 없는 곳이 있어 오류가 아니라 상태 표시다. (WARN)
-    case planMissing         = "E3005"
+    // E3005 는 쓰지 않는다. v0.1.14 에서 "층에 도면 없음"에 잠깐 붙였다가 v0.1.15 에서
+    // 거뒀다 — 도면이 없는 층은 **정상 구성**이라(산업 현장은 올릴 도면이 아예 없다)
+    // 오류 계열에 있을 값이 아니었다. 지금은 정보 코드 I3002 다(아래 SdkInfoCode).
+    // 번호는 재사용하지 않는다 — 옛 로그의 뜻이 바뀌면 안 된다.
 
     // MARK: 4xxx — 측위
 
@@ -91,7 +91,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 기본 레벨. 동작이 이어지는 것은 WARN, 그 외는 ERROR.
     public var level: SdkLogLevel {
         switch self {
-        case .zonesEmpty, .planMissing, .locatorNotReceived, .pendingDropped: return .warn
+        case .zonesEmpty, .locatorNotReceived, .pendingDropped: return .warn
         default:                                                return .error
         }
     }
@@ -110,7 +110,6 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .locatorsMissing:     return "층에 로케이터 없음"
         case .sessionIdMissing:    return "층에 UWB 세션 없음"
         case .zonesEmpty:          return "층에 존 없음"
-        case .planMissing:         return "층에 도면 없음 (측위는 정상)"
         case .uwbSessionFailed:    return "UWB 세션 실패"
         case .noPositionFix:       return "좌표 미산출"
         case .locatorNotReceived:  return "로케이터 일부 미수신"
@@ -130,6 +129,7 @@ public enum SdkInfoCode: String, Sendable, CaseIterable {
     case initialized   = "I1001"   // 초기화 완료
     case identified    = "I1002"   // 프로필 연결
     case floorSet      = "I3001"   // 층 지정
+    case planMissing   = "I3002"   // 층에 도면 없음 — 지도만 배경 없이 그린다(측위는 정상)
     case positioningOn = "I4001"   // 측위 시작
     case positioningOff = "I4002"  // 측위 종료
     case rateApplied   = "I5001"   // 전송 주기 적용 (기본값과 다를 때만)
@@ -139,6 +139,7 @@ public enum SdkInfoCode: String, Sendable, CaseIterable {
         case .initialized:    return "초기화 완료"
         case .identified:     return "프로필 연결"
         case .floorSet:       return "층 지정"
+        case .planMissing:    return "층에 도면 없음 (측위는 정상)"
         case .positioningOn:  return "측위 시작"
         case .positioningOff: return "측위 종료"
         case .rateApplied:    return "전송 주기 적용"
