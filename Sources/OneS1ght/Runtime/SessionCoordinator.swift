@@ -220,6 +220,9 @@ final class SessionCoordinator {
         if state.locators.isEmpty { report(.locatorsMissing, "floor=\(floor.id)") }
         if state.sessionId == nil { report(.sessionIdMissing, "floor=\(floor.id)") }
         if state.zones.isEmpty    { report(.zonesEmpty,      "floor=\(floor.id)") }
+        // 도면 없음은 실패가 아니다 — 지도를 배경 없이 그려야 한다는 사실만 남긴다.
+        // 관리자가 "지도가 왜 비어 있나"를 로그 한 줄로 알 수 있게 코드로 찍는다.
+        if !state.hasPlan         { report(.planMissing,     "floor=\(floor.id)") }
         if isRunning { applyFloorStateToProvider() }      // 가동 중 층 전환
         restartLiveStreamIfFloorChanged(previousFloor: previousFloor)
     }

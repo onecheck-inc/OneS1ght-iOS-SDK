@@ -117,21 +117,28 @@ final class GeospaceClient {
     /// 측위·판정 재료(로케이터·세션·존) 로드 — setFloorMap 이 부른다.
     /// 도면 이미지는 여기 없다(지도는 Floor 로 그린다). 단 존 픽셀→미터 정규화에
     /// 도면 치수가 필요해 plan 메타는 여전히 읽는다(캐시 재사용).
+    ///
+    /// ⚠️ **도면이 없는 층은 오류가 아니다.** 매장은 도면을 올리지만 산업 현장처럼 올릴
+    ///    도면 자체가 없는 곳이 있다. 예전에는 여기서 도면을 반드시 있는 것으로 보고
+    ///    `getPlan` 이 던졌고, 그 바람에 도면뿐 아니라 **로케이터·세션·존까지 통째로**
+    ///    못 받아 그런 층은 측위 자체가 불가능했다(앱에는 "지도 조회 실패"로만 보였다).
+    ///    좌표는 도면이 아니라 로케이터 배치에서 나오므로, 도면이 없어도 측위는 정상이다.
     func loadFloorState(buildingId: String, floorId: String) async throws -> FloorState {
         status = SdkLocalized.text("gs.loading")
-        async let planTask = getPlan(buildingId: buildingId, floorId)
+        async let planTask = planImageIfAny(buildingId: buildingId, floorId)
         async let anchorTask = getAnchors(floorId)
         async let zoneTask = getZones(buildingId: buildingId, floorId)
-        let (plan, anchorRes) = try await (planTask, anchorTask)
+        let (planImage, anchorRes) = try await (planTask, anchorTask)
         let zonesRaw = await zoneTask
 
-        let zones = normalizeZones(zonesRaw, image: plan.image)
+        let zones = normalizeZones(zonesRaw, image: planImage)
         let state = FloorState(
             buildingId: buildingId,
             floorId: floorId,
             sessionId: anchorRes.anchors.first?.sessionId,
             locators: anchorRes.anchors.compactMap { $0.toLocator() },
-            zones: zones
+            zones: zones,
+            hasPlan: planImage != nil
         )
         status = SdkLocalized.format("gs.done", state.locators.count, zones.count)
         return state
@@ -144,12 +151,21 @@ final class GeospaceClient {
     private var anchorCache: [String: (at: Date, res: AnchorResponse)] = [:]   // floorId → 앵커 (TTL 3분)
 
     /// 도면 — console 프록시(§6.4b) 우선(+세션 캐시), 실패 시 GeoSpace 직행 폴백.
-    private func getPlan(buildingId: String, _ floorId: String) async throws -> PlanResponse {
-        if let res = try? await consolePlan(buildingId, floorId),
-           res.hasPlan, let body = res.plan {
-            return PlanResponse(plan: .init(image: body.image))
+    /// **도면이 없는 층이면 nil.** 던지지 않는다 — loadFloorState 주석 참고.
+    ///
+    /// 콘솔이 `has_plan: false` 라고 **명시**하면 거기서 끝낸다. 예전에는 그때도 GeoSpace
+    /// 직행으로 폴백했는데, 그쪽 응답 타입은 이미지가 옵셔널이 아니라 디코드에서 던졌다 —
+    /// "도면이 없다"는 정상 사실이 통신 오류로 둔갑하던 자리다.
+    /// 콘솔 **조회 자체가 실패**했을 때만(오래된 서버·네트워크) 폴백을 탄다. 그 폴백마저
+    /// 실패하면 그때도 nil 이다: 도면을 못 받은 것과 도면이 없는 것을 화면에서 구분할
+    /// 방법이 없고, 어느 쪽이든 측위를 막을 이유는 없다.
+    private func planImageIfAny(buildingId: String, _ floorId: String) async -> PlanImage? {
+        if let res = try? await consolePlan(buildingId, floorId) {
+            guard res.hasPlan, let body = res.plan else { return nil }
+            return body.image
         }
-        return try await get("api/m/floors/\(floorId)/plan")
+        let fallback: PlanResponse? = try? await get("api/m/floors/\(floorId)/plan")
+        return fallback?.image
     }
 
     /// console 도면 프록시 (snake_case → convertFromSnakeCase 로 PlanImage 재사용). 층별 캐시.
@@ -190,21 +206,20 @@ final class GeospaceClient {
         let raw: [RawZone]
         do { raw = try await consoleZones(buildingId, floorId) }
         catch GsError.badResponse(404) { return [] }
-        guard let image = planCache[floorId]?.plan?.image else {
-            return raw.map { z in Zone(id: z.id, name: z.name,
-                                       polygon: z.polygon.map { Position(x: $0[0], y: $0[1]) },
-                                       inDist: z.inDist, inCount: z.inCount,
-                                       inCountInterval: z.inCountInterval, outPeriod: z.outPeriod,
-                                       priority: z.priority, callInout: z.callInout,
-                                       dwellSeconds: z.dwellSeconds) }
-        }
-        return normalizeZones(raw, image: image)
+        // 도면이 없으면(캐시에도 없으면) 미터로 그대로 — normalizeZones 가 같은 규칙을 쓴다.
+        return normalizeZones(raw, image: planCache[floorId]?.plan?.image)
     }
 
     /// 존 폴리곤 미터 정규화 — console 이 아직 픽셀로 내려줌 (사양서 §6.4 는 미터).
     /// plan 의 scale(imgW/widthM)·imgH 로 변환하되, 값이 이미 미터 범위면 그대로 통과
     /// (서버가 미터화해도 코드 수정 없이 동작).
-    private func normalizeZones(_ raw: [RawZone], image: PlanImage) -> [Zone] {
+    ///
+    /// ⚠️ `image` 가 nil = **도면이 없는 층**이면 폴리곤을 미터로 그대로 읽는다. 픽셀인지
+    ///    미터인지를 가르는 기준이 도면 크기인데(아래 `isPixel`) 그 도면이 없기 때문이다.
+    ///    안전한 전제다 — 픽셀 좌표는 도면 위에 찍어야 나오는 값이라, 찍을 도면이 없는
+    ///    층의 존이 픽셀로 저장될 경로가 애초에 없다. loadZones 도 같은 규칙을 쓴다.
+    private func normalizeZones(_ raw: [RawZone], image: PlanImage?) -> [Zone] {
+        guard let image else { return raw.map(meterZone) }
         let widthM = image.widthM
         let heightM = widthM * Double(image.imgH) / Double(image.imgW)
         let scale = Double(image.imgW) / widthM
@@ -222,6 +237,16 @@ final class GeospaceClient {
                         priority: z.priority, callInout: z.callInout,
                         dwellSeconds: z.dwellSeconds)
         }
+    }
+
+    /// 폴리곤을 미터로 그대로 읽는다 — 도면이 없어 픽셀/미터를 가릴 기준이 없을 때.
+    private func meterZone(_ z: RawZone) -> Zone {
+        Zone(id: z.id, name: z.name,
+             polygon: z.polygon.map { Position(x: $0[0], y: $0[1]) },
+             inDist: z.inDist, inCount: z.inCount,
+             inCountInterval: z.inCountInterval, outPeriod: z.outPeriod,
+             priority: z.priority, callInout: z.callInout,
+             dwellSeconds: z.dwellSeconds)
     }
 
     /// 존 원시 데이터 (폴리곤 단위 미정 — normalizeZones 로 미터 정규화)
@@ -277,6 +302,8 @@ final class GeospaceClient {
 
     private typealias BuildingsResponse = GeospaceBuildingsResponse
 
+    /// GeoSpace 직행 응답. 도면이 **있는** 층에서만 디코드된다 — 없는 층은
+    /// planImageIfAny 가 콘솔 단계에서 이미 nil 로 끝낸다.
     private struct PlanResponse: Decodable {
         let plan: PlanBody
         var image: PlanImage { plan.image }
@@ -353,7 +380,10 @@ final class GeospaceClient {
         func toLocator() -> Locator? {
             guard let mac = uwbMac, let x, let y,
                   let addr = Int(String(mac.suffix(4)), radix: 16) else { return nil }
-            return Locator(address: addr & 0xFFFF, x: x, y: y, z: 0)
+            // 서버가 값을 안 주면(옛 응답) 배치된 것으로 본다 — 모르는 것을 고장으로
+            // 쳐서 멀쩡한 로케이터를 지도에서 죽은 것처럼 보이게 하지 않는다.
+            return Locator(address: addr & 0xFFFF, x: x, y: y, z: 0,
+                           isPlaced: clusterStatus.map { $0 == "auto_done" } ?? true)
         }
     }
 
