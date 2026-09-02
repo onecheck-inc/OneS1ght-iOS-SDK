@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.1.15",
+  "sdkVersion": "0.1.16",
   "language": "swift",
   "requirements": {
     "positioning": {

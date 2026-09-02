@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.15",
+  "currentVersion": "0.1.16",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -156,6 +156,20 @@
       "breaking": false,
       "summary": "\"층에 도면 없음\" 로그 코드를 오류 계열 E3005 에서 정보 계열 I3002 로 옮겼다. 도면이 없는 층은 정상 구성이라 오류로 셀 값이 아니었다.",
       "action": "코드를 문자열로 다루는 곳이 있으면 E3005 를 I3002 로 바꾼다. E3005 는 v0.1.14 에서만 잠깐 존재했고 다시 쓰지 않는다."
+    },
+    {
+      "from": "0.1.15",
+      "to": "0.1.16",
+      "breaking": false,
+      "summary": "로케이터 조회가 실패해도 층이 열린다. 예전에는 앵커 조회 한 번 실패하면 도면·존까지 못 받아 지도가 통째로 비었다. 새 코드 E3006(로케이터 조회 실패)이 이유를 남긴다.",
+      "action": "고칠 것 없다. OneS1ght.locators(_:_:) 는 여전히 throws 지만(초기화 전 호출) 조회 실패로는 더 이상 던지지 않고 빈 목록을 준다 — 실패를 catch 로 잡아 화면을 비우던 코드가 있으면, positioningReady 가 거짓인지로 판단하도록 바꾼다.",
+      "snippets": [
+        {
+          "before": "do { infra = try await load() } catch { showMapError() }",
+          "after": "infra = try await load()\nif !infra.positioningReady { showPositioningUnavailable() }   // 지도는 그대로 그린다",
+          "why": "로케이터를 못 받은 것과 층을 못 받은 것은 다르다. 앞은 측위만 막히고 도면·존은 멀쩡하다."
+        }
+      ]
     }
   ]
 }

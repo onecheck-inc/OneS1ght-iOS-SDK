@@ -191,9 +191,12 @@ final class SessionCoordinator {
         return try await geospace.loadZones(buildingId: buildingId, floorId: floorId)
     }
 
+    /// ⚠️ 조회 실패는 던지지 않는다 — 빈 목록으로 떨어져 `positioningReady` 가 거짓이 된다.
+    /// 로케이터를 못 받았다고 지도(도면·존)를 통째로 지울 이유가 없다. 이유는 setFloorMap 이
+    /// 코드로 남긴다(E3006). `throws` 는 초기화 전 호출(notInitialized) 때문에 남는다.
     func locators(buildingId: String, floorId: String) async throws -> FloorLocators {
         guard let geospace else { throw SdkError.notInitialized }
-        return try await geospace.loadLocators(buildingId: buildingId, floorId: floorId)
+        return await geospace.loadLocators(buildingId: buildingId, floorId: floorId)
     }
 
     // MARK: - 층 지정
@@ -217,7 +220,11 @@ final class SessionCoordinator {
         report(.floorSet, "building=\(buildingId) floor=\(floor.id) " +
                           "locators=\(state.locators.count) zones=\(state.zones.count)")
         // 측위가 실제로 가능한 상태인지 — 관리자가 콘솔에서 원인을 바로 볼 수 있게 코드로 남긴다
-        if state.locators.isEmpty { report(.locatorsMissing, "floor=\(floor.id)") }
+        // "못 받았다"(E3006)와 "안 깔았다"(E3002)를 가른다 — 확인할 곳이 다르다.
+        // 앞은 연동·네트워크, 뒤는 현장이다. 둘을 뭉치면 엉뚱한 데를 뒤지게 된다.
+        // ⚠️ 어느 쪽이든 **도면·존 표시는 막지 않는다** — 여기까지 왔다는 건 층이 열렸다는 뜻이다.
+        if state.locatorsFetchFailed { report(.locatorsFetchFailed, "floor=\(floor.id)") }
+        else if state.locators.isEmpty { report(.locatorsMissing, "floor=\(floor.id)") }
         if state.sessionId == nil { report(.sessionIdMissing, "floor=\(floor.id)") }
         if state.zones.isEmpty    { report(.zonesEmpty,      "floor=\(floor.id)") }
         // 도면 없음은 실패가 아니다 — 지도를 배경 없이 그려야 한다는 사실만 남긴다.
