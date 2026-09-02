@@ -40,7 +40,7 @@ final class SessionCoordinatorLiveTests: XCTestCase {
 
     private func floorState(building: String, floor: String, sessionId: Int? = nil) -> FloorState {
         FloorState(buildingId: building, floorId: floor, sessionId: sessionId,
-                   locators: [], zones: [], hasPlan: true)
+                   locators: [], zones: [], hasPlan: true, locatorsFetchFailed: false)
     }
 
     func testFloorFilterUnchangedWhenNothingSet() {

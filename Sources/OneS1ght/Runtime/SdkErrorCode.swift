@@ -59,6 +59,11 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case sessionIdMissing    = "E3003"
     /// 층에 존이 하나도 없다 — 좌표는 쌓이지만 진출입 이벤트가 나오지 않는다. (WARN)
     case zonesEmpty          = "E3004"
+    /// 로케이터 **조회 자체가 실패**했다(통신·서버·404). 층에 로케이터가 없는 것(E3002)과 다르다 —
+    /// 그쪽은 "안 깔았다", 이쪽은 "못 받았다" 라서 확인할 곳이 현장이 아니라 연동·네트워크다.
+    /// ⚠️ 도면·존 표시는 막지 않는다. 지도는 그대로 뜨고 측위만 못 한다.
+    case locatorsFetchFailed = "E3006"
+
     // E3005 는 쓰지 않는다. v0.1.14 에서 "층에 도면 없음"에 잠깐 붙였다가 v0.1.15 에서
     // 거뒀다 — 도면이 없는 층은 **정상 구성**이라(산업 현장은 올릴 도면이 아예 없다)
     // 오류 계열에 있을 값이 아니었다. 지금은 정보 코드 I3002 다(아래 SdkInfoCode).
@@ -110,6 +115,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .locatorsMissing:     return "층에 로케이터 없음"
         case .sessionIdMissing:    return "층에 UWB 세션 없음"
         case .zonesEmpty:          return "층에 존 없음"
+        case .locatorsFetchFailed: return "로케이터 조회 실패 (지도는 정상)"
         case .uwbSessionFailed:    return "UWB 세션 실패"
         case .noPositionFix:       return "좌표 미산출"
         case .locatorNotReceived:  return "로케이터 일부 미수신"

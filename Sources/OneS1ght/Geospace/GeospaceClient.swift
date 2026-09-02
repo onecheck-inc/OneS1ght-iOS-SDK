@@ -108,10 +108,25 @@ final class GeospaceClient {
     }
 
     /// 로케이터 + 세션ID — 측위 시작에 필요한 전부. GeoSpace 앵커 API 에서 온다.
-    func loadLocators(buildingId: String, floorId: String) async throws -> FloorLocators {
-        let res = try await getAnchors(floorId)
+    /// ⚠️ **던지지 않는다.** 로케이터를 못 받아도 층은 열려야 한다 — 도면·존은 앵커와
+    /// 무관하게 이미 받아 온 것이고, 지도를 통째로 지울 이유가 없다. 못 받으면 빈 목록이라
+    /// `positioningReady` 가 거짓이 되어 "측위 불가" 로 자연스럽게 떨어진다.
+    /// 이유는 setFloorMap 이 코드로 남긴다(E3006 — locatorsFetchFailed).
+    func loadLocators(buildingId: String, floorId: String) async -> FloorLocators {
+        guard let res = await anchorsOrEmpty(floorId) else {
+            return FloorLocators(locators: [], sessionId: nil)
+        }
         return FloorLocators(locators: res.anchors.compactMap { $0.toLocator() },
                              sessionId: res.anchors.first?.sessionId)
+    }
+
+    /// 앵커 조회 — **실패를 값으로 돌려준다**(nil = 못 받음). 던지면 층 전체가 무너진다.
+    ///
+    /// ⚠️ 2026-08-31 이전에는 그냥 던졌다. 그 바람에 앵커 조회가 한 번 실패하면 앱에
+    /// **도면도 존도 격자도 안 그려지고** "지도 조회 실패" 만 떴다 — 도면이 없는 층이
+    /// 층 전체를 무너뜨리던 것(v0.1.14 에서 고침)과 똑같은 모양이다.
+    private func anchorsOrEmpty(_ floorId: String) async -> AnchorResponse? {
+        do { return try await getAnchors(floorId) } catch { return nil }
     }
 
     /// 측위·판정 재료(로케이터·세션·존) 로드 — setFloorMap 이 부른다.
@@ -126,19 +141,20 @@ final class GeospaceClient {
     func loadFloorState(buildingId: String, floorId: String) async throws -> FloorState {
         status = SdkLocalized.text("gs.loading")
         async let planTask = planImageIfAny(buildingId: buildingId, floorId)
-        async let anchorTask = getAnchors(floorId)
+        async let anchorTask = anchorsOrEmpty(floorId)
         async let zoneTask = getZones(buildingId: buildingId, floorId)
-        let (planImage, anchorRes) = try await (planTask, anchorTask)
+        let (planImage, anchors) = await (planTask, anchorTask)
         let zonesRaw = await zoneTask
 
         let zones = normalizeZones(zonesRaw, image: planImage)
         let state = FloorState(
             buildingId: buildingId,
             floorId: floorId,
-            sessionId: anchorRes.anchors.first?.sessionId,
-            locators: anchorRes.anchors.compactMap { $0.toLocator() },
+            sessionId: anchors?.anchors.first?.sessionId,
+            locators: anchors?.anchors.compactMap { $0.toLocator() } ?? [],
             zones: zones,
-            hasPlan: planImage != nil
+            hasPlan: planImage != nil,
+            locatorsFetchFailed: anchors == nil
         )
         status = SdkLocalized.format("gs.done", state.locators.count, zones.count)
         return state
