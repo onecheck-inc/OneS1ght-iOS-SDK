@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.1.16",
+  "sdkVersion": "0.1.17",
   "language": "swift",
   "requirements": {
     "positioning": {
@@ -11,7 +11,7 @@
       "os": "iOS 18.0+"
     },
     "build": {
-      "xcode": "26.6+"
+      "xcode": "27.0+"
     }
   },
   "notes": [

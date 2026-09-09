@@ -155,7 +155,7 @@ final class SnippetsTests: XCTestCase {
     func testRequirementsAreCurrent() throws {
         let req = try json["requirements"] as? [String: Any] ?? [:]
         let build = req["build"] as? [String: String] ?? [:]
-        XCTAssertEqual(build["xcode"], "26.6+", "실제로 빌드되는 Xcode 버전과 맞출 것")
+        XCTAssertEqual(build["xcode"], "27.0+", "실제로 빌드되는 Xcode 버전과 맞출 것 — gpi-ihub 가 iOS 27 SDK 를 요구한다")
 
         let positioning = req["positioning"] as? [String: String] ?? [:]
         XCTAssertEqual(positioning["os"], "iOS 27.0+")

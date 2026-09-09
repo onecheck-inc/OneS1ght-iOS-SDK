@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.16",
+  "currentVersion": "0.1.17",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -168,6 +168,30 @@
           "before": "do { infra = try await load() } catch { showMapError() }",
           "after": "infra = try await load()\nif !infra.positioningReady { showPositioningUnavailable() }   // 지도는 그대로 그린다",
           "why": "로케이터를 못 받은 것과 층을 못 받은 것은 다르다. 앞은 측위만 막히고 도면·존은 멀쩡하다."
+        }
+      ]
+    },
+    {
+      "from": "0.1.16",
+      "to": "0.1.17",
+      "breaking": true,
+      "summary": "측위·판정 엔진이 Geoplan 턴키 gpi-ihub 하나로 바뀌고, GeoSpace·Google Maps 키를 콘솔이 내려준다. UwbPositioningProvider·PrmZoneEngine 공개 클래스가 사라졌고 최소 iOS 가 15→18 로 올라갔다. 빌드에는 Xcode 27(iOS 27 SDK)이 필요하다.",
+      "action": "① initialize 에서 geoSdkKey 를 뺀다 — 콘솔이 정본이라 넘겨도 무시된다(폴백으로만 쓰인다). ② 지도 키를 자체 API 로 받아 오던 코드는 OneS1ght.googleMapKey 로 바꾼다. ③ Info.plist 에 NSBluetoothAlwaysUsageDescription 과 NSLocationTemporaryUsageDescriptionDictionary(키 이름은 반드시 Positioning)를 추가한다 — 없으면 측위가 시작되지 않는다. ④ UwbPositioningProvider·PrmZoneEngine·zoneEngine·onJudge 를 직접 참조하던 코드가 있으면 지운다. 대체 API 는 없다 — 판정은 이제 엔진이 하고 SDK 는 결과만 받는다. ⑤ Package.swift 의 최소 버전을 iOS 18 이상으로 올린다.",
+      "changes": [
+        {
+          "why": "GeoSpace 키의 정본이 콘솔로 옮겨졌다. 키를 바꿔도 앱을 다시 배포할 필요가 없고, 앱이 든 값과 콘솔 값이 갈라지는 일 자체가 없어진다.",
+          "before": "try await OneS1ght.initialize(sdkKey: \"ock_sdk_…\", geoSdkKey: \"gsk_…\")",
+          "after": "try await OneS1ght.initialize(sdkKey: \"ock_sdk_…\")"
+        },
+        {
+          "why": "구글맵 키도 콘솔이 함께 내려준다. 앱이 따로 받아 올 자리를 만들 이유가 없다.",
+          "before": "let cfg = try await myBackend.fetchConfig()\nmapView.apiKey = cfg.googleMapKey",
+          "after": "mapView.apiKey = OneS1ght.googleMapKey   // initialize 성공 뒤부터 값이 있다"
+        },
+        {
+          "why": "엔진이 BLE 로 층을 고르고 정밀 위치를 요구한다. 사전 안의 키가 Positioning 이 아니면 승격 요청이 오류도 로그도 없이 무시된다.",
+          "before": "<key>NSNearbyInteractionUsageDescription</key>\n<string>…</string>",
+          "after": "<key>NSNearbyInteractionUsageDescription</key>\n<string>…</string>\n<key>NSBluetoothAlwaysUsageDescription</key>\n<string>주변 측위 장비를 찾는 데 사용합니다.</string>\n<key>NSLocationTemporaryUsageDescriptionDictionary</key>\n<dict>\n    <key>Positioning</key>\n    <string>정확한 실내 위치를 계산하는 데 사용합니다.</string>\n</dict>"
         }
       ]
     }
