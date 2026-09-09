@@ -382,7 +382,9 @@ final class SessionCoordinator {
         if floorState != nil {
             applyFloorStateToProvider()
         } else {
-            log(.error, SdkLocalized.text("coord.noFloorLoaded"))
+            // WARN 이다 — 엔진이 BLE 로 층을 찾는 흐름에서는 여기가 정상 경로다.
+            // 층이 **끝내** 안 잡히는 것은 별개 코드(E3007 floorNotDetected)가 알린다.
+            log(.warn, SdkLocalized.text("coord.noFloorLoaded"))
             report(.floorNotSet)
         }
 
