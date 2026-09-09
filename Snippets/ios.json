@@ -54,7 +54,7 @@
       "title": "초기화 — 앱 시작 시 1회",
       "order": 3,
       "language": "swift",
-      "code": "import OneS1ght\n\ntry await OneS1ght.initialize(\n    sdkKey: \"ock_sdk_...\",        // OneS1ght 콘솔 발급\n    geoSdkKey: \"gsk_...\"          // 임시 인자 — 생략 시 측위만 비활성\n)",
+      "code": "import OneS1ght\n\ntry await OneS1ght.initialize(\n    sdkKey: \"ock_sdk_...\"         // OneS1ght 콘솔 발급 — GeoSpace·Google Maps 키는 콘솔이 내려준다\n)",
       "throws": [
         "E1002",
         "E1003",

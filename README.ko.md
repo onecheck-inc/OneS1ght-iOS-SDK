@@ -23,7 +23,6 @@ SDK가 실제로 동작하려면 키와 공간 설정이 먼저 준비되어야 
 | 사전 준비 | 어디서 |
 |---|---|
 | SDK 키 (`ock_sdk_…`) | OneS1ght 콘솔 → **모바일 SDK** |
-| GeoSpace 키 (`gsk_…`) | GeoSpace 파트너 콘솔 |
 | 건물·층·로케이터 설치 | GeoSpace |
 | 구역(Zone) | OneS1ght 콘솔 → **공간 관리** |
 
@@ -73,8 +72,11 @@ targets: [
 ```swift
 import OneS1ght
 
-try await OneS1ght.initialize(sdkKey: "ock_sdk_…", geoSdkKey: "gsk_…")
+try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 ```
+
+> GeoSpace 키와 Google Maps 키는 **콘솔이 내려줍니다.** 앱에 심을 필요가 없고,
+> 값을 바꿔도 앱을 다시 배포하지 않아도 됩니다. 통합관리자가 콘솔에서 설정합니다.
 
 ⚠️ `initialize` 는 건물·층을 **조회하지 않습니다.** 공간 선택은 별도 단계(Step 5)입니다 —
 어느 층을 쓸지는 앱만 알기 때문입니다.
@@ -248,7 +250,7 @@ await session.end()
 
 | 구분 | API |
 |---|---|
-| 초기화 | `initialize(sdkKey:geoSdkKey:)` · `permissions()` · `reset()` |
+| 초기화 | `initialize(sdkKey:)` · `permissions()` · `reset()` |
 | 프로필 | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
 | 공간 조회 | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
 | 층 지정 | `setFloorMap(_:buildingID:)` · `refreshZones()` |
@@ -256,6 +258,7 @@ await session.end()
 | 세션 콜백 | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | 버퍼 | `send()`(전송) · `empty()`(폐기) |
 | 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
+| 콘솔 제공 값 | `googleMapKey` · `geoPartnerKey` · `geoBaseUrl` |
 
 ⚠️ `empty()` 는 쌓인 좌표를 **전송하지 않고 버립니다.** 전송은 `send()` 입니다.
 
