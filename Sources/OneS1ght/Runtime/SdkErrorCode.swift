@@ -39,6 +39,14 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case positioningDisabled = "E1003"
     /// identify(profileId:) 없이 측위를 시작하려 했다.
     case notIdentified       = "E1004"
+    /// GeoSpace 키를 콘솔 값으로 대체했다 — 앱이 넘긴 값과 달랐다. 정본이 바뀌었다는 사실이다.
+    case keyOverridden       = "E1005"
+    /// 콘솔에서 GeoSpace 키를 받지 못해(통신 실패 또는 미설정) 앱이 넘긴 값으로 폴백했다.
+    case keyFallback         = "E1006"
+    /// GeoSpace 키가 어디에도 없다 — 앱도 안 넘겼고 콘솔도 못 줬다. buildings()/floors()/
+    /// zones() 는 빈 배열로, floor()/locators()/setFloorMap() 은 notInitialized 로 떨어진다 —
+    /// isInitialized 는 true 인 채로. 관리자가 콘솔 로그 분석기에서 반드시 봐야 하는 자리다.
+    case keyUnavailable      = "E1007"
 
     // MARK: 2xxx — 기기·권한
 
@@ -96,8 +104,10 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 기본 레벨. 동작이 이어지는 것은 WARN, 그 외는 ERROR.
     public var level: SdkLogLevel {
         switch self {
-        case .zonesEmpty, .locatorNotReceived, .pendingDropped: return .warn
-        default:                                                return .error
+        case .zonesEmpty, .locatorNotReceived, .pendingDropped, .keyOverridden, .keyFallback:
+            return .warn
+        default:
+            return .error
         }
     }
 
@@ -108,6 +118,9 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .invalidKey:          return "SDK 키 무효 또는 폐기"
         case .positioningDisabled: return "테넌트에서 측위 비활성"
         case .notIdentified:       return "프로필 미연결"
+        case .keyOverridden:       return "GeoSpace 키를 콘솔 값으로 대체"
+        case .keyFallback:         return "GeoSpace 키를 콘솔에서 못 받아 앱 값으로 폴백"
+        case .keyUnavailable:      return "GeoSpace 키가 어디에도 없음"
         case .osVersionTooLow:     return "iOS 버전 미달"
         case .deviceNotSupported:  return "UWB 미지원 기기"
         case .permissionDenied:    return "측위 권한 거부"

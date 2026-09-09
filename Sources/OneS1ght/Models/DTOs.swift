@@ -199,6 +199,34 @@ public enum SdkDefaults {
     public static let maxRateHz = 100
 }
 
+/// 콘솔이 내려주는 관련 키 — SDK 키 하나로 받는다.
+///
+/// ⚠️ **전부 옵셔널이다.** 서버는 채우지 못한 키를 null 로 두고 200 을 준다(부분 실패).
+/// 하나를 필수로 만들면 그 키가 빈 테넌트에서 초기화가 통째로 실패한다 —
+/// 2026-08-21 의 remote_config 사고와 같은 모양이다.
+///
+/// ⚠️ internal 까지만(M1) — ApiClient.config() 가 internal 로 내려간 것과 같은 이유다.
+/// 이 타입이 public 이면 host 가 `ApiClient(apiKey:).config().geo_sdk_key` 로 GeoSpace
+/// 모바일 키를 직접 꺼낼 길이 열린다. 앱에 내줄 값은 OneS1ght.swift 의 String? 접근자
+/// (googleMapKey · geoPartnerKey · geoBaseUrl) 셋뿐이다 — resolvedGeoSdkKey 는 없다.
+struct ResSdkConfig: Codable {
+    let tenant_code: String?
+    let google_map_key: String?
+    let geo_sdk_key: String?
+    let geo_partner_key: String?
+    let geo_base_url: String?
+
+    init(tenant_code: String? = nil, google_map_key: String? = nil,
+         geo_sdk_key: String? = nil, geo_partner_key: String? = nil,
+         geo_base_url: String? = nil) {
+        self.tenant_code = tenant_code
+        self.google_map_key = google_map_key
+        self.geo_sdk_key = geo_sdk_key
+        self.geo_partner_key = geo_partner_key
+        self.geo_base_url = geo_base_url
+    }
+}
+
 /// GET /positioning/buildings 응답
 public struct FloorRef: Codable {
     public let floor_id: String             // GeoSpace 층 UUID — 이게 키

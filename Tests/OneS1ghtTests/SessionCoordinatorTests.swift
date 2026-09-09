@@ -45,6 +45,9 @@ final class SessionCoordinatorTests: XCTestCase {
             if path.hasSuffix("/auth/verify") {
                 return (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
             }
+            if path.hasSuffix("/config") {
+                return (200, Data("{}".utf8))
+            }
             if path.hasSuffix("/positioning/buildings") {
                 return (200, Data(#"""
                 { "synced_at": "s", "buildings": [
@@ -82,8 +85,9 @@ final class SessionCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(c.isPrepared)                              // 세션 가능
         XCTAssertFalse(provider.isRunning)                       // 측위는 아직
+        // buildings 는 부르지 않는다 — /config 는 prepare() 가 키 해석을 위해 더한 호출(Task 5)
         XCTAssertEqual(StubURLProtocol.requests.map(\.path),
-                       ["/api/sdk/v1/auth/verify"])        // buildings 는 부르지 않는다
+                       ["/api/sdk/v1/auth/verify", "/api/sdk/v1/config"])
         // verify 는 키 검증만 — 클라이언트 정보를 싣지 않는다
         let body = try JSONDecoder().decode(ReqVerify.self,
                                             from: XCTUnwrap(StubURLProtocol.requests[0].body))
@@ -150,6 +154,36 @@ final class SessionCoordinatorTests: XCTestCase {
             XCTAssertEqual(e, .positioningDisabled)
         } catch { XCTFail("SdkError여야 함") }
         XCTAssertFalse(c.isPrepared)
+    }
+
+    // positioning_enabled=false 라도 관련 키(Google Maps 등)는 받아 둬야 한다 — 그 키는
+    // 측위와 무관하다. resolveKeysFromConsole() 을 positioningDisabled 가드보다 먼저 태우는
+    // 순서가 지켜지는지 확인한다(I5, §3.2 "부분 실패해도 200").
+    func testPrepare_positioningDisabled_stillResolvesConsoleKeys() async {
+        StubURLProtocol.handler = { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("/auth/verify") {
+                return (200, Data(#"""
+                { "valid": true, "tenant_code": "t", "positioning_enabled": false }
+                """#.utf8))
+            }
+            if path.hasSuffix("/config") {
+                return (200, Data(#"""
+                { "google_map_key": "AIza_disabled", "geo_partner_key": "gpk_disabled" }
+                """#.utf8))
+            }
+            return (200, Data("{}".utf8))
+        }
+        let c = makeCoordinator()
+        do {
+            try await c.prepare()
+            XCTFail("positioningDisabled여야 함")
+        } catch let e as SdkError {
+            XCTAssertEqual(e, .positioningDisabled)
+        } catch { XCTFail("SdkError여야 함") }
+
+        XCTAssertEqual(c.googleMapKey, "AIza_disabled", "측위가 꺼져도 지도 키는 받아야 한다")
+        XCTAssertEqual(c.geoPartnerKey, "gpk_disabled")
     }
 
     // 존 판정 → events/zone 전송 (바디 검증) → triggers 호스트 콜백

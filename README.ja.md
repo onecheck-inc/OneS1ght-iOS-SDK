@@ -20,7 +20,6 @@ SDK が実際に動作するには、キーと空間設定が先に用意され�
 | 事前準備 | 取得場所 |
 |---|---|
 | SDK キー (`ock_sdk_…`) | OneS1ght コンソール → **モバイル SDK** |
-| GeoSpace キー (`gsk_…`) | GeoSpace パートナーコンソール |
 | 建物・フロア・ロケーターの設置 | GeoSpace |
 | ゾーン | OneS1ght コンソール → **空間管理** |
 
@@ -71,8 +70,11 @@ targets: [
 ```swift
 import OneS1ght
 
-try await OneS1ght.initialize(sdkKey: "ock_sdk_…", geoSdkKey: "gsk_…")
+try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 ```
+
+> GeoSpace キーと Google Maps キーは**コンソールが配信します。**アプリに埋め込む必要はなく、
+> 値を変更してもアプリを再配布する必要はありません。統合管理者がコンソールで設定します。
 
 ⚠️ `initialize` は建物・フロアを**取得しません**。空間の選択は別ステップ（Step 5）です —
 どのフロアを使うかはアプリだけが知っているためです。
@@ -246,7 +248,7 @@ await session.end()
 
 | 区分 | API |
 |---|---|
-| 初期化 | `initialize(sdkKey:geoSdkKey:)` · `permissions()` · `reset()` |
+| 初期化 | `initialize(sdkKey:)` · `permissions()` · `reset()` |
 | プロフィール | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
 | 空間取得 | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
 | フロア指定 | `setFloorMap(_:buildingID:)` · `refreshZones()` |
@@ -254,8 +256,12 @@ await session.end()
 | セッションコールバック | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | バッファ | `send()`（送信） · `empty()`（破棄） |
 | 状態 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
+| コンソール提供値 | `googleMapKey` · `geoPartnerKey` · `geoBaseUrl` |
 
 ⚠️ `empty()` はバッファ内の座標を**送信せずに破棄します。** 送信は `send()` です。
+
+⚠️ `geoBaseUrl` は **アプリ自身が GeoSpace を直接呼び出す際** に使うアドレスです。SDK
+内部の通信(フロアマップ・アンカーなど)はこの値と無関係に組み込みホストをそのまま使います。
 
 ---
 

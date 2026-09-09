@@ -109,6 +109,21 @@
     "ja": "verify 通過 (tenant: %@)",
     "en": "verify passed (tenant: %@)"
   },
+  "coord.keyOverridden": {
+    "ko": "GeoSpace 키를 콘솔 값으로 대체했습니다 — 앱이 넘긴 값과 다릅니다",
+    "ja": "GeoSpace キーをコンソールの値に置き換えました — アプリが渡した値と異なります",
+    "en": "Replaced the GeoSpace key with the console value — it differs from the one the app passed"
+  },
+  "coord.keyFallback": {
+    "ko": "콘솔에서 GeoSpace 키를 받지 못해 앱이 넘긴 값으로 폴백했습니다",
+    "ja": "コンソールから GeoSpace キーを取得できず、アプリが渡した値にフォールバックしました",
+    "en": "Could not get the GeoSpace key from the console; fell back to the one the app passed"
+  },
+  "coord.keyUnavailable": {
+    "ko": "GeoSpace 키가 어디에도 없습니다 — 앱도 넘기지 않았고 콘솔에도 설정돼 있지 않습니다. 건물·층·존 조회는 빈 값으로 떨어집니다",
+    "ja": "GeoSpace キーがどこにもありません — アプリも渡しておらず、コンソールにも設定されていません。建物・階・ゾーンの取得は空値になります",
+    "en": "No GeoSpace key anywhere — the app did not pass one and the console has none configured. Buildings/floors/zones will come back empty"
+  },
   "coord.consent": {
     "ko": "consent 기록됨",
     "ja": "consent 記録済み",

@@ -21,7 +21,6 @@ You also need keys and a configured space before the SDK does anything useful:
 | Prerequisite | Where |
 |---|---|
 | SDK key (`ock_sdk_…`) | OneS1ght Console → **Mobile SDK** |
-| GeoSpace key (`gsk_…`) | GeoSpace partner console |
 | Building · floor · locator setup | GeoSpace |
 | Zones | OneS1ght Console → **Space** |
 
@@ -73,8 +72,12 @@ receives tenant settings.
 ```swift
 import OneS1ght
 
-try await OneS1ght.initialize(sdkKey: "ock_sdk_…", geoSdkKey: "gsk_…")
+try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 ```
+
+> The GeoSpace and Google Maps keys are **served by the console.** You do not embed them
+> in the app, and changing them does not require a new app release. A platform
+> administrator sets them in the console.
 
 ⚠️ `initialize` does **not** look up buildings or floors. Space selection is a separate
 step (Step 5) — only your app knows which floor to use.
@@ -247,7 +250,7 @@ coordinates 240 sent → server accepted 240
 
 | Group | API |
 |---|---|
-| Setup | `initialize(sdkKey:geoSdkKey:)` · `permissions()` · `reset()` |
+| Setup | `initialize(sdkKey:)` · `permissions()` · `reset()` |
 | Profile | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
 | Space | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
 | Floor | `setFloorMap(_:buildingID:)` · `refreshZones()` |
@@ -255,8 +258,13 @@ coordinates 240 sent → server accepted 240
 | Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | Buffer | `send()` (upload now) · `empty()` (discard) |
 | Status | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
+| Console-provided values | `googleMapKey` · `geoPartnerKey` · `geoBaseUrl` |
 
 ⚠️ `empty()` **discards** buffered coordinates without sending. Use `send()` to upload.
+
+⚠️ `geoBaseUrl` is for **your app's own** direct calls to GeoSpace. The SDK's internal
+GeoSpace traffic (floor plans, anchors) always uses its built-in host regardless of this
+value.
 
 ---
 

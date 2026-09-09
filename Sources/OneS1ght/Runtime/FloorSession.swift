@@ -72,7 +72,13 @@ public final class FloorSession {
     /// 측위 시작 (커스텀 측위 주입) — 테스트(Mock)·데모 등 특수 경우용.
     public func begin(provider: PositioningProvider) async throws {
         guard let coordinator else { throw SdkError.notInitialized }
-        if !coordinator.isPrepared { try await coordinator.prepare() }   // 순단 회복
+        if !coordinator.isPrepared {
+            try await coordinator.prepare()                         // 순단 회복
+        } else {
+            // prepare() 는 이미 끝났지만 콘솔 키 해석만 실패했을 수 있다(I1) — isPrepared 가
+            // 멱등 가드라 prepare() 재호출로는 다시 못 붙는다. 여기서 따로 재시도한다.
+            await coordinator.retryKeyResolutionIfNeeded()
+        }
         try await coordinator.start(provider: provider)
     }
 

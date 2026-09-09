@@ -31,8 +31,32 @@ final class SessionCoordinator {
     // 의존성 (전부 주입 — 테스트는 스텁 세션·가짜 프로바이더)
     private let api: ApiClient
     private let identity: IdentityStore
-    private var geospace: GeospaceClient?        // initialize(geoSdkKey:)가 있을 때만 — 앵커·세션·층 (과도기)
+    /// 앱이 geoSdkKey 를 넘겼으면 initialize 가 미리 만들어 둔 것 — 아니면 nil 로 시작해
+    /// resolveKeysFromConsole() 이 콘솔 키로 채운다. 콘솔도 앱도 키가 없으면 계속 nil 이다:
+    /// buildings()/floors()/zones() 는 빈 배열로, floor()/locators()/setFloorMap() 은
+    /// notInitialized 로 떨어진다(isInitialized 는 그래도 true — I1 참고).
+    private var geospace: GeospaceClient?
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
+    /// GeospaceClient 를 새로 만들 때 물려줄 세션 — 테스트는 스텁을 주입한다.
+    /// 이게 없으면 콘솔 키로 갈아끼운 클라이언트가 항상 `.shared` 로 떨어져, 갈아끼운
+    /// 뒤의 첫 조회가 스텁을 우회하고 실제 geospace.geoplan.io 로 나간다(I3).
+    private let session: URLSession
+
+    /// 앱이 initialize(geoSdkKey:)로 넘긴 값 — 콘솔이 답하지 못할 때의 폴백이다.
+    var appProvidedGeoSdkKey: String?
+
+    /// 실제로 쓰기로 결정된 GeoSpace 모바일 키. 콘솔 값이 있으면 그것, 없으면 앱 값.
+    private(set) var resolvedGeoSdkKey: String?
+    /// 콘솔이 내려준 나머지 — 호스트 앱이 지도·도면에 쓴다.
+    private(set) var googleMapKey: String?
+    private(set) var geoPartnerKey: String?
+    private(set) var geoBaseUrl: String?
+
+    /// 가장 최근 `/config` 호출이 실패했는가(네트워크·서버 — 응답은 왔지만 값이 없는 것과
+    /// 다르다) — FloorSession.begin() 의 순단 회복이 재시도할지 판단하는 자리(I1).
+    /// 성공하면(geo_sdk_key 가 null 이어도) false 로 돌아온다: 그건 폴백할 게 없는 정상
+    /// 상태이지 재시도로 해결될 문제가 아니다 — 같은 응답을 계속 다시 물어봐야 소용없다.
+    private(set) var keyResolutionFailed = false
 
     // 배치 정책 (사양서 §6.8 은 100건/5분 "권장" — 2026-08-20 300건/60초로 조정.
     // 4Hz 에서는 300건(=75초)보다 60초 타이머가 먼저 걸려 실질 60초·240건 주기가 된다.
@@ -120,6 +144,7 @@ final class SessionCoordinator {
     init(api: ApiClient,
          identity: IdentityStore,
          geospace: GeospaceClient? = nil,
+         session: URLSession = .shared,
          flushThreshold: Int = 300,
          flushInterval: TimeInterval = 60,
          maxPerRequest: Int = 500,
@@ -128,6 +153,7 @@ final class SessionCoordinator {
         self.api = api
         self.identity = identity
         self.geospace = geospace
+        self.session = session
         self.flushThreshold = flushThreshold
         self.flushInterval = flushInterval
         self.buffer = TrajectoryBuffer(maxPerRequest: maxPerRequest) { [weak self] batch in
@@ -152,6 +178,12 @@ final class SessionCoordinator {
         // 키 검증 + 클라 등록 (consent는 아직 모름 → 생략, 서버 기존값 보존)
         // verify 성공 = 키 유효 + 백엔드 도달 가능 두 가지를 한 번에 확인한 것.
         let verified = try await api.verify(makeVerifyRequest())
+
+        // 관련 키(특히 Google Maps 키)는 측위와 무관하다 — positioning_enabled 가드보다
+        // 먼저 받아 둔다. 뒤에 두면 측위가 꺼진 테넌트는 지도 키조차 못 받는다(§3.2 "부분
+        // 실패해도 200", 2026-09-09 판단 — I5).
+        await resolveKeysFromConsole()
+
         guard verified.valid, verified.positioning_enabled else {
             throw SdkError.positioningDisabled
         }
@@ -168,7 +200,83 @@ final class SessionCoordinator {
         isPrepared = true
     }
 
-    // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 — geoSdkKey 없으면 빈 값)
+    /// FloorSession.begin() 의 순단 회복이 부른다 — `/config` 가 실패했던 경우에만 재시도.
+    /// isPrepared 는 건드리지 않는다(멱등 유지, I1) — 이 실패는 "세션이 안 됨"이 아니라
+    /// "관련 키를 못 받음"이라 성격이 다르다. prepare() 를 다시 부르면 verify 를 또 태워
+    /// 서버 부하만 늘고, isPrepared 멱등 가드에 걸려 애초에 아무것도 안 한다.
+    func retryKeyResolutionIfNeeded() async {
+        guard isPrepared, keyResolutionFailed else { return }
+        await resolveKeysFromConsole()
+    }
+
+    /// 관련 키를 콘솔에서 받아 정본으로 삼는다.
+    ///
+    /// **초기화를 막지 않는다.** 서버가 잠깐 흔들린다고 측위가 멈추면 안 되므로, 실패하면
+    /// 앱이 넘긴 값으로 폴백하고 그 사실만 남긴다.
+    ///
+    /// ⚠️ 폴백할 값이 아예 없는 경우(앱도 안 넘기고 콘솔도 못 줌)가 가장 조용히 새는
+    /// 자리였다 — buildings()/floors()/zones() 는 빈 배열로 떨어져 "이 테넌트에 건물이
+    /// 없다"와 구분이 안 되고, floor()/locators()/setFloorMap() 은 notInitialized 를
+    /// 던지는데 isInitialized 는 true 다. 그리고 prepare() 가 멱등이라 다시 손볼 방법도
+    /// 없었다(I1). 그래서 이 경로는 appProvidedGeoSdkKey 유무로 로그 여부를 가르지 않고
+    /// **둘 다** report 로 남기되, 폴백조차 없는 쪽을 더 무겁게 다룬다(logKeyFallback 참고).
+    private func resolveKeysFromConsole() async {
+        resolvedGeoSdkKey = appProvidedGeoSdkKey     // 기본값 = 폴백
+
+        let cfg: ResSdkConfig
+        do {
+            cfg = try await api.config()
+            keyResolutionFailed = false
+        } catch {
+            keyResolutionFailed = true
+            logKeyFallback(reason: "config_failed")
+            return
+        }
+
+        googleMapKey  = cfg.google_map_key
+        geoPartnerKey = cfg.geo_partner_key
+        geoBaseUrl    = cfg.geo_base_url
+
+        guard let consoleKey = cfg.geo_sdk_key, !consoleKey.isEmpty else {
+            // 콘솔에 값이 없는 것과 통신 실패는 다르다(요청은 성공했다 — 재시도로 해결될
+            // 문제가 아니다) — 그래도 앱 입장에서 할 일은 같다: 폴백.
+            logKeyFallback(reason: "console_no_key")
+            return
+        }
+
+        // 정본은 콘솔이다. 다르면 조용히 덮지 않고 한 번 알린다 —
+        // ⚠️ 어느 쪽 값도 로그에 싣지 않는다.
+        if let appKey = appProvidedGeoSdkKey, appKey != consoleKey {
+            log(.warn, SdkLocalized.text("coord.keyOverridden"))
+            report(.keyOverridden, "console value differs from app-provided value")
+        }
+        resolvedGeoSdkKey = consoleKey
+
+        // GeospaceClient 는 initialize 가 앱 키로 미리 만들었다 — 콘솔 키로 갈아끼운다.
+        // ⚠️ 주입받은 session 을 그대로 물려준다 — 안 그러면 `.shared` 로 떨어져 테스트의
+        // 스텁 세션을 우회하고 실제 geospace.geoplan.io 로 요청이 나간다(I3).
+        if consoleKey != appProvidedGeoSdkKey || geospace == nil {
+            geospace = GeospaceClient(keys: .init(sdk: api.apiKey, geospace: consoleKey),
+                                      session: session)
+        }
+    }
+
+    /// 키 폴백(혹은 폴백 불가) 사실을 남긴다.
+    ///
+    /// 앱이 넘긴 값이 있으면 그 값으로 계속 돌아간다는 뜻이라 WARN 이면 충분하다. 없으면
+    /// GeoSpace 관련 기능이 이번 세션 내내 전부 비활성된다는 뜻이라 — I1 이 지적한 그 자리 —
+    /// 더 무겁게 다룬다. 어느 쪽도 실제 키 값은 담지 않는다(reason 은 고정 토큰이다).
+    private func logKeyFallback(reason: String) {
+        if appProvidedGeoSdkKey != nil {
+            log(.warn, SdkLocalized.text("coord.keyFallback"))
+            report(.keyFallback, "reason=\(reason)")
+        } else {
+            log(.error, SdkLocalized.text("coord.keyUnavailable"))
+            report(.keyUnavailable, "reason=\(reason)")
+        }
+    }
+
+    // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 — GeoSpace 키를 못 구했으면 빈 값)
 
     func buildings() async throws -> [Building] {
         guard let geospace else { return [] }

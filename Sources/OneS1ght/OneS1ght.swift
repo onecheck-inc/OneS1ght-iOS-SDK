@@ -10,7 +10,7 @@
 //
 //  사용 (호스트 앱):
 //    // ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신 (기기 게이트는 여기 없다 — ④ begin() 이 담당)
-//    try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
+//    try await OneS1ght.initialize(sdkKey: "ock_…")
 //    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
 //    let buildings = try await OneS1ght.buildings()
 //    let floors = try await OneS1ght.floors(buildings[0].id)
@@ -72,6 +72,25 @@ public final class OneS1ght {
     /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 deviceAvailability 사용.
     public static var isDeviceAvailable: Bool { deviceAvailability == .available }
 
+    // MARK: - 콘솔 제공 값 (앱이 지도를 직접 그릴 때 쓰는 값들)
+    //
+    // GeoSpace 모바일 키(resolvedGeoSdkKey)는 여기 없다 — SDK 가 내부적으로만 쓰고
+    // 앱이 들고 있을 이유가 없다.
+
+    /// 콘솔이 내려준 Google Maps 키 — 앱이 자체 지도를 그릴 때 쓴다.
+    /// initialize 가 성공하기 전에는 `nil`이다.
+    public static var googleMapKey: String? { coordinator?.googleMapKey }
+
+    /// 콘솔이 내려준 GeoSpace 파트너 키.
+    /// initialize 가 성공하기 전에는 `nil`이다.
+    public static var geoPartnerKey: String? { coordinator?.geoPartnerKey }
+
+    /// 콘솔이 내려준 GeoSpace 베이스 URL — **앱이 GeoSpace 를 직접 호출할 때** 쓰는 값이다.
+    /// ⚠️ SDK 내부 통신(도면·앵커 등)은 이 값과 무관하게 내장 호스트(geospace.geoplan.io)를
+    ///    그대로 쓴다 — 이 값이 바뀌어도 SDK 트래픽의 목적지는 바뀌지 않는다.
+    /// initialize 가 성공하기 전에는 `nil`이다.
+    public static var geoBaseUrl: String? { coordinator?.geoBaseUrl }
+
     // MARK: - 권한
 
     /// 측위 권한 확인. **호출하면 시스템 팝업이 뜬다** — 확인과 요청이 분리되지 않는다.
@@ -80,7 +99,7 @@ public final class OneS1ght {
     /// NISession 을 실제로 띄워 보는 것이 유일한 확인 수단이다. 그래서 SDK 가 시점을
     /// 정하지 않고 이 문을 따로 열어 둔다 — 앱이 적절한 맥락에서 부르면 된다.
     ///
-    ///     try await OneS1ght.initialize(sdkKey: "ock_…", geoSdkKey: "gsk_…")
+    ///     try await OneS1ght.initialize(sdkKey: "ock_…")
     ///     switch await OneS1ght.permissions() {
     ///     case .authorized:  break
     ///     case .denied:      showSettingsGuide()   // 앱에서 재요청 불가 — 설정 앱으로
@@ -121,8 +140,9 @@ public final class OneS1ght {
     /// 실패 사유는 throw (invalidKey/positioningDisabled/network).
     /// 실패 시 재호출 = 재시도 · 성공 후 재호출 = 무시(멱등) · 다른 키로 재호출 = 세션 재구성.
     /// - sdkKey: OneS1ght 콘솔 발급 (ock_) — 인증·존·수집·이벤트·도면
-    /// - geoSdkKey: GeoSpace 발급 (gsk_) — 앵커·세션·층 목록.
-    ///   서버 통합이 끝나면 불필요해지는 과도기 인자 — 생략 시 측위만 비활성, 나머진 동작.
+    /// - geoSdkKey: **더 이상 넘기지 않아도 된다.** 콘솔이 이 키의 정본이며,
+    ///   initialize 가 서버에서 받아 온다(`GET /api/sdk/v1/config`).
+    ///   넘기면 콘솔이 답하지 못할 때의 폴백으로만 쓰인다. 다음 메이저에서 제거된다.
     /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
     ///   콘솔이 발급하는 키(production/development)가 가른다.
     /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/setFloorMap() 의 책임이다.
@@ -151,6 +171,7 @@ public final class OneS1ght {
             let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
                                        identity: identity,
                                        geospace: geospace)
+            c.appProvidedGeoSdkKey = geoSdkKey     // 콘솔이 답하지 못할 때의 폴백
             // 좌표·트리거는 세션 콜백으로 흘린다 (전역 훅은 onDebugLog 만 남았다)
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
@@ -164,6 +185,16 @@ public final class OneS1ght {
         try await coordinator?.prepare()
     }
 
+    /// ⚠️ 비옵셔널 `geoSdkKey` 오버로드 — 예전처럼 값을 넘기는 호출부에만 경고가 뜨게 한다.
+    /// 콘솔이 이 키의 정본이며 initialize 가 서버에서 받아 온다. 넘긴 값은 콘솔이
+    /// 답하지 못할 때의 폴백으로만 쓰인다. 다음 메이저에서 제거된다.
+    @available(*, deprecated, message: "geoSdkKey 는 더 이상 필요하지 않습니다 — 콘솔이 정본입니다. initialize(sdkKey:) 를 쓰세요.")
+    public static func initialize(sdkKey: String,
+                                  geoSdkKey: String,
+                                  baseURL: URL = ApiClient.defaultBaseURL) async throws {
+        try await initialize(sdkKey: sdkKey, geoSdkKey: Optional(geoSdkKey), baseURL: baseURL)
+    }
+
     /// 초기화 리셋 — 세션을 버린다. 이후 initialize(sdkKey:)로 다른 키로 재초기화 가능
     /// (앱 재빌드 없이 런타임에 키 교체용).
     public static func reset() async {
@@ -175,7 +206,10 @@ public final class OneS1ght {
 
     // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 · 목록 ↔ 단건)
 
-    /// 건물 목록. geoSdkKey 없이 초기화했으면 빈 배열. 층은 floors() 로 따로.
+    /// 건물 목록. 층은 floors() 로 따로.
+    /// ⚠️ 빈 배열이 "이 테넌트에 건물이 없다"는 뜻만은 아니다 — GeoSpace 키를 하나도 못
+    ///    구했을 때도(콘솔 미응답 + geoSdkKey 미제공) 똑같이 빈 배열이 온다. 구분하려면
+    ///    onDebugLog 나 콘솔 로그 분석기에서 E1007 을 확인해야 한다.
     public static func buildings() async throws -> [Building] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.buildings()
