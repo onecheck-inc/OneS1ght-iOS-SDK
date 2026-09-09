@@ -109,6 +109,16 @@
     "ja": "verify 通過 (tenant: %@)",
     "en": "verify passed (tenant: %@)"
   },
+  "coord.keyOverridden": {
+    "ko": "GeoSpace 키를 콘솔 값으로 대체했습니다 — 앱이 넘긴 값과 다릅니다",
+    "ja": "GeoSpace キーをコンソールの値に置き換えました — アプリが渡した値と異なります",
+    "en": "Replaced the GeoSpace key with the console value — it differs from the one the app passed"
+  },
+  "coord.keyFallback": {
+    "ko": "콘솔에서 GeoSpace 키를 받지 못해 앱이 넘긴 값으로 폴백했습니다",
+    "ja": "コンソールから GeoSpace キーを取得できず、アプリが渡した値にフォールバックしました",
+    "en": "Could not get the GeoSpace key from the console; fell back to the one the app passed"
+  },
   "coord.consent": {
     "ko": "consent 기록됨",
     "ja": "consent 記録済み",

@@ -34,6 +34,16 @@ final class SessionCoordinator {
     private var geospace: GeospaceClient?        // initialize(geoSdkKey:)가 있을 때만 — 앵커·세션·층 (과도기)
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
 
+    /// 앱이 initialize(geoSdkKey:)로 넘긴 값 — 콘솔이 답하지 못할 때의 폴백이다.
+    var appProvidedGeoSdkKey: String?
+
+    /// 실제로 쓰기로 결정된 GeoSpace 모바일 키. 콘솔 값이 있으면 그것, 없으면 앱 값.
+    private(set) var resolvedGeoSdkKey: String?
+    /// 콘솔이 내려준 나머지 — 호스트 앱이 지도·도면에 쓴다.
+    private(set) var googleMapKey: String?
+    private(set) var geoPartnerKey: String?
+    private(set) var geoBaseUrl: String?
+
     // 배치 정책 (사양서 §6.8 은 100건/5분 "권장" — 2026-08-20 300건/60초로 조정.
     // 4Hz 에서는 300건(=75초)보다 60초 타이머가 먼저 걸려 실질 60초·240건 주기가 된다.
     // 종전 100건/300초는 25초마다 100건 → 요청 수가 2.4배였다. 테스트에서 작게 주입.)
@@ -165,7 +175,46 @@ final class SessionCoordinator {
             log(SdkLocalized.format("coord.rateApplied", positionRateHz))
             report(.rateApplied, "rate=\(positionRateHz)")
         }
+        await resolveKeysFromConsole()
         isPrepared = true
+    }
+
+    /// 관련 키를 콘솔에서 받아 정본으로 삼는다.
+    ///
+    /// **초기화를 막지 않는다.** 서버가 잠깐 흔들린다고 측위가 멈추면 안 되므로, 실패하면
+    /// 앱이 넘긴 값으로 폴백하고 그 사실만 남긴다.
+    private func resolveKeysFromConsole() async {
+        resolvedGeoSdkKey = appProvidedGeoSdkKey     // 기본값 = 폴백
+
+        let cfg: ResSdkConfig
+        do {
+            cfg = try await api.config()
+        } catch {
+            if appProvidedGeoSdkKey != nil { log(.warn, SdkLocalized.text("coord.keyFallback")) }
+            return
+        }
+
+        googleMapKey  = cfg.google_map_key
+        geoPartnerKey = cfg.geo_partner_key
+        geoBaseUrl    = cfg.geo_base_url
+
+        guard let consoleKey = cfg.geo_sdk_key, !consoleKey.isEmpty else {
+            // 콘솔에 값이 없는 것과 통신 실패는 다르지만, 할 일은 같다 — 폴백.
+            if appProvidedGeoSdkKey != nil { log(.warn, SdkLocalized.text("coord.keyFallback")) }
+            return
+        }
+
+        // 정본은 콘솔이다. 다르면 조용히 덮지 않고 한 번 알린다 —
+        // ⚠️ 어느 쪽 값도 로그에 싣지 않는다.
+        if let appKey = appProvidedGeoSdkKey, appKey != consoleKey {
+            log(.warn, SdkLocalized.text("coord.keyOverridden"))
+        }
+        resolvedGeoSdkKey = consoleKey
+
+        // GeospaceClient 는 initialize 가 앱 키로 미리 만들었다 — 콘솔 키로 갈아끼운다.
+        if consoleKey != appProvidedGeoSdkKey || geospace == nil {
+            geospace = GeospaceClient(keys: .init(sdk: api.apiKey, geospace: consoleKey))
+        }
     }
 
     // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 — geoSdkKey 없으면 빈 값)

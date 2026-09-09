@@ -45,6 +45,9 @@ final class SessionCoordinatorTests: XCTestCase {
             if path.hasSuffix("/auth/verify") {
                 return (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
             }
+            if path.hasSuffix("/config") {
+                return (200, Data("{}".utf8))
+            }
             if path.hasSuffix("/positioning/buildings") {
                 return (200, Data(#"""
                 { "synced_at": "s", "buildings": [
@@ -82,8 +85,9 @@ final class SessionCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(c.isPrepared)                              // 세션 가능
         XCTAssertFalse(provider.isRunning)                       // 측위는 아직
+        // buildings 는 부르지 않는다 — /config 는 prepare() 가 키 해석을 위해 더한 호출(Task 5)
         XCTAssertEqual(StubURLProtocol.requests.map(\.path),
-                       ["/api/sdk/v1/auth/verify"])        // buildings 는 부르지 않는다
+                       ["/api/sdk/v1/auth/verify", "/api/sdk/v1/config"])
         // verify 는 키 검증만 — 클라이언트 정보를 싣지 않는다
         let body = try JSONDecoder().decode(ReqVerify.self,
                                             from: XCTUnwrap(StubURLProtocol.requests[0].body))
