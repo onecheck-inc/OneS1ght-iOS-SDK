@@ -56,14 +56,19 @@ public final class FloorSession {
     /// - throws: .notInitialized / .notIdentified / .deviceNotSupported / .osVersionTooLow
     public func begin() async throws {
         #if os(iOS)
+        // ⚠️ 이 가드는 지우지 말 것. 지금은 패키지 최소 버전이 iOS 27 이라 형식적이지만,
+        //    Geoplan 이 ihub 배포 타깃을 낮춰 주면 그 순간 실제 방어선이 된다.
         guard #available(iOS 27.0, *) else { throw SdkError.osVersionTooLow }
         // 시뮬레이터는 여기서 막힌다 (UWB 칩 없음). 테스트는 begin(provider:) 로 Mock 주입.
-        guard UwbPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
-        let uwb = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
-        builtInProvider = uwb
-        uwb.onZoneEvent = { [weak self] event in self?.dispatch(event) }
-        uwb.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }   // 엔진 로그 → 표준 디버그 훅
-        try await begin(provider: uwb)
+        guard IHubPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
+        let hub = (builtInProvider as? IHubPositioningProvider) ?? IHubPositioningProvider()
+        builtInProvider = hub
+        // ihub 라이선스 = initialize(geoSdkKey:) 로 받은 gsk_ 키. 앱이 따로 넣지 않아도 되게
+        // SDK 가 자기 키를 그대로 물려준다 — 키가 없으면 provider 가 오류로 통지한다.
+        hub.license = OneS1ght.geoSdkKeyForPositioning ?? ""
+        hub.onZoneEvent = { [weak self] event in self?.dispatch(event) }
+        hub.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }   // 엔진 로그 → 표준 디버그 훅
+        try await begin(provider: hub)
         #else
         throw SdkError.deviceNotSupported
         #endif

@@ -63,7 +63,7 @@ public final class OneS1ght {
     public static var deviceAvailability: DeviceAvailability {
         #if os(iOS)
         guard #available(iOS 27.0, *) else { return .osVersionTooLow }
-        return UwbPositioningProvider.isSupported ? .available : .deviceNotSupported
+        return IHubPositioningProvider.isSupported ? .available : .deviceNotSupported
         #else
         return .deviceNotSupported
         #endif
@@ -314,5 +314,9 @@ public final class OneS1ght {
     private static var currentBuildingID: String?             // setFloorMap 의 건물 문맥
     /// FloorSession 이 코디네이터에 닿는 통로 (같은 모듈 내부 전용)
     static var coordinatorRef: SessionCoordinator? { coordinator }
+    /// ihub 라이선스로 쓸 GeoSpace 키 — initialize(geoSdkKey:) 값을 그대로 넘긴다.
+    /// 앱이 측위용 키를 따로 설정하지 않아도 되게 FloorSession.begin() 이 읽어 간다.
+    /// (모듈 내부 전용 — 키를 공개 표면으로 다시 노출하지 않는다)
+    static var geoSdkKeyForPositioning: String? { storedKeys?.geospace }
     private static var storedKeys: (sdk: String, geospace: String?)?  // 키 교체 감지용
 }

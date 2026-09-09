@@ -94,7 +94,9 @@ public struct ZoneJudge {
 }
 
 /// 존 판정 엔진 계약 — 좌표를 넣으면 IN/DWELL/OUT 이벤트가 나온다.
-/// 구현: PrmZoneEngine(iOS 실전 — Geoplan PRM) / ZoneEngine(자체 — 맥 테스트·폴백)
+/// 구현: ZoneEngine(자체 — 좌표 기반 폴리곤 판정).
+/// ⚠️ 실전 측위 경로는 이 계약을 더 이상 쓰지 않는다 — ihub 가 영역 판정까지 해서 IN/OUT 을
+///    주므로, 그쪽은 IHubZoneJudge 가 좌표 없이 이름으로 받아 옮긴다.
 @MainActor
 public protocol ZoneJudging: AnyObject {
     var zones: [Zone] { get }
