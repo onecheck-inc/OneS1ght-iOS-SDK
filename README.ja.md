@@ -51,14 +51,29 @@ targets: [
 
 ### Info.plist
 
-**両方**必要です。無いと権限を要求した瞬間にアプリが終了します。
+**4つすべて**必要です。最初の3つは無いと権限を要求した瞬間にアプリが終了します。
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>店舗内での位置を把握するために使用します。</string>
 <key>NSNearbyInteractionUsageDescription</key>
 <string>UWB による精密測位に使用します。</string>
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>周辺の測位機器を検出するために使用します。</string>
+<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+<dict>
+    <key>Positioning</key>
+    <string>正確な屋内位置を算出するために使用します。</string>
+</dict>
 ```
+
+> ⚠️ `NSLocationTemporaryUsageDescriptionDictionary` の中のキーは **`Positioning`**
+> でなければなりません。SDK が正確な位置情報への一時的な昇格を要求する際に使う名前と
+> 一字一句同じである必要があり、異なると要求は**エラーもログも無く無視されます**。
+>
+> 権限の要求は SDK が行います — アプリ側で `CLLocationManager` を呼ぶ必要はありません。
+> ユーザーが「おおよその位置」を選ぶか権限を拒否した場合、測位は開始されず
+> `onDebugLog` に `E2003` が残ります。
 
 ---
 

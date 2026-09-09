@@ -129,4 +129,61 @@ final class ReceptionCheckTests: XCTestCase {
         XCTAssertFalse(hasCode(lines, "E4003"), "\(lines)")
         XCTAssertFalse(hasCode(lines, "E4002"), "\(lines)")
     }
+
+    // MARK: - 앵커별 특정이 안 되는 엔진 (gpi-ihub)
+    //
+    // ihub 는 앵커 목록도 앵커별 수신 상태도 주지 않는다. 그래서 어댑터는 missing 을 비우고
+    // matched 를 0 으로 둘 수밖에 없는데, 예전 조건은 바로 그 두 값을 봤다:
+    //   E4003  !missing.isEmpty      → [] 라 영원히 거짓
+    //   E4002  !hasFix && matched>=3 → hasFix 가 false 면 matched 도 0 이라 영원히 거짓
+    // 둘 다 성립 불가라 **좌표가 안 나와도 로그가 한 줄도 안 남았다.** 아래 세 개가 그 회귀를 막는다.
+
+    /// ihub 모양의 진단(등록만 알고 나머지는 모름)에서 좌표가 안 나오면 반드시 알려야 한다.
+    /// 이 테스트는 canAttributePerAnchor 분기가 없으면 실패한다 — 회귀의 정문이다.
+    func testEngineWithoutPerAnchorDetailStillReportsMissingFix() async throws {
+        let lines = try await runCheck(PositioningDiagnostic(
+            registeredCount: 4, receivedCount: 0, matchedCount: 0,
+            missingAddresses: [], hasFix: false, canAttributePerAnchor: false))
+
+        XCTAssertTrue(hasCode(lines, "E4002"),
+                      "앵커별 특정을 못 해도 '좌표가 없다'는 사실은 남겨야 한다: \(lines)")
+    }
+
+    /// 다만 **미수신을 단정하지는 않는다.** 어느 앵커가 빠졌는지 알 방법이 없는데
+    /// E4003 을 올리면 현장에서 있지도 않은 로케이터를 찾으러 다니게 된다.
+    func testEngineWithoutPerAnchorDetailDoesNotBlameLocators() async throws {
+        let lines = try await runCheck(PositioningDiagnostic(
+            registeredCount: 4, receivedCount: 0, matchedCount: 0,
+            missingAddresses: [], hasFix: false, canAttributePerAnchor: false))
+
+        XCTAssertFalse(hasCode(lines, "E4003"),
+                       "모르는 것을 고장으로 칠하면 안 된다: \(lines)")
+    }
+
+    /// 좌표가 나오고 있으면 조용하다 — 특정이 안 된다는 사실 자체는 경고가 아니다.
+    func testEngineWithoutPerAnchorDetailStaysQuietWhenFixed() async throws {
+        let lines = try await runCheck(PositioningDiagnostic(
+            registeredCount: 4, receivedCount: 4, matchedCount: 4,
+            missingAddresses: [], hasFix: true, canAttributePerAnchor: false))
+
+        XCTAssertFalse(hasCode(lines, "E4002"), "\(lines)")
+        XCTAssertFalse(hasCode(lines, "E4003"), "\(lines)")
+    }
+
+    /// 등록된 로케이터가 하나도 없으면 좌표가 없는 게 당연하다 — 측위 문제로 몰지 않는다.
+    /// (층을 아직 안 골랐거나 도면 없는 층인 경우가 여기 해당한다)
+    func testEngineWithoutPerAnchorDetailAndNoLocatorsStaysQuiet() async throws {
+        let lines = try await runCheck(PositioningDiagnostic(
+            registeredCount: 0, receivedCount: 0, matchedCount: 0,
+            missingAddresses: [], hasFix: false, canAttributePerAnchor: false))
+
+        XCTAssertFalse(hasCode(lines, "E4002"), "\(lines)")
+    }
+
+    /// 기본값은 예전 그대로여야 한다 — 인자를 생략한 기존 호출부의 동작이 바뀌면 안 된다.
+    func testPerAnchorAttributionDefaultsToTrue() {
+        let d = PositioningDiagnostic(registeredCount: 1, receivedCount: 1, matchedCount: 1,
+                                      missingAddresses: [], hasFix: true)
+        XCTAssertTrue(d.canAttributePerAnchor)
+    }
 }

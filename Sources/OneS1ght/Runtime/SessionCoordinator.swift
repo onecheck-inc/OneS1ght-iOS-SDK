@@ -443,16 +443,30 @@ final class SessionCoordinator {
             guard let self, !Task.isCancelled, self.isRunning else { return }
             guard let d = self.provider?.positioningDiagnostic else { return }   // 진단 없는 provider
 
-            if !d.missingAddresses.isEmpty {
-                // 마스터가 빠졌는지 서브가 빠졌는지는 SDK 가 알 수 없다(주소만 안다).
-                // 그래서 판정하지 않고 사실만 적는다 — 판단은 현장 기기 라벨과 대조해야 한다.
-                report(.locatorNotReceived,
-                       "registered=\(d.registeredCount) received=\(d.receivedCount) missing=\(d.missingLabel)")
-            }
-            // 신호는 충분히 잡히는데 좌표가 안 나오면 등록 좌표와 실제 배치가 어긋났을 수 있다.
-            // 이건 측위가 실제로 막힌 상태라 ERROR 다.
-            if !d.hasFix && d.matchedCount >= 3 {
-                report(.noPositionFix, "matched=\(d.matchedCount) fix=none")
+            // ⚠️ 아래 두 갈래를 하나로 합치지 말 것. 앵커별 상태를 못 주는 엔진에서는
+            //    missing 이 항상 비고 matched 가 항상 0 이라, 예전 조건(`!missing.isEmpty`,
+            //    `matched >= 3`)이 **둘 다 영원히 거짓**이 되어 좌표가 안 나와도 아무 로그가
+            //    안 남았다. 코드는 그대로 돌아서 눈에 띄지도 않는다.
+            if d.canAttributePerAnchor {
+                if !d.missingAddresses.isEmpty {
+                    // 마스터가 빠졌는지 서브가 빠졌는지는 SDK 가 알 수 없다(주소만 안다).
+                    // 그래서 판정하지 않고 사실만 적는다 — 판단은 현장 기기 라벨과 대조해야 한다.
+                    report(.locatorNotReceived,
+                           "registered=\(d.registeredCount) received=\(d.receivedCount) missing=\(d.missingLabel)")
+                }
+                // 신호는 충분히 잡히는데 좌표가 안 나오면 등록 좌표와 실제 배치가 어긋났을 수 있다.
+                // 이건 측위가 실제로 막힌 상태라 ERROR 다.
+                if !d.hasFix && d.matchedCount >= 3 {
+                    report(.noPositionFix, "matched=\(d.matchedCount) fix=none")
+                }
+            } else {
+                // 앵커별 특정 불가 — 물을 수 있는 것은 "좌표가 나오는가" 하나뿐이다.
+                // 등록된 로케이터가 있는데 좌표가 없으면 그 사실만 남긴다. 원인(미수신인지
+                // 좌표계 불일치인지)은 못 가르므로 단정하지 않고 문맥에 한계를 적어 둔다.
+                if !d.hasFix && d.registeredCount > 0 {
+                    report(.noPositionFix,
+                           "registered=\(d.registeredCount) fix=none (per-anchor detail unavailable)")
+                }
             }
         }
     }
@@ -714,6 +728,12 @@ extension SessionCoordinator: PositioningProviderDelegate {
 
     /// 입장 트리거 — 통지만 받는다. 건물·층 조회는 호스트 앱의 몫이라 SDK 는 움직이지 않는다.
     func provider(_ p: PositioningProvider, didEnter buildingId: String) {}
+
+    /// 엔진 진단 → 표준 경로(onDebugLog + 서버 E-코드). 어댑터가 화면 로그로만 남기면
+    /// 콘솔 로그 분석기에서 안 보인다 — 코드로 올려야 관리자가 현장 없이 원인을 짚는다.
+    func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String) {
+        report(code, context)
+    }
 
     /// 좌표 fix — 층 설정 확보 + 버퍼 적재, 임계 도달 시 flush
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,

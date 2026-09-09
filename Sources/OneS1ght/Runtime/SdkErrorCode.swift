@@ -71,6 +71,16 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 그쪽은 "안 깔았다", 이쪽은 "못 받았다" 라서 확인할 곳이 현장이 아니라 연동·네트워크다.
     /// ⚠️ 도면·존 표시는 막지 않는다. 지도는 그대로 뜨고 측위만 못 한다.
     case locatorsFetchFailed = "E3006"
+    /// 측위를 켰는데 **층을 찾지 못했다**. ihub 는 BLE 광고로 층을 고르므로, 이 코드는
+    /// "앵커가 BLE 를 안 뿌리거나 · 펌웨어가 낮거나 · 그 층에 있지 않다"를 가리킨다.
+    /// E3001(층 미지정)과 다르다 — 그쪽은 앱이 안 고른 것이고, 이쪽은 골라줄 층을 못 찾은 것이다. (WARN)
+    case floorNotDetected    = "E3007"
+    /// 엔진이 잡은 층과 콘솔에서 지정한 층이 **다르다**. 서버로 가는 floor_id 가 엔진 값이라,
+    /// 어긋난 채로 두면 좌표·존 이벤트가 콘솔이 모르는 층에 쌓인다.
+    case floorIdMismatch     = "E3008"
+    /// 엔진이 준 영역 이름에 대응하는 콘솔 존이 없다 — 그 영역의 진출입이 서버로 가지 않는다.
+    /// 이름이 유일한 연결고리라(엔진 이벤트에 존 ID 가 없다) 여기가 끊기면 시책이 안 돈다. (WARN)
+    case zoneMappingFailed   = "E3009"
 
     // E3005 는 쓰지 않는다. v0.1.14 에서 "층에 도면 없음"에 잠깐 붙였다가 v0.1.15 에서
     // 거뒀다 — 도면이 없는 층은 **정상 구성**이라(산업 현장은 올릴 도면이 아예 없다)
@@ -85,6 +95,8 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case noPositionFix       = "E4002"
     /// 등록된 로케이터 중 일부가 수신되지 않는다 — 전원·배치 확인 필요. (WARN)
     case locatorNotReceived  = "E4003"
+    /// 측위 엔진의 영역 판정이 실패했다. 좌표는 계속 나오고 그 회차 판정만 버려진다. (WARN)
+    case areaJudgeFailed     = "E4004"
 
     // MARK: 5xxx — 전송
 
@@ -104,7 +116,9 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 기본 레벨. 동작이 이어지는 것은 WARN, 그 외는 ERROR.
     public var level: SdkLogLevel {
         switch self {
-        case .zonesEmpty, .locatorNotReceived, .pendingDropped, .keyOverridden, .keyFallback:
+        case .zonesEmpty, .locatorNotReceived, .pendingDropped,
+             .keyOverridden, .keyFallback,
+             .floorNotDetected, .zoneMappingFailed, .areaJudgeFailed:
             return .warn
         default:
             return .error
@@ -129,9 +143,13 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .sessionIdMissing:    return "층에 UWB 세션 없음"
         case .zonesEmpty:          return "층에 존 없음"
         case .locatorsFetchFailed: return "로케이터 조회 실패 (지도는 정상)"
+        case .floorNotDetected:    return "층 미탐지 (BLE 로 층을 못 찾음)"
+        case .floorIdMismatch:     return "엔진 층과 콘솔 층 불일치"
+        case .zoneMappingFailed:   return "영역 이름에 맞는 콘솔 존 없음"
         case .uwbSessionFailed:    return "UWB 세션 실패"
         case .noPositionFix:       return "좌표 미산출"
         case .locatorNotReceived:  return "로케이터 일부 미수신"
+        case .areaJudgeFailed:     return "영역 판정 실패"
         case .network:             return "네트워크 실패"
         case .server:              return "서버 오류"
         case .unprocessable:       return "요청 형식 불일치"

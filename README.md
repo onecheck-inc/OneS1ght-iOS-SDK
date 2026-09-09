@@ -52,15 +52,31 @@ add this one package.
 
 ### Info.plist
 
-**Both** keys are required. Without them the app is terminated the moment permission is
-requested.
+**All four** keys are required. Without the first three the app is terminated the moment
+permission is requested.
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>Used to determine your position inside the store.</string>
 <key>NSNearbyInteractionUsageDescription</key>
 <string>Used for precise UWB positioning.</string>
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>Used to discover nearby positioning hardware.</string>
+<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+<dict>
+    <key>Positioning</key>
+    <string>Used to compute your precise indoor position.</string>
+</dict>
 ```
+
+> ⚠️ The key inside `NSLocationTemporaryUsageDescriptionDictionary` **must be
+> `Positioning`** — it has to match, character for character, the purpose key the SDK
+> uses when it asks for full-accuracy location. If it differs, the request is **ignored
+> with no error and no log**.
+>
+> The SDK requests the permissions itself — your app does not need to call
+> `CLLocationManager`. If the user picks "Approximate Location" or denies the
+> permission, positioning does not start and `E2003` is emitted to `onDebugLog`.
 
 ---
 

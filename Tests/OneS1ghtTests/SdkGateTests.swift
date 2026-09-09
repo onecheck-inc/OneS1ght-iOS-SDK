@@ -48,7 +48,12 @@ final class SdkGateTests: XCTestCase {
 
     /// 새 계약의 핵심 — 실제 차단 지점은 begin() 이다.
     /// initialize 가 (가짜 키로) 실패해도 coordinator 는 이미 만들어져 있어 floorSession() 은
-    /// 열리고, UWB 없는 시뮬레이터에서 begin() 을 부르면 거기서 deviceNotSupported 로 막힌다.
+    /// 열리고, 시뮬레이터에서 begin() 을 부르면 거기서 막힌다.
+    ///
+    /// ⚠️ 막히는 **사유는 런타임 OS 에 달렸다** — 패키지 최소 버전이 iOS 18 로 내려간 뒤
+    ///    iOS 18~26 시뮬레이터에서도 이 테스트가 돈다. 거기서는 `#available(iOS 27)` 가
+    ///    먼저 걸려 osVersionTooLow 다. 사유를 하나로 못박으면 그 환경에서 헛되이 붉어진다.
+    ///    이 테스트가 지키는 것은 사유가 아니라 **"어디서 막히는가"** 다.
     func testBeginIsTheOnlyDeviceGate() async throws {
         await OneS1ght.reset()
         try? await OneS1ght.initialize(sdkKey: "ock_gate_probe_invalid")   // 키는 실패해도 무방
@@ -57,8 +62,32 @@ final class SdkGateTests: XCTestCase {
             try await session.begin()
             XCTFail("시뮬레이터에 UWB 가 있을 수 없음 — begin() 이 통과함")
         } catch let e as SdkError {
-            XCTAssertEqual(e, .deviceNotSupported, "실제 차단 지점은 begin() 이어야 한다")
+            if #available(iOS 27.0, *) {
+                XCTAssertEqual(e, .deviceNotSupported, "iOS 27+ 시뮬레이터는 칩이 없어 막힌다")
+            } else {
+                XCTAssertEqual(e, .osVersionTooLow, "iOS 27 미만은 OS 로 먼저 막힌다")
+            }
         }
+        await OneS1ght.reset()
+    }
+
+    /// 미지원 기기에서 **앱이 멈추지 않아야 한다.** 측위만 못 할 뿐, 조회 API 는 계속 열려 있고
+    /// 어느 호출도 크래시나 무한 대기로 가지 않는다 — 지원 안 되는 폰에 SDK 를 넣었다는
+    /// 이유만으로 앱 전체가 못 쓰게 되면 안 된다.
+    func testUnsupportedDeviceDoesNotBreakTheApp() async throws {
+        await OneS1ght.reset()
+
+        // 초기화 전에도 답해야 하는 조회들 — throw 도, 멈춤도 없어야 한다.
+        XCTAssertNotEqual(OneS1ght.deviceAvailability, .available)
+        XCTAssertFalse(OneS1ght.isDeviceAvailable)
+        OneS1ght.setLanguage("ko")
+        OneS1ght.identify(profileId: nil)
+        OneS1ght.empty()
+        await OneS1ght.send()
+
+        // 초기화 이후에도 마찬가지 — 막히는 것은 begin() 하나뿐이다.
+        try? await OneS1ght.initialize(sdkKey: "ock_gate_probe_invalid")
+        _ = try? OneS1ght.floorSession()
         await OneS1ght.reset()
     }
 }
