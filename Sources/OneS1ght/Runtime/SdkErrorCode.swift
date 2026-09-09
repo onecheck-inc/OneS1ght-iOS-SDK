@@ -16,6 +16,21 @@
 //      4xxx  측위             테넌트 관리자 (현장 하드웨어)
 //      5xxx  전송             앱 개발자 / 통합 관리자
 //
+//  ## 등급 기준 (0.1.19 재정의)
+//
+//  **글자(E/I)는 계열이고, 등급(level)은 알람 세기다. 둘은 별개 축이다.**
+//  `SdkError` 로 던져지는 다섯(E1001·E1003·E1004·E2001·E2002)은 앱 입장에서 "호출이
+//  진행되지 않았다"라 E 번호를 유지해야 한다 — 그렇다고 관리자에게 전부 ERROR 로
+//  보일 이유는 없다.
+//
+//   · ERROR — 고장났거나 사람이 고쳐야 한다. 연동 실수·통신 실패·설정 누락으로 기능이 죽음.
+//   · WARN  — 계속 동작하지만 알아야 한다. 일부 기능만 못 쓰거나, 확인이 필요한 상태.
+//   · INFO  — 그냥 사실이다. 고칠 것이 없다.
+//
+//  ⚠️ **정상 상태를 ERROR 로 찍지 말 것.** 미지원 기기·꺼 둔 설정·구역 없는 층은 고장이
+//     아니다. 정상 경로에서 매번 울리는 ERROR 는 그 코드의 의미를 잃게 만들고, 진짜
+//     고장을 그 소음 속에 묻는다. 0.1.18 까지 실제로 그랬다.
+//
 
 import Foundation
 
@@ -57,7 +72,12 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
 
     // MARK: 3xxx — 공간·설정
 
-    /// setFloorMap 없이 측위를 시작했다. 파이프라인은 돌지만 좌표가 나오지 않는다.
+    /// 층이 정해지지 않은 채로 측위를 시작했다. 파이프라인은 돌지만 좌표가 나오지 않는다.
+    ///
+    /// ⚠️ **WARN 이다(0.1.19~).** 예전에는 ERROR 였다 — 앱이 층을 고르던 시절에는 층 없이
+    /// begin 하는 것이 곧 실수였기 때문이다. 지금은 엔진이 BLE 로 층을 스스로 찾으므로
+    /// **층 없이 시작하는 것이 정상 경로**다(엔진은 begin 해야 돌고, 돌아야 층을 찾는다).
+    /// 정상 경로에서 매번 울리는 ERROR 는 그 코드의 의미를 잃게 만든다.
     case floorNotSet         = "E3001"
     /// 층에 로케이터가 등록되어 있지 않다.
     case locatorsMissing     = "E3002"
@@ -111,12 +131,38 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 미전송 좌표가 버려졌다 (인메모리 버퍼 — 앱 종료·복구 불가 실패).
     case pendingDropped      = "E5006"
 
-    /// 기본 레벨. 동작이 이어지는 것은 WARN, 그 외는 ERROR.
+    /// 기본 레벨 — 위 "등급 기준" 참고. 번호가 아니라 **알람 세기**를 정하는 자리다.
     public var level: SdkLogLevel {
         switch self {
-        case .zonesEmpty, .locatorNotReceived, .pendingDropped,
-             .floorNotDetected, .zoneMappingFailed, .areaJudgeFailed:
+        // 고칠 것이 없는 사실. 기기가 못 하는 것이지 고장이 아니다 — 이 둘을 ERROR 로
+        // 두면 멀쩡한 기기들이 콘솔 로그 분석기를 가득 채우고, 우리가 설계로 보장한
+        // "미지원 기기에서도 앱은 살아 있다"가 로그상으로는 사고처럼 보인다.
+        case .osVersionTooLow, .deviceNotSupported:
+            return .info
+
+        // 계속 동작하지만 알아야 하는 것.
+        case .zonesEmpty,           // 구역이 없는 층 — 지도는 그대로 뜬다
+             .locatorNotReceived,   // 일부 미수신 — 좌표는 나온다
+             .pendingDropped,       // 미전송 좌표 유실
+             .floorNotDetected,     // BLE 로 층을 아직 못 찾음
+             .zoneMappingFailed,    // 이름이 안 맞아 이벤트 한 건이 버려짐
+             .areaJudgeFailed,      // 그 회차 판정만 버려짐
+             .floorNotSet,          // 층 없이 시작 — BLE 흐름에서는 정상 경로
+             .positioningDisabled,  // 테넌트가 **일부러** 꺼 둔 설정
+             .permissionDenied,     // 사용자가 거부 — 설정에서 풀 수 있다
+             .locatorsMissing,      // 아직 설치 전인 층일 수 있다. 지도는 정상
+             .sessionIdMissing:     // 위와 같은 계열
             return .warn
+
+        // 나머지는 진짜 실패다 — 연동 실수(E1001·E1004), 무효 키(E1002),
+        //
+        // ⚠️ E4002 noPositionFix 는 완화 대상이 아니다. "구역 밖이면 정상 아니냐" 로
+        //    내리려다 기존 테스트에 걸렸는데, 그 판단이 틀렸다 — 이 코드는 **신호가
+        //    3대 이상 잡히는데도** 좌표가 안 나올 때만 발화한다(matched >= 3). 3대
+        //    미만은 일부러 제외돼 있다. 즉 "들리는데 못 푼다" = 등록 좌표와 실제 배치가
+        //    어긋난 진짜 고장이다.
+        // 설정 누락으로 측위 전체가 죽음(E1007), 조회·세션 실패(E3006·E4001),
+        // 엉뚱한 층에 데이터가 쌓임(E3008), 통신·서버(E5001~E5005).
         default:
             return .error
         }

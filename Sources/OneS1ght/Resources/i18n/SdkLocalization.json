@@ -295,9 +295,9 @@
     "en": "moved %.2fm > inDist %.2fm"
   },
   "coord.noFloorLoaded": {
-    "ko": "⚠️ 선택된 층이 없어 측위 좌표가 나오지 않습니다 — setFloorMap 을 먼저 호출하세요",
-    "ja": "⚠️ 選択された階がないため測位座標が出ません — 先に setFloorMap を呼び出してください",
-    "en": "⚠️ No floor selected — positions will not be produced. Call setFloorMap first."
+    "ko": "층이 아직 정해지지 않았습니다 — 층이 잡히기 전까지는 좌표가 나오지 않습니다",
+    "ja": "階がまだ確定していません — 階が確定するまで座標は出ません",
+    "en": "No floor yet — positions will not be produced until a floor is determined."
   },
   "provider.permissionDenied": {
     "ko": "⛔️ 측위 권한이 거부되어 중단합니다 — 설정 앱에서 허용해야 재개할 수 있습니다",
