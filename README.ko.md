@@ -53,14 +53,29 @@ targets: [
 
 ### Info.plist
 
-**두 개 모두** 필요합니다. 없으면 권한을 요청하는 순간 앱이 종료됩니다.
+**네 개 모두** 필요합니다. 앞의 세 개는 없으면 권한을 요청하는 순간 앱이 종료됩니다.
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>매장 내 위치를 파악하는 데 사용합니다.</string>
 <key>NSNearbyInteractionUsageDescription</key>
 <string>UWB 정밀 측위에 사용합니다.</string>
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>주변 측위 장비를 찾는 데 사용합니다.</string>
+<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+<dict>
+    <key>Positioning</key>
+    <string>정확한 실내 위치를 계산하는 데 사용합니다.</string>
+</dict>
 ```
+
+> ⚠️ `NSLocationTemporaryUsageDescriptionDictionary` 안의 키는 **`Positioning` 이어야
+> 합니다.** SDK 가 정밀 위치 승격을 요청할 때 쓰는 이름과 글자까지 같아야 하며,
+> 어긋나면 요청이 **오류도 로그도 없이 무시**됩니다.
+>
+> 권한 요청은 SDK 가 합니다 — 앱에서 `CLLocationManager` 를 따로 부를 필요가 없습니다.
+> 사용자가 "대략적인 위치" 를 고르거나 권한을 거부하면 측위가 시작되지 않고
+> `onDebugLog` 에 `E2003` 이 남습니다.
 
 ---
 

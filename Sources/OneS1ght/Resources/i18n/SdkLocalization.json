@@ -498,5 +498,15 @@
     "ko": "⚠️ 콘솔 존 판정 파라미터는 이 경로에서 쓰이지 않습니다 (엔진이 자체 지오펜스로 판정) — 해당 존 %d개",
     "ja": "⚠️ コンソールのゾーン判定パラメータはこの経路では使われません（エンジンが自前のジオフェンスで判定）— 該当ゾーン %d件",
     "en": "⚠️ Console zone judging parameters are unused on this path (the engine judges with its own geofences) — %d zone(s) affected"
+  },
+  "ihub.locationAsk": {
+    "ko": "위치 권한을 요청합니다 — 측위에 필수입니다",
+    "ja": "位置情報の許可を求めます — 測位に必須です",
+    "en": "Requesting location permission — required for positioning"
+  },
+  "ihub.locationDenied": {
+    "ko": "❌ 위치 권한이 없어 측위를 시작하지 못했습니다. 설정 앱에서 허용해야 합니다",
+    "ja": "❌ 位置情報の許可がないため測位を開始できません。設定アプリで許可してください",
+    "en": "❌ Cannot start positioning without location permission. Allow it in Settings"
   }
 }

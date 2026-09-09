@@ -108,7 +108,11 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     private let hub = IntelligenceHub.getInstance()
     private let bridge = ListenerBridge()
     private let judge = IHubZoneJudge()
-    private let location = CLLocationManager()        // 정밀 위치 확인·임시 승격 요청 전용
+    private let locationGate = LocationAuthGate()     // 위치 권한 확인·요청 전용
+
+    /// `NSLocationTemporaryUsageDescriptionDictionary` 안의 키와 **글자까지 같아야** 한다.
+    /// 어긋나면 승격 요청이 조용히 무시된다(오류도 로그도 없다).
+    static let accuracyPurposeKey = "Positioning"
 
     public override init() {
         super.init()
@@ -344,15 +348,64 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
         hubPhase = .starting
         addLog(.info, SdkLocalized.format("ihub.starting", String(key.prefix(8))))
 
-        // ihub 는 정밀 위치가 필수다(에러 7). 대략 위치면 임시 승격을 먼저 요청한다.
-        if location.accuracyAuthorization != .fullAccuracy {
-            addLog(.warn, SdkLocalized.text("ihub.fullAccuracy"))
-            location.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "Positioning") { [weak self] _ in
-                Task { @MainActor in self?.launchHub() }
-            }
-        } else {
-            launchHub()
+        ensureLocationAuthorization { [weak self] ok in
+            guard let self else { return }
+            guard ok else { self.abortStart(); return }
+            self.launchHub()
         }
+    }
+
+    /// 위치 권한을 **순서대로** 확보한다: 기본 권한 → 정밀 위치.
+    ///
+    /// ⚠️ 순서를 지켜야 한다. `requestTemporaryFullAccuracyAuthorization` 은 기본 권한이
+    ///    이미 있어야 동작한다 — 신규 설치 기기에서 이것만 부르면 아무 일도 일어나지 않고,
+    ///    ihub 가 곧바로 `onError(7)` 로 떨어진다. 증상은 "그냥 측위가 안 됨"뿐이라
+    ///    원인을 짚기 어렵다.
+    ///
+    /// SDK 가 직접 요청하는 이유: ihub 는 권한을 요청하지 않고 검사만 한다(README).
+    /// 앱마다 각자 부르게 두면 하나만 빠뜨려도 같은 증상이 난다.
+    private func ensureLocationAuthorization(_ done: @escaping (Bool) -> Void) {
+        switch locationGate.status {
+        case .notDetermined:
+            addLog(.info, SdkLocalized.text("ihub.locationAsk"))
+            locationGate.requestWhenInUse { [weak self] status in
+                guard let self else { return }
+                guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+                    self.locationDenied(status)
+                    done(false)
+                    return
+                }
+                self.ensureFullAccuracy(done)
+            }
+        case .authorizedWhenInUse, .authorizedAlways:
+            ensureFullAccuracy(done)
+        default:
+            // 거부·제한 — 앱에서 다시 물을 수 없다. 설정 앱으로 안내해야 한다.
+            locationDenied(locationGate.status)
+            done(false)
+        }
+    }
+
+    /// 정밀 위치 승격. 사용자가 거절해도 **막지 않는다** — 판단은 ihub 가 하고,
+    /// 거절이면 onError(7) 로 사유가 분명하게 온다. 여기서 미리 끊으면 그 사유가 사라진다.
+    private func ensureFullAccuracy(_ done: @escaping (Bool) -> Void) {
+        guard locationGate.accuracy != .fullAccuracy else { done(true); return }
+        addLog(.warn, SdkLocalized.text("ihub.fullAccuracy"))
+        locationGate.requestFullAccuracy(purposeKey: Self.accuracyPurposeKey) { _ in done(true) }
+    }
+
+    private func locationDenied(_ status: CLAuthorizationStatus) {
+        addLog(.error, SdkLocalized.text("ihub.locationDenied"))
+        reportToSDK(.permissionDenied, "location status=\(status.rawValue)")
+        onHubError?(7, "location authorization denied")
+    }
+
+    /// 시작 전 단계에서 되돌린다 — hubPhase 를 .starting 에 남기면 이후 start 가 전부 막힌다.
+    private func abortStart() {
+        guard hubPhase == .starting else { return }
+        hubPhase = .idle
+        if isRunning { isRunning = false; latestPosition = nil }
+        floorWatchTask?.cancel(); floorWatchTask = nil
     }
 
     private func launchHub() {
@@ -436,6 +489,54 @@ extension IHubPositioningProvider: PositioningProvider {
         floorWatchTask?.cancel(); floorWatchTask = nil
         addLog(.info, SdkLocalized.format("ihub.positioningOff", measurementCount))
         stopDetection()
+    }
+}
+
+// MARK: - 위치 권한 게이트
+
+/// `CLLocationManager` 를 감싸 "물어보고 답을 기다리는" 한 가지 일만 한다.
+///
+/// 델리게이트 콜백을 provider 본체에 직접 달지 않는 이유: provider 는 `@MainActor` 인데
+/// `CLLocationManagerDelegate` 는 nonisolated 라, 본체에 얹으면 격리 경계가 섞인다.
+/// 여기서 한 번 받아 메인으로 넘긴 뒤 클로저로만 돌려준다.
+@MainActor
+final class LocationAuthGate: NSObject, CLLocationManagerDelegate {
+
+    private let manager = CLLocationManager()
+    private var pending: ((CLAuthorizationStatus) -> Void)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    var status: CLAuthorizationStatus { manager.authorizationStatus }
+    var accuracy: CLAccuracyAuthorization { manager.accuracyAuthorization }
+
+    /// 기본(사용 중) 권한 요청. 답이 오면 1회만 콜백한다.
+    /// 이미 결정된 상태에서 부르면 시스템이 콜백을 주지 않을 수 있어 즉시 현재 값으로 답한다.
+    func requestWhenInUse(_ done: @escaping (CLAuthorizationStatus) -> Void) {
+        guard status == .notDetermined else { done(status); return }
+        pending = done
+        manager.requestWhenInUseAuthorization()
+    }
+
+    /// 정밀 위치 임시 승격. purposeKey 는 Info.plist 사전의 키와 같아야 한다.
+    func requestFullAccuracy(purposeKey: String, _ done: @escaping (Bool) -> Void) {
+        manager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: purposeKey) { [weak self] _ in
+            Task { @MainActor in done(self?.accuracy == .fullAccuracy) }
+        }
+    }
+
+    // manager 를 캡처하지 않는다 — Sendable 이 아니라 경계를 넘길 수 없다.
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor [weak self] in self?.deliver() }
+    }
+
+    private func deliver() {
+        guard status != .notDetermined, let done = pending else { return }
+        pending = nil
+        done(status)
     }
 }
 
