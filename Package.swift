@@ -38,7 +38,7 @@ let package = Package(
         //      Geoplan 이 ihub 배포 타깃을 낮춰 재빌드해 주면 그때 .v15 가 실제로 통한다.
         //    ↓ .v15 로 바꾸면 위 에러가 난다. 확인하려면 이 줄과 아래 줄을 맞바꿔라.
         // .iOS(.v15),
-        .iOS("27.0"),
+        .iOS("18.0"),
         .macOS(.v14),          // swift test를 맥에서 돌리기 위함
     ],
     products: [
@@ -50,7 +50,7 @@ let package = Package(
         // 공개 API 는 IntelligenceHub 7개 + HubListener 7개가 전부다 —
         // 앵커 목록·앵커별 수신 상태·세션ID·zone_id 는 노출하지 않는다(진단 한계).
         // 이 패키지가 gpi-dltdoa 2.1.0 · gpi-prm 2.0.0 · gpi-logger 를 캐리어 타깃으로 싣고 온다.
-        .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.0.0"),
+        .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.0.1"),
     ],
     targets: [
         .target(

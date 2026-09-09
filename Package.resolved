@@ -23,8 +23,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Geoplan-Mobile/gpi-ihub",
       "state" : {
-        "revision" : "6ad8326e202f156cbbb65a40c3b7c50eb5d1fb54",
-        "version" : "1.0.0"
+        "revision" : "1a6f1fb44549033d587b322b82530b3ad09eea92",
+        "version" : "1.0.1"
       }
     },
     {
