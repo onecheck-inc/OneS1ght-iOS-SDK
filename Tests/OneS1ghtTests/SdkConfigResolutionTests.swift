@@ -54,6 +54,22 @@ final class SdkConfigResolutionTests: XCTestCase {
         XCTAssertEqual(c.resolvedGeoSdkKey, "gsk_console", "정본은 콘솔이다")
     }
 
+    /// geoSdkKey 인자가 없어지면 이 경로 — 앱은 키를 아예 안 넘기고 콘솔이 유일한
+    /// 출처 — 가 모든 도입 앱의 기본 경로가 된다. `geospace` 가 nil 로 시작하는 채로
+    /// 콘솔 키로 갈아끼워지는지, 여기서만 확인된다.
+    ///
+    /// 비교할 앱 값이 없으니 불일치 경고는 뜨지 않아야 한다 — 여기서 울리면 새 방식을
+    /// 쓰는 모든 앱이 실행할 때마다 늑대가 왔다고 외치는 꼴이 된다.
+    func testConsoleSuppliesKeyWhenAppProvidesNone() async throws {
+        stub(configStatus: 200, configBody: #"{ "geo_sdk_key": "gsk_console" }"#)
+
+        let (c, lines) = try await prepared(appKey: nil)
+
+        XCTAssertEqual(c.resolvedGeoSdkKey, "gsk_console")
+        XCTAssertTrue(c.isPrepared)
+        XCTAssertFalse(lines.contains(SdkLocalized.text("coord.keyOverridden")), "\(lines)")
+    }
+
     /// 조용히 덮으면 "왜 다른 키로 붙지" 를 현장에서 파게 된다. 사실을 남긴다.
     ///
     /// ⚠️ 문구를 직접 쓰지 않고 i18n 에서 꺼내 대조한다 — 테스트가 도는 기기 언어에
@@ -88,6 +104,9 @@ final class SdkConfigResolutionTests: XCTestCase {
     }
 
     /// 서버가 잠깐 흔들린다고 측위가 멈추면 안 된다.
+    ///
+    /// ⚠️ 문구를 직접 쓰지 않고 i18n 에서 꺼내 대조한다 — 테스트가 도는 기기 언어에
+    ///    따라 문구가 달라지므로, 한국어를 박아 두면 다른 언어 환경에서 헛되이 붉어진다.
     func testFallsBackToTheAppKeyWhenConfigFails() async throws {
         stub(configStatus: 500, configBody: #"{ "detail": "boom" }"#)
 
@@ -95,7 +114,9 @@ final class SdkConfigResolutionTests: XCTestCase {
 
         XCTAssertEqual(c.resolvedGeoSdkKey, "gsk_app")
         XCTAssertTrue(c.isPrepared, "초기화 자체는 성공해야 한다")
-        XCTAssertFalse(lines.filter { $0.contains("폴백") }.isEmpty, "폴백 사실은 남긴다: \(lines)")
+        let expected = SdkLocalized.text("coord.keyFallback")
+        XCTAssertEqual(lines.filter { $0 == expected }.count, 1,
+                       "폴백 사실을 정확히 한 번 알려야 한다: \(lines)")
     }
 
     /// 콘솔에 값이 없는 것과 통신 실패는 다르지만, 앱 입장에서 할 일은 같다 — 폴백.
