@@ -13,12 +13,12 @@ import XCTest
  하고, 이 테스트가 지키는 것은 **"도면만 빠지고 나머지는 다 온다"** 이다.
  */
 @MainActor
-final class GeospaceFloorWithoutPlanTests: XCTestCase {
+final class SpaceFloorWithoutPlanTests: XCTestCase {
 
-    private func client() -> GeospaceClient {
+    private func client() -> SpaceServiceClient {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [StubURLProtocol.self]
-        return GeospaceClient(keys: .init(sdk: "ock_sdk_x", geospace: "gsk_x"),
+        return SpaceServiceClient(keys: .init(sdk: "ock_sdk_x", space: "gsk_x"),
                               session: URLSession(configuration: cfg))
     }
 
@@ -86,11 +86,11 @@ final class GeospaceFloorWithoutPlanTests: XCTestCase {
         XCTAssertEqual(pts.map(\.y), [3.5, 3.5, 9.0, 9.0])
     }
 
-    /// `has_plan: false` 면 GeoSpace 직행 폴백을 **타지 않는다.**
+    /// `has_plan: false` 면 공간 서비스 직행 폴백을 **타지 않는다.**
     ///
     /// 예전에 던지던 자리가 정확히 여기다 — 콘솔이 "없다" 고 말했는데도 폴백을 탔고,
     /// 그쪽 응답 타입은 이미지가 옵셔널이 아니라 디코드에서 터졌다.
-    func testDoesNotFallBackToGeospaceWhenConsoleSaysNoPlan() async throws {
+    func testDoesNotFallBackToSpaceWhenConsoleSaysNoPlan() async throws {
         StubURLProtocol.handler = { req in
             let path = req.url?.path ?? ""
             if path.hasSuffix("/plan") && path.contains("/positioning/") {
@@ -103,12 +103,12 @@ final class GeospaceFloorWithoutPlanTests: XCTestCase {
 
         _ = try await client().loadFloorState(buildingId: "b-1", floorId: "14")
 
-        // GeoSpace 직행 도면 경로(api/m/floors/…/plan)는 한 번도 불리지 않아야 한다.
-        let geospacePlanCalls = StubURLProtocol.requests.filter {
+        // 공간 서비스 직행 도면 경로(api/m/floors/…/plan)는 한 번도 불리지 않아야 한다.
+        let spacePlanCalls = StubURLProtocol.requests.filter {
             $0.path.hasSuffix("/plan") && $0.path.contains("api/m/floors")
         }
-        XCTAssertTrue(geospacePlanCalls.isEmpty,
-                      "콘솔이 도면 없음을 명시했는데 GeoSpace 폴백을 탔다: \(geospacePlanCalls.map(\.path))")
+        XCTAssertTrue(spacePlanCalls.isEmpty,
+                      "콘솔이 도면 없음을 명시했는데 공간 서비스 폴백을 탔다: \(spacePlanCalls.map(\.path))")
     }
 
     /// 도면이 **있는** 층은 예전 그대로 — 회귀 방지.

@@ -1,8 +1,8 @@
 //
-//  IHubZoneJudgeTests.swift
-//  ihub 영역 이벤트 → 콘솔 존 매핑.
+//  UwbAreaJudgeTests.swift
+//  엔진 영역 이벤트 → 콘솔 존 매핑.
 //
-//  여기서 지키는 것은 **연결고리 하나**다. ihub 의 onAreaEvent 에는 존 ID 가 없고 이름만 온다.
+//  여기서 지키는 것은 **연결고리 하나**다. 엔진의 onAreaEvent 에는 존 ID 가 없고 이름만 온다.
 //  그래서 콘솔 존과 잇는 유일한 끈이 이름이고, 그 끈이 끊기면 그 영역의 시책이 통째로 안 돈다.
 //  끊긴 것을 조용히 넘기면 현장에서는 "쿠폰이 안 나온다"로만 보인다 — 그래서 알린다.
 //
@@ -13,7 +13,7 @@ import XCTest
 @testable import OneS1ght
 
 @MainActor
-final class IHubZoneJudgeTests: XCTestCase {
+final class UwbAreaJudgeTests: XCTestCase {
 
     private func zone(_ id: String, _ name: String, dwell: Int? = nil) -> Zone {
         Zone(id: id, name: name,
@@ -22,9 +22,9 @@ final class IHubZoneJudgeTests: XCTestCase {
     }
 
     /// 이벤트·코드·로그를 모아 두는 관찰자. 테스트마다 새로 만든다.
-    private func makeJudge() -> (IHubZoneJudge, Observed) {
+    private func makeJudge() -> (UwbAreaJudge, Observed) {
         let o = Observed()
-        let j = IHubZoneJudge()
+        let j = UwbAreaJudge()
         j.onEvent = { o.events.append($0) }
         j.onReport = { code, ctx in o.reports.append((code, ctx)) }
         j.onLog = { level, msg in o.logs.append((level, msg)) }
@@ -88,7 +88,7 @@ final class IHubZoneJudgeTests: XCTestCase {
         XCTAssertEqual(o.reports.filter { $0.0 == .zoneMappingFailed }.count, 2, "\(o.reports)")
     }
 
-    /// 콘솔에서 같은 이름을 두 번 쓴 경우 — 뒤엣것은 `#2` 로 유일화된다(PrmZoneEngine 과 같은 규칙).
+    /// 콘솔에서 같은 이름을 두 번 쓴 경우 — 뒤엣것은 `#2` 로 유일화된다(옛 존 엔진 과 같은 규칙).
     func testDuplicateConsoleNamesAreDisambiguated() {
         let (j, o) = makeJudge()
         j.apply(zones: [zone("zn_a", "코너"), zone("zn_b", "코너")])

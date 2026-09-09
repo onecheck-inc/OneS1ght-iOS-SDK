@@ -15,12 +15,12 @@ import XCTest
  앞은 연동·네트워크, 뒤는 현장이라 뭉치면 엉뚱한 데를 뒤지게 된다.
  */
 @MainActor
-final class GeospaceAnchorFetchFailureTests: XCTestCase {
+final class SpaceAnchorFetchFailureTests: XCTestCase {
 
-    private func client() -> GeospaceClient {
+    private func client() -> SpaceServiceClient {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [StubURLProtocol.self]
-        return GeospaceClient(keys: .init(sdk: "ock_sdk_x", geospace: "gsk_x"),
+        return SpaceServiceClient(keys: .init(sdk: "ock_sdk_x", space: "gsk_x"),
                               session: URLSession(configuration: cfg))
     }
 

@@ -2,31 +2,22 @@
 //
 //  OneS1ght — OneS1ght 실내 위치 인텔리전스 SDK (iOS / Swift)
 //
-//  ⚠️ **로컬 검증용 사본**이다 (OneS1ght-SDK-ihub). 측위를 Geoplan 턴키 `gpi-ihub` 로
-//     갈아끼운 실험 가지로, 원본 레포(OneS1ght-iOS-SDK)는 손대지 않았다.
-//
-//  · 측위·판정을 gpi-ihub 하나로 대체한다. dltdoa·prm·logger 직접 의존은 걷어냈다 —
-//    ihub 가 그 셋을 자기 의존으로 이미 싣고 오므로 프레임워크 자체는 계속 임베드된다.
-//  · **최소 버전이 iOS 27 로 올라간다.** gpi-ihub 1.0.0 의 Package.swift 가 iOS 27 을
-//    선언하고 바이너리도 minos 27 로 구워져 있다. 조건부 의존(.when)은 OS 종류만 고를 수
-//    있고 버전으로는 못 고른다 — 그래서 여기서 낮출 방법이 없다.
-//    실측(2026-09-08): iOS 18.5 에서 앱이 dyld 단계에서 즉시 죽는다
-//    (Symbol not found: _OBJC_CLASS_$_NIDLTDOAConfiguration). iOS 26 은 로드는 되지만
-//    ihub 가 iOS 27 전용 clusterInitiatorAddress 를 호출해 위험하고, 실기기에서
-//    NISession 이 NIERROR_INVALID_CONFIGURATION_DESCRIPTION 으로 거절됐다.
-//    → Geoplan 이 배포 타깃을 낮춰 재빌드해 주면 `platforms` 만 되돌리면 된다.
-//      코드의 `@available(iOS 27.0, *)`·`#available` 가드는 그때를 위해 남겨 두었다.
-//  · Geoplan 엔진은 iOS 전용 바이너리 → iOS 타깃에만 조건부 링크. 맥에서는 코어(통신·판정)
+//  · 측위·판정은 외부 엔진 하나에 맡긴다. 이전에 직접 물던 레인징·존 판정 패키지는
+//    걷어냈다 — 그 엔진이 자기 의존으로 싣고 오므로 프레임워크 자체는 계속 임베드된다.
+//  · 엔진은 iOS 전용 바이너리 → iOS 타깃에만 조건부 링크. 맥에서는 코어(통신·판정)
 //    테스트가 그대로 돈다.
 //  · 정식 태그로 고정(exact) — 브랜치·범위 참조는 상대 커밋에 따라 빌드가 조용히 바뀐다.
+//
+//  ⚠️ 여기 적힌 공급사 이름은 SPM 이 저장소 URL·프로덕트 이름을 요구하기 때문에 남아
+//     있는 것이다. 고객이 읽는 API·로그·문서에는 나오지 않는다(SnippetsTests 가 지킨다).
 //
 import PackageDescription
 
 let package = Package(
     name: "OneS1ght",
     platforms: [
-        // 최소 iOS 18. gpi-ihub 1.0.0 은 매니페스트가 .iOS("27.0") 이라 iOS 18~26 에서
-        // SwiftPM 이 해석 단계에서 막았고, 바이너리도 minos 27 로 구워져 dyld 가
+        // 최소 iOS 18. 엔진 1.0.0 은 매니페스트가 .iOS("27.0") 이라 iOS 18~26 에서 SwiftPM 이
+        // 해석 단계에서 막았고, 바이너리도 minos 27 로 구워져 dyld 가
         // _OBJC_CLASS_$_NIDLTDOAConfiguration 을 못 찾아 앱이 통째로 죽었다(2026-09-08 실측).
         // 1.0.1 이 둘 다 고쳤다 — 매니페스트 18.0, 바이너리 minos 18.0, NIDLTDOA* 는 weak 링크.
         //
@@ -41,11 +32,11 @@ let package = Package(
         .library(name: "OneS1ght", targets: ["OneS1ght"]),
     ],
     dependencies: [
-        // Geoplan 턴키 측위 — BLE 로 층을 고르고, 자기 서버에서 앵커·셀을 받아 NISession 을
+        // 외부 측위 엔진 — BLE 로 층을 고르고, 자기 서버에서 앵커·셀을 받아 NISession 을
         // 돌리고, 좌표와 영역 진출입(IN/OUT)까지 준다.
-        // 공개 API 는 IntelligenceHub 7개 + HubListener 7개가 전부다 —
+        // 공개 API 는 진입 클래스 7개 + 리스너 7개가 전부다 —
         // 앵커 목록·앵커별 수신 상태·세션ID·zone_id 는 노출하지 않는다(진단 한계).
-        // 이 패키지가 gpi-dltdoa 2.1.0 · gpi-prm 2.0.0 · gpi-logger 를 캐리어 타깃으로 싣고 온다.
+        // 레인징·존 판정·로거 프레임워크를 캐리어 타깃으로 싣고 온다.
         .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.0.1"),
     ],
     targets: [

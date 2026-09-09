@@ -23,7 +23,7 @@ SDK가 실제로 동작하려면 키와 공간 설정이 먼저 준비되어야 
 | 사전 준비 | 어디서 |
 |---|---|
 | SDK 키 (`ock_sdk_…`) | OneS1ght 콘솔 → **모바일 SDK** |
-| 건물·층·로케이터 설치 | GeoSpace |
+| 건물·층·로케이터 설치 | 통합관리자 (설치 시 함께 진행) |
 | 구역(Zone) | OneS1ght 콘솔 → **공간 관리** |
 
 ---
@@ -90,8 +90,9 @@ import OneS1ght
 try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 ```
 
-> GeoSpace 키와 Google Maps 키는 **콘솔이 내려줍니다.** 앱에 심을 필요가 없고,
-> 값을 바꿔도 앱을 다시 배포하지 않아도 됩니다. 통합관리자가 콘솔에서 설정합니다.
+> 넣는 키는 이것 하나뿐입니다. 측위와 지도에 필요한 나머지 키는 **콘솔이 내려줍니다** —
+> 앱에 심을 필요가 없고, 값을 바꿔도 앱을 다시 배포하지 않아도 됩니다. 통합관리자가
+> 콘솔에서 설정합니다.
 
 ⚠️ `initialize` 는 건물·층을 **조회하지 않습니다.** 공간 선택은 별도 단계(Step 5)입니다 —
 어느 층을 쓸지는 앱만 알기 때문입니다.
@@ -273,12 +274,12 @@ await session.end()
 | 세션 콜백 | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | 버퍼 | `send()`(전송) · `empty()`(폐기) |
 | 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
-| 콘솔 제공 값 | `googleMapKey` · `geoPartnerKey` · `geoBaseUrl` |
+| 콘솔 제공 값 | `googleMapKey` |
 
 ⚠️ `empty()` 는 쌓인 좌표를 **전송하지 않고 버립니다.** 전송은 `send()` 입니다.
 
-⚠️ `geoBaseUrl` 은 **앱이 GeoSpace 를 직접 호출할 때** 쓰는 주소입니다. SDK 내부 통신
-(도면·앵커 등)은 이 값과 무관하게 내장된 호스트를 그대로 씁니다.
+⚠️ 앱이 직접 쓰는 콘솔 값은 `googleMapKey` 하나입니다. 측위 라이선스·공간 서비스 주소는
+SDK 가 내부에서만 쓰므로 밖으로 내주지 않습니다 — 앱이 알 필요도, 다룰 이유도 없습니다.
 
 ---
 

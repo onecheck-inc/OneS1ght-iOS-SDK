@@ -57,15 +57,14 @@ public final class FloorSession {
     public func begin() async throws {
         #if os(iOS)
         // ⚠️ 이 가드는 지우지 말 것. 지금은 패키지 최소 버전이 iOS 27 이라 형식적이지만,
-        //    Geoplan 이 ihub 배포 타깃을 낮춰 주면 그 순간 실제 방어선이 된다.
+        //    엔진 공급사가 배포 타깃을 낮춰 주면 그 순간 실제 방어선이 된다.
         guard #available(iOS 27.0, *) else { throw SdkError.osVersionTooLow }
         // 시뮬레이터는 여기서 막힌다 (UWB 칩 없음). 테스트는 begin(provider:) 로 Mock 주입.
-        guard IHubPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
-        let hub = (builtInProvider as? IHubPositioningProvider) ?? IHubPositioningProvider()
+        guard UwbPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
+        let hub = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
         builtInProvider = hub
-        // ihub 라이선스 = initialize(geoSdkKey:) 로 받은 gsk_ 키. 앱이 따로 넣지 않아도 되게
-        // SDK 가 자기 키를 그대로 물려준다 — 키가 없으면 provider 가 오류로 통지한다.
-        hub.license = OneS1ght.geoSdkKeyForPositioning ?? ""
+        // 라이선스는 begin(provider:) 가 넣는다 — 주입 경로도 같은 대우를 받아야 하므로
+        // 한 곳에 모았다. 여기서 또 넣으면 두 자리가 갈라진다.
         hub.onZoneEvent = { [weak self] event in self?.dispatch(event) }
         hub.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }   // 엔진 로그 → 표준 디버그 훅
         try await begin(provider: hub)
@@ -75,8 +74,20 @@ public final class FloorSession {
     }
 
     /// 측위 시작 (커스텀 측위 주입) — 테스트(Mock)·데모 등 특수 경우용.
+    ///
+    /// ⚠️ **측위 엔진 라이선스는 여기서 SDK 가 넣는다.** 호스트 앱이 넣을 일이 아니다 —
+    ///    고객은 OneS1ght 하나만 붙이고, 그 아래에서 어떤 엔진이 도는지도 그 엔진이
+    ///    무슨 키를 요구하는지도 알 필요가 없다. 앱에 그 키를 심게 하는 순간 우리 제품이
+    ///    아니라 남의 제품을 노출하는 것이 된다.
+    ///    (v0.1.17 까지는 인자 없는 begin() 만 넣어 줘서, provider 를 직접 들고 있는 앱은
+    ///     onError(1) 로 떨어졌다.)
     public func begin(provider: PositioningProvider) async throws {
         guard let coordinator else { throw SdkError.notInitialized }
+        #if os(iOS)
+        if #available(iOS 27.0, *), let hub = provider as? UwbPositioningProvider {
+            hub.license = coordinator.positioningLicense ?? ""
+        }
+        #endif
         if !coordinator.isPrepared {
             try await coordinator.prepare()                         // 순단 회복
         } else {

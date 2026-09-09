@@ -206,7 +206,7 @@ public enum SdkDefaults {
 /// 2026-08-21 의 remote_config 사고와 같은 모양이다.
 ///
 /// ⚠️ internal 까지만(M1) — ApiClient.config() 가 internal 로 내려간 것과 같은 이유다.
-/// 이 타입이 public 이면 host 가 `ApiClient(apiKey:).config().geo_sdk_key` 로 GeoSpace
+/// 이 타입이 public 이면 host 가 `ApiClient(apiKey:).config().geo_sdk_key` 로 공간 서비스
 /// 모바일 키를 직접 꺼낼 길이 열린다. 앱에 내줄 값은 OneS1ght.swift 의 String? 접근자
 /// (googleMapKey · geoPartnerKey · geoBaseUrl) 셋뿐이다 — resolvedGeoSdkKey 는 없다.
 struct ResSdkConfig: Codable {
@@ -229,7 +229,7 @@ struct ResSdkConfig: Codable {
 
 /// GET /positioning/buildings 응답
 public struct FloorRef: Codable {
-    public let floor_id: String             // GeoSpace 층 UUID — 이게 키
+    public let floor_id: String             // 공간 서비스 층 UUID — 이게 키
     public let name: String                 // 현재 floor_id와 동일 (친화명 추후)
 }
 public struct BuildingRef: Codable {
@@ -264,7 +264,7 @@ public struct ResFloorConfig: Codable {
     public let name: String
     public let synced_at: String
     public let zones: [ZoneMeta]
-    public let anchors: [String]            // 현재 항상 [] (GeoSpace 앵커 API 대기)
+    public let anchors: [String]            // 현재 항상 [] (공간 서비스 앵커 API 대기)
 }
 
 /// POST /events/zone 응답 — triggers = 서버가 매칭한 개인화 액션 (없으면 [])

@@ -5,7 +5,7 @@
 //  설계 규칙: "문은 static, 부품은 인스턴스".
 //  · 문(이 클래스) — 앱 전체에 하나뿐인 진입점. private init 이라 인스턴스화 불가, 전부 static.
 //  · 부품(coordinator·ApiClient·엔진) — 키 교체·reset 때 갈아끼우는 인스턴스. 밖에 안 보임.
-//  하나만 존재해야 하는 이유: UWB 라디오·PRM 엔진·Keychain ID·좌표 버퍼가 기기당 1개라
+//  하나만 존재해야 하는 이유: UWB 라디오·존 엔진·Keychain ID·좌표 버퍼가 기기당 1개라
 //  세션이 여럿이면 서로 충돌한다.
 //
 //  사용 (호스트 앱):
@@ -32,7 +32,7 @@ public final class OneS1ght {
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
     /// SDK 버전 (verify의 client.sdk_version에 실림)
-    public static let sdkVersion = "0.1.17"
+    public static let sdkVersion = "0.1.18"
 
     // MARK: - 콜백
 
@@ -63,7 +63,7 @@ public final class OneS1ght {
     public static var deviceAvailability: DeviceAvailability {
         #if os(iOS)
         guard #available(iOS 27.0, *) else { return .osVersionTooLow }
-        return IHubPositioningProvider.isSupported ? .available : .deviceNotSupported
+        return UwbPositioningProvider.isSupported ? .available : .deviceNotSupported
         #else
         return .deviceNotSupported
         #endif
@@ -72,24 +72,17 @@ public final class OneS1ght {
     /// 이 기기에서 측위가 가능한가 (요약형). 사유가 필요하면 deviceAvailability 사용.
     public static var isDeviceAvailable: Bool { deviceAvailability == .available }
 
-    // MARK: - 콘솔 제공 값 (앱이 지도를 직접 그릴 때 쓰는 값들)
+    // MARK: - 콘솔 제공 값
     //
-    // GeoSpace 모바일 키(resolvedGeoSdkKey)는 여기 없다 — SDK 가 내부적으로만 쓰고
-    // 앱이 들고 있을 이유가 없다.
+    // 고객은 OneS1ght SDK 키 하나만 넣는다. 측위에 필요한 나머지 키는 통합관리자가 콘솔에
+    // 설정하고 SDK 가 받아서 내부에 붙인다 — 앱이 그 키들을 보거나 다룰 일이 없다.
+    // 여기 하나만 공개하는 이유: 구글맵 키는 **앱이 자기 지도 SDK 에 직접 넣어야** 하는
+    // 값이라(GMSServices.provideAPIKey) SDK 가 대신 불러 줄 수 없다.
 
     /// 콘솔이 내려준 Google Maps 키 — 앱이 자체 지도를 그릴 때 쓴다.
+    /// 고객이 발급받는 값이 아니라 통합관리자가 콘솔에 넣어 둔 값이다.
     /// initialize 가 성공하기 전에는 `nil`이다.
     public static var googleMapKey: String? { coordinator?.googleMapKey }
-
-    /// 콘솔이 내려준 GeoSpace 파트너 키.
-    /// initialize 가 성공하기 전에는 `nil`이다.
-    public static var geoPartnerKey: String? { coordinator?.geoPartnerKey }
-
-    /// 콘솔이 내려준 GeoSpace 베이스 URL — **앱이 GeoSpace 를 직접 호출할 때** 쓰는 값이다.
-    /// ⚠️ SDK 내부 통신(도면·앵커 등)은 이 값과 무관하게 내장 호스트(geospace.geoplan.io)를
-    ///    그대로 쓴다 — 이 값이 바뀌어도 SDK 트래픽의 목적지는 바뀌지 않는다.
-    /// initialize 가 성공하기 전에는 `nil`이다.
-    public static var geoBaseUrl: String? { coordinator?.geoBaseUrl }
 
     // MARK: - 권한
 
@@ -140,59 +133,39 @@ public final class OneS1ght {
     /// 실패 사유는 throw (invalidKey/positioningDisabled/network).
     /// 실패 시 재호출 = 재시도 · 성공 후 재호출 = 무시(멱등) · 다른 키로 재호출 = 세션 재구성.
     /// - sdkKey: OneS1ght 콘솔 발급 (ock_) — 인증·존·수집·이벤트·도면
-    /// - geoSdkKey: **더 이상 넘기지 않아도 된다.** 콘솔이 이 키의 정본이며,
-    ///   initialize 가 서버에서 받아 온다(`GET /api/sdk/v1/config`).
-    ///   넘기면 콘솔이 답하지 못할 때의 폴백으로만 쓰인다. 다음 메이저에서 제거된다.
+    ///   측위에 필요한 나머지 키는 넣지 않는다 — 통합관리자가 콘솔에 설정해 두면
+    ///   initialize 가 서버에서 받아 SDK 안에 붙인다. 앱은 그 키들을 알 필요가 없다.
     /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
     ///   콘솔이 발급하는 키(production/development)가 가른다.
     /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/setFloorMap() 의 책임이다.
     /// setFloorMap 없이 begin() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(E3001 로 통지).
     public static func initialize(sdkKey: String,
-                                  geoSdkKey: String? = nil,
                                   baseURL: URL = ApiClient.defaultBaseURL) async throws {
         // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.
         // 여기서 막으면 세션이 안 만들어져 도면·존 조회까지 전부 닫힌다(coordinator != nil 가드).
-        // UWB 없는 기기에서도 지도와 존은 보여야 하고, 막혀야 하는 것은 측위뿐이다.
-        // 실제 차단은 FloorSession.begin() 의 isSupported 가드가 맡는다.
-        // 호출부가 미리 알고 싶으면 deviceAvailability / isDeviceAvailable 로 물어보면 된다.
 
         // ① 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
-        //    (재구성 없이 두면 이전 키로 만든 ApiClient 를 조용히 재사용해 '맞는 키인데 401' 함정이 생긴다)
-        if let stored = storedKeys, stored != (sdkKey, geoSdkKey) {
+        if let stored = storedKey, stored != sdkKey {
             await coordinator?.stop()
             coordinator = nil
         }
 
         // ② 세션 구성 (최초 또는 재구성 후 1회)
+        //    측위에 쓰는 공간 서비스 접속은 여기서 만들지 않는다 — prepare() 가 콘솔에서
+        //    키를 받은 뒤 붙인다. 앱이 그 키를 알 필요도, 넘길 방법도 없다.
         if coordinator == nil {
-            let geospace = geoSdkKey.map {
-                GeospaceClient(keys: .init(sdk: sdkKey, geospace: $0))
-            }
             let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
-                                       identity: identity,
-                                       geospace: geospace)
-            c.appProvidedGeoSdkKey = geoSdkKey     // 콘솔이 답하지 못할 때의 폴백
-            // 좌표·트리거는 세션 콜백으로 흘린다 (전역 훅은 onDebugLog 만 남았다)
+                                       identity: identity)
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
             c.onConfigChange = { change in FloorSession.shared.onConfigChanged?(change) }
             c.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }
             coordinator = c
-            storedKeys = (sdkKey, geoSdkKey)
+            storedKey = sdkKey
         }
 
         // ③ 키 검증 + 설정 프리페치 (실패 시 throw — 재호출이 곧 재시도)
         try await coordinator?.prepare()
-    }
-
-    /// ⚠️ 비옵셔널 `geoSdkKey` 오버로드 — 예전처럼 값을 넘기는 호출부에만 경고가 뜨게 한다.
-    /// 콘솔이 이 키의 정본이며 initialize 가 서버에서 받아 온다. 넘긴 값은 콘솔이
-    /// 답하지 못할 때의 폴백으로만 쓰인다. 다음 메이저에서 제거된다.
-    @available(*, deprecated, message: "geoSdkKey 는 더 이상 필요하지 않습니다 — 콘솔이 정본입니다. initialize(sdkKey:) 를 쓰세요.")
-    public static func initialize(sdkKey: String,
-                                  geoSdkKey: String,
-                                  baseURL: URL = ApiClient.defaultBaseURL) async throws {
-        try await initialize(sdkKey: sdkKey, geoSdkKey: Optional(geoSdkKey), baseURL: baseURL)
     }
 
     /// 초기화 리셋 — 세션을 버린다. 이후 initialize(sdkKey:)로 다른 키로 재초기화 가능
@@ -201,15 +174,15 @@ public final class OneS1ght {
         await coordinator?.stop()
         coordinator?.teardown()   // 스트림·관찰자 정리 — 참조를 놓기 전에 끊어야 한다
         coordinator = nil
-        storedKeys = nil
+        storedKey = nil
     }
 
     // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 · 목록 ↔ 단건)
 
     /// 건물 목록. 층은 floors() 로 따로.
-    /// ⚠️ 빈 배열이 "이 테넌트에 건물이 없다"는 뜻만은 아니다 — GeoSpace 키를 하나도 못
-    ///    구했을 때도(콘솔 미응답 + geoSdkKey 미제공) 똑같이 빈 배열이 온다. 구분하려면
-    ///    onDebugLog 나 콘솔 로그 분석기에서 E1007 을 확인해야 한다.
+    /// ⚠️ 빈 배열이 "이 테넌트에 건물이 없다"는 뜻만은 아니다 — 콘솔에서 측위 키를 받지
+    ///    못했을 때도 똑같이 빈 배열이 온다. 구분하려면 onDebugLog 나 콘솔 로그
+    ///    분석기에서 E1007 을 확인해야 한다.
     public static func buildings() async throws -> [Building] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.buildings()
@@ -348,9 +321,5 @@ public final class OneS1ght {
     private static var currentBuildingID: String?             // setFloorMap 의 건물 문맥
     /// FloorSession 이 코디네이터에 닿는 통로 (같은 모듈 내부 전용)
     static var coordinatorRef: SessionCoordinator? { coordinator }
-    /// ihub 라이선스로 쓸 GeoSpace 키 — initialize(geoSdkKey:) 값을 그대로 넘긴다.
-    /// 앱이 측위용 키를 따로 설정하지 않아도 되게 FloorSession.begin() 이 읽어 간다.
-    /// (모듈 내부 전용 — 키를 공개 표면으로 다시 노출하지 않는다)
-    static var geoSdkKeyForPositioning: String? { storedKeys?.geospace }
-    private static var storedKeys: (sdk: String, geospace: String?)?  // 키 교체 감지용
+    private static var storedKey: String?          // 키 교체 감지용
 }

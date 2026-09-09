@@ -31,26 +31,22 @@ final class SessionCoordinator {
     // 의존성 (전부 주입 — 테스트는 스텁 세션·가짜 프로바이더)
     private let api: ApiClient
     private let identity: IdentityStore
-    /// 앱이 geoSdkKey 를 넘겼으면 initialize 가 미리 만들어 둔 것 — 아니면 nil 로 시작해
-    /// resolveKeysFromConsole() 이 콘솔 키로 채운다. 콘솔도 앱도 키가 없으면 계속 nil 이다:
-    /// buildings()/floors()/zones() 는 빈 배열로, floor()/locators()/setFloorMap() 은
-    /// notInitialized 로 떨어진다(isInitialized 는 그래도 true — I1 참고).
-    private var geospace: GeospaceClient?
+    /// nil 로 시작해 resolveKeysFromConsole() 이 콘솔 키로 채운다. 콘솔이 키를 못 주면
+    /// 계속 nil 이다: buildings()/floors()/zones() 는 빈 배열로, floor()/locators()/
+    /// setFloorMap() 은 notInitialized 로 떨어진다(isInitialized 는 그래도 true — I1 참고).
+    private var spaceClient: SpaceServiceClient?
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
-    /// GeospaceClient 를 새로 만들 때 물려줄 세션 — 테스트는 스텁을 주입한다.
-    /// 이게 없으면 콘솔 키로 갈아끼운 클라이언트가 항상 `.shared` 로 떨어져, 갈아끼운
-    /// 뒤의 첫 조회가 스텁을 우회하고 실제 geospace.geoplan.io 로 나간다(I3).
+    /// SpaceServiceClient 를 새로 만들 때 물려줄 세션 — 테스트는 스텁을 주입한다.
+    /// 이게 없으면 콘솔 키로 만든 클라이언트가 항상 `.shared` 로 떨어져, 그 뒤의 첫
+    /// 조회가 스텁을 우회하고 실제 서비스로 나간다(I3).
     private let session: URLSession
 
-    /// 앱이 initialize(geoSdkKey:)로 넘긴 값 — 콘솔이 답하지 못할 때의 폴백이다.
-    var appProvidedGeoSdkKey: String?
-
-    /// 실제로 쓰기로 결정된 GeoSpace 모바일 키. 콘솔 값이 있으면 그것, 없으면 앱 값.
-    private(set) var resolvedGeoSdkKey: String?
+    /// 측위 엔진에 물릴 라이선스 — 콘솔이 유일한 출처다.
+    private(set) var positioningLicense: String?
     /// 콘솔이 내려준 나머지 — 호스트 앱이 지도·도면에 쓴다.
     private(set) var googleMapKey: String?
-    private(set) var geoPartnerKey: String?
-    private(set) var geoBaseUrl: String?
+    private(set) var spaceServiceKey: String?
+    private(set) var spaceServiceBaseUrl: String?
 
     /// 가장 최근 `/config` 호출이 실패했는가(네트워크·서버 — 응답은 왔지만 값이 없는 것과
     /// 다르다) — FloorSession.begin() 의 순단 회복이 재시도할지 판단하는 자리(I1).
@@ -143,7 +139,7 @@ final class SessionCoordinator {
 
     init(api: ApiClient,
          identity: IdentityStore,
-         geospace: GeospaceClient? = nil,
+         spaceClient: SpaceServiceClient? = nil,
          session: URLSession = .shared,
          flushThreshold: Int = 300,
          flushInterval: TimeInterval = 60,
@@ -152,7 +148,7 @@ final class SessionCoordinator {
         self.receptionCheckDelay = receptionCheckDelay
         self.api = api
         self.identity = identity
-        self.geospace = geospace
+        self.spaceClient = spaceClient
         self.session = session
         self.flushThreshold = flushThreshold
         self.flushInterval = flushInterval
@@ -211,100 +207,81 @@ final class SessionCoordinator {
 
     /// 관련 키를 콘솔에서 받아 정본으로 삼는다.
     ///
-    /// **초기화를 막지 않는다.** 서버가 잠깐 흔들린다고 측위가 멈추면 안 되므로, 실패하면
-    /// 앱이 넘긴 값으로 폴백하고 그 사실만 남긴다.
+    /// **초기화를 막지 않는다.** 서버가 잠깐 흔들린다고 앱이 못 뜨면 안 되므로, 실패해도
+    /// prepare() 는 성공으로 끝내고 begin() 이 다시 시도한다.
     ///
-    /// ⚠️ 폴백할 값이 아예 없는 경우(앱도 안 넘기고 콘솔도 못 줌)가 가장 조용히 새는
-    /// 자리였다 — buildings()/floors()/zones() 는 빈 배열로 떨어져 "이 테넌트에 건물이
-    /// 없다"와 구분이 안 되고, floor()/locators()/setFloorMap() 은 notInitialized 를
-    /// 던지는데 isInitialized 는 true 다. 그리고 prepare() 가 멱등이라 다시 손볼 방법도
-    /// 없었다(I1). 그래서 이 경로는 appProvidedGeoSdkKey 유무로 로그 여부를 가르지 않고
-    /// **둘 다** report 로 남기되, 폴백조차 없는 쪽을 더 무겁게 다룬다(logKeyFallback 참고).
+    /// 고객은 OneS1ght SDK 키 하나만 넣는다 — 측위 공급자의 키는 통합관리자가 콘솔에
+    /// 설정해 두고, 여기서 받아 쓴다. 앱이 그 키를 넘길 방법도, 알 필요도 없다.
+    ///
+    /// ⚠️ **못 받으면 그 사실을 크게 남긴다.** 폴백이 없으므로 못 받는 것은 곧 이번 세션
+    /// 내내 공간 조회와 측위가 비활성이라는 뜻이다. 그런데 증상은 조용하다 —
+    /// buildings()/floors()/zones() 는 빈 배열로 떨어져 "이 테넌트에 건물이 없다"와
+    /// 구분이 안 되고, floor()/locators()/setFloorMap() 은 notInitialized 를 던지는데
+    /// isInitialized 는 true 다. 그래서 E1007 로 남기고, begin() 이 다시 시도할 수 있게
+    /// keyResolutionFailed 를 세워 둔다.
     private func resolveKeysFromConsole() async {
-        resolvedGeoSdkKey = appProvidedGeoSdkKey     // 기본값 = 폴백
-
         let cfg: ResSdkConfig
         do {
             cfg = try await api.config()
             keyResolutionFailed = false
         } catch {
             keyResolutionFailed = true
-            logKeyFallback(reason: "config_failed")
+            reportKeyUnavailable(reason: "config_failed")
             return
         }
 
-        googleMapKey  = cfg.google_map_key
-        geoPartnerKey = cfg.geo_partner_key
-        geoBaseUrl    = cfg.geo_base_url
+        googleMapKey = cfg.google_map_key
+        spaceServiceKey = cfg.geo_partner_key
+        spaceServiceBaseUrl = cfg.geo_base_url
 
-        guard let consoleKey = cfg.geo_sdk_key, !consoleKey.isEmpty else {
-            // 콘솔에 값이 없는 것과 통신 실패는 다르다(요청은 성공했다 — 재시도로 해결될
-            // 문제가 아니다) — 그래도 앱 입장에서 할 일은 같다: 폴백.
-            logKeyFallback(reason: "console_no_key")
+        guard let key = cfg.geo_sdk_key, !key.isEmpty else {
+            // 통신은 됐고 값이 없다 — 재시도로 풀릴 문제가 아니라 콘솔 설정 문제다.
+            reportKeyUnavailable(reason: "console_no_key")
             return
         }
 
-        // 정본은 콘솔이다. 다르면 조용히 덮지 않고 한 번 알린다 —
-        // ⚠️ 어느 쪽 값도 로그에 싣지 않는다.
-        if let appKey = appProvidedGeoSdkKey, appKey != consoleKey {
-            log(.warn, SdkLocalized.text("coord.keyOverridden"))
-            report(.keyOverridden, "console value differs from app-provided value")
-        }
-        resolvedGeoSdkKey = consoleKey
-
-        // GeospaceClient 는 initialize 가 앱 키로 미리 만들었다 — 콘솔 키로 갈아끼운다.
+        positioningLicense = key
         // ⚠️ 주입받은 session 을 그대로 물려준다 — 안 그러면 `.shared` 로 떨어져 테스트의
-        // 스텁 세션을 우회하고 실제 geospace.geoplan.io 로 요청이 나간다(I3).
-        if consoleKey != appProvidedGeoSdkKey || geospace == nil {
-            geospace = GeospaceClient(keys: .init(sdk: api.apiKey, geospace: consoleKey),
-                                      session: session)
-        }
+        // 스텁 세션을 우회하고 실제 서비스로 요청이 나간다(I3).
+        spaceClient = SpaceServiceClient(keys: .init(sdk: api.apiKey, space: key),
+                                         session: session)
     }
 
-    /// 키 폴백(혹은 폴백 불가) 사실을 남긴다.
-    ///
-    /// 앱이 넘긴 값이 있으면 그 값으로 계속 돌아간다는 뜻이라 WARN 이면 충분하다. 없으면
-    /// GeoSpace 관련 기능이 이번 세션 내내 전부 비활성된다는 뜻이라 — I1 이 지적한 그 자리 —
-    /// 더 무겁게 다룬다. 어느 쪽도 실제 키 값은 담지 않는다(reason 은 고정 토큰이다).
-    private func logKeyFallback(reason: String) {
-        if appProvidedGeoSdkKey != nil {
-            log(.warn, SdkLocalized.text("coord.keyFallback"))
-            report(.keyFallback, "reason=\(reason)")
-        } else {
-            log(.error, SdkLocalized.text("coord.keyUnavailable"))
-            report(.keyUnavailable, "reason=\(reason)")
-        }
+    /// 측위 키를 못 구했다는 사실을 남긴다. reason 은 고정 토큰이라 키 값이 실리지 않는다.
+    private func reportKeyUnavailable(reason: String) {
+        log(.error, SdkLocalized.text("coord.keyUnavailable"))
+        report(.keyUnavailable, "reason=\(reason)")
     }
 
-    // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 — GeoSpace 키를 못 구했으면 빈 값)
+    // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 — 공간 서비스 키를 못 구했으면 빈 값)
 
     func buildings() async throws -> [Building] {
-        guard let geospace else { return [] }
-        return try await geospace.loadBuildings()
+        guard let spaceClient else { return [] }
+        return try await spaceClient.loadBuildings()
     }
 
     func floors(buildingId: String) async throws -> [Floor] {
-        guard let geospace else { return [] }
-        return try await geospace.loadFloors(buildingId: buildingId)
+        guard let spaceClient else { return [] }
+        return try await spaceClient.loadFloors(buildingId: buildingId)
     }
 
     /// 층 단건 — 도면 이미지 포함.
     func floor(buildingId: String, floorId: String) async throws -> Floor {
-        guard let geospace else { throw SdkError.notInitialized }
-        return try await geospace.loadFloor(buildingId: buildingId, floorId: floorId)
+        guard let spaceClient else { throw SdkError.notInitialized }
+        return try await spaceClient.loadFloor(buildingId: buildingId, floorId: floorId)
     }
 
     func zones(buildingId: String, floorId: String) async throws -> [Zone] {
-        guard let geospace else { return [] }
-        return try await geospace.loadZones(buildingId: buildingId, floorId: floorId)
+        guard let spaceClient else { return [] }
+        return try await spaceClient.loadZones(buildingId: buildingId, floorId: floorId)
     }
 
     /// ⚠️ 조회 실패는 던지지 않는다 — 빈 목록으로 떨어져 `positioningReady` 가 거짓이 된다.
     /// 로케이터를 못 받았다고 지도(도면·존)를 통째로 지울 이유가 없다. 이유는 setFloorMap 이
     /// 코드로 남긴다(E3006). `throws` 는 초기화 전 호출(notInitialized) 때문에 남는다.
     func locators(buildingId: String, floorId: String) async throws -> FloorLocators {
-        guard let geospace else { throw SdkError.notInitialized }
-        return await geospace.loadLocators(buildingId: buildingId, floorId: floorId)
+        guard let spaceClient else { throw SdkError.notInitialized }
+        return await spaceClient.loadLocators(buildingId: buildingId, floorId: floorId)
     }
 
     // MARK: - 층 지정
@@ -320,8 +297,8 @@ final class SessionCoordinator {
             restartLiveStreamIfFloorChanged(previousFloor: previousFloor)
             return
         }
-        guard let geospace else { throw SdkError.notInitialized }
-        let state = try await geospace.loadFloorState(buildingId: buildingId, floorId: floor.id)
+        guard let spaceClient else { throw SdkError.notInitialized }
+        let state = try await spaceClient.loadFloorState(buildingId: buildingId, floorId: floor.id)
         floorState = state
         currentFloor = floor
         log(SdkLocalized.format("coord.floorLoaded", state.locators.count, String(floor.id.prefix(8))))
@@ -346,12 +323,12 @@ final class SessionCoordinator {
     /// 실패하면 지금 존을 그대로 돌려준다 — 통신 오류로 지도의 존이 사라지면 안 된다.
     /// 로그는 "결과가 바뀔 때만" — 등록 감시가 1초마다 부르는 경로라 매번 찍으면 로그창이 덮인다.
     func refreshZones() async -> [Zone] {
-        guard let geospace, let state = floorState else {
+        guard let spaceClient, let state = floorState else {
             logZoneOutcome(.warn, SdkLocalized.text("zone.refreshSkipped"), key: "no-floor")
             return floorState?.zones ?? []
         }
         do {
-            let zones = try await geospace.loadZones(buildingId: state.buildingId,
+            let zones = try await spaceClient.loadZones(buildingId: state.buildingId,
                                                      floorId: state.floorId)
             floorState?.zones = zones
             // 구역을 전부 지웠을 때도 엔진에 반영해야 한다 — 안 그러면 판정 엔진이 삭제된 구역을
@@ -741,7 +718,7 @@ extension SessionCoordinator: PositioningProviderDelegate {
         onPosition?(coordinates)          // 앱 훅 — 원속도 유지 (지도 렌더)
         ensureFloorLoaded(floorId)
         // ⚠️ 서버 전송분만 솎는다. 존 판정(provider 내부 zoneEngine)은 원속도 그대로 —
-        //    PRM 의 시간 게이트가 입력 간격을 전제로 동작해 여기까지 줄이면 체류·이탈이 어긋난다.
+        //    옛 존 엔진의 시간 게이트가 입력 간격을 전제로 동작해 여기까지 줄이면 체류·이탈이 어긋난다.
         guard shouldRecord(at: capturedAt) else { return }
         buffer.add(PositionPoint(floor_id: floorId,
                                  coordinates: coordinates,

@@ -130,15 +130,15 @@ final class ReceptionCheckTests: XCTestCase {
         XCTAssertFalse(hasCode(lines, "E4002"), "\(lines)")
     }
 
-    // MARK: - 앵커별 특정이 안 되는 엔진 (gpi-ihub)
+    // MARK: - 앵커별 특정이 안 되는 엔진
     //
-    // ihub 는 앵커 목록도 앵커별 수신 상태도 주지 않는다. 그래서 어댑터는 missing 을 비우고
+    // 엔진은 앵커 목록도 앵커별 수신 상태도 주지 않는다. 그래서 어댑터는 missing 을 비우고
     // matched 를 0 으로 둘 수밖에 없는데, 예전 조건은 바로 그 두 값을 봤다:
     //   E4003  !missing.isEmpty      → [] 라 영원히 거짓
     //   E4002  !hasFix && matched>=3 → hasFix 가 false 면 matched 도 0 이라 영원히 거짓
     // 둘 다 성립 불가라 **좌표가 안 나와도 로그가 한 줄도 안 남았다.** 아래 세 개가 그 회귀를 막는다.
 
-    /// ihub 모양의 진단(등록만 알고 나머지는 모름)에서 좌표가 안 나오면 반드시 알려야 한다.
+    /// 엔진 모양의 진단(등록만 알고 나머지는 모름)에서 좌표가 안 나오면 반드시 알려야 한다.
     /// 이 테스트는 canAttributePerAnchor 분기가 없으면 실패한다 — 회귀의 정문이다.
     func testEngineWithoutPerAnchorDetailStillReportsMissingFix() async throws {
         let lines = try await runCheck(PositioningDiagnostic(

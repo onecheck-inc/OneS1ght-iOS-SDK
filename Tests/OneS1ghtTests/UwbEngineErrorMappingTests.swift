@@ -1,6 +1,6 @@
 //
-//  IHubErrorMappingTests.swift
-//  ihub 오류 코드(1~12) → SDK E-코드.
+//  UwbEngineErrorMappingTests.swift
+//  엔진 오류 코드(1~12) → SDK E-코드.
 //
 //  이 매핑이 있어야 엔진 고유의 실패가 콘솔 로그 분석기까지 간다. 화면 로그로만 남기면
 //  현장에서만 보이고 관리자는 "안 됐다"는 말만 듣는다.
@@ -15,10 +15,10 @@ import XCTest
 @testable import OneS1ght
 
 @available(iOS 27.0, *)
-final class IHubErrorMappingTests: XCTestCase {
+final class UwbEngineErrorMappingTests: XCTestCase {
 
     private func code(_ hub: Int) -> SdkErrorCode? {
-        IHubPositioningProvider.sdkCode(forHubError: hub)
+        UwbPositioningProvider.sdkCode(forHubError: hub)
     }
 
     /// 권한 계열 셋(BT 불가·위치 불가·Info.plist 키 누락)은 모두 E2003 이다 —
@@ -53,7 +53,7 @@ final class IHubErrorMappingTests: XCTestCase {
         XCTAssertNil(code(8), "정지가 끝나기 전 start")
     }
 
-    /// 모르는 코드를 아무 데나 붙이지 않는다. ihub 가 코드를 늘리면 조용히 오분류되는 대신
+    /// 모르는 코드를 아무 데나 붙이지 않는다. 엔진이 코드를 늘리면 조용히 오분류되는 대신
     /// 매핑에 없다는 사실이 그대로 드러나야 한다.
     func testUnknownCodesAreNotGuessed() {
         XCTAssertNil(code(0))
@@ -66,7 +66,7 @@ final class IHubErrorMappingTests: XCTestCase {
         let known = Set(SdkErrorCode.allCases.map(\.rawValue))
         for hub in 1...12 {
             guard let c = code(hub) else { continue }
-            XCTAssertTrue(known.contains(c.rawValue), "ihub \(hub) → 없는 코드 \(c.rawValue)")
+            XCTAssertTrue(known.contains(c.rawValue), "엔진 \(hub) → 없는 코드 \(c.rawValue)")
         }
     }
 }

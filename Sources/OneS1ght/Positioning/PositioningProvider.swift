@@ -2,7 +2,7 @@
 //  PositioningProvider.swift
 //  측위 엔진 주입 계약 — SDK는 UWB를 모른다 (프롬프트 결정사항 2, 시그니처 그대로)
 //
-//  실제 구현(호스트 쪽): NISession + gpi-dltdoa + ZoneEngine을 감싼 어댑터가
+//  실제 구현(호스트 쪽): 직접 레인징 + ZoneEngine을 감싼 어댑터가
 //  이 프로토콜을 채택해 콜백 3종을 쏜다. 패키지는 그 결과를 서버 계약에 맞춰 전송만.
 //
 //  ⚠️ iOS의 UWB(Nearby Interaction)는 포그라운드 전용 — 백그라운드 전환 시
@@ -13,9 +13,9 @@ import Foundation
 
 /// 측위 설정 — 측위 엔진에 주입하는 "콘센트".
 ///
-/// ★ 소스 갈아끼우는 자리: **지금은 앱(Geospace3Client)이 GeoSpace에서 받아 채워 넣고**,
+/// ★ 소스 갈아끼우는 자리: **지금은 앱이 공간 서비스에서 받아 채워 넣고**,
 ///   나중에 console 이 도면·앵커·존을 프록시하면 **그쪽에서 받아 같은 자리에 꽂는다.**
-///   소스(앱 GeoSpace ↔ 서버 프록시)가 바뀌어도 이 구조체와 apply(config:)는 고정.
+///   소스(앱 공간 서비스 ↔ 서버 프록시)가 바뀌어도 이 구조체와 apply(config:)는 고정.
 public struct PositioningConfig {
     /// 앵커: 짧은주소(UWB MAC 뒤 2바이트, 예: 0xABCD) → 도면 로컬 미터 좌표
     public let anchors: [Int: SIMD3<Double>]
@@ -52,7 +52,7 @@ public struct PositioningDiagnostic: Equatable {
 
     /// **앵커 하나하나를 구분해서 답할 수 있는가.**
     ///
-    /// ⚠️ 이 값이 없으면 진단이 조용히 죽는다. 앵커별 상태를 못 주는 엔진(gpi-ihub)은
+    /// ⚠️ 이 값이 없으면 진단이 조용히 죽는다. 앵커별 상태를 못 주는 엔진은
     /// `missingAddresses` 를 항상 비우고 `matchedCount` 를 0 으로 둘 수밖에 없는데,
     /// 그러면 "미수신이 있으면 알린다"·"신호는 잡히는데 좌표가 없으면 알린다" 두 조건이
     /// **구조적으로 성립 불가**가 되어 좌표가 안 나와도 아무 로그가 안 남는다.
@@ -93,7 +93,7 @@ public protocol PositioningProvider: AnyObject {
     func apply(buildingId: String, floorId: String)
 
     /// 측위 설정(앵커·세션) 주입 (선택 채택 — 기본 no-op).
-    /// ★ 소스 무관 통로 — 앱이 GeoSpace/서버에서 받은 값을 여기로 꽂는다. start 전에 호출.
+    /// ★ 소스 무관 통로 — 앱이 공간 서비스/서버에서 받은 값을 여기로 꽂는다. start 전에 호출.
     func apply(config: PositioningConfig)
 }
 

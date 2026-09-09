@@ -1,8 +1,8 @@
 {
   "provider.ready": {
-    "ko": "geoSDK v%@ 준비됨",
-    "ja": "geoSDK v%@ 準備完了",
-    "en": "geoSDK v%@ ready"
+    "ko": "측위 엔진 v%@ 준비됨",
+    "ja": "測位エンジン v%@ 準備完了",
+    "en": "positioning engine v%@ ready"
   },
   "provider.noSession": {
     "ko": "세션 ID 미주입 — apply(config:) 후 시작하세요",
@@ -15,9 +15,9 @@
     "en": "ZoneEngine ready (0 zones — map uses partner API zones)"
   },
   "provider.anchorsApply": {
-    "ko": "GeoSpace 앵커 %d개 주입",
-    "ja": "GeoSpace アンカー %d台を適用",
-    "en": "Injected %d GeoSpace anchors"
+    "ko": "로케이터 %d개 주입",
+    "ja": "ロケータ %d台を適用",
+    "en": "Injected %d locators"
   },
   "provider.sessionApply": {
     "ko": "세션 ID 주입: networkId %d",
@@ -109,20 +109,10 @@
     "ja": "verify 通過 (tenant: %@)",
     "en": "verify passed (tenant: %@)"
   },
-  "coord.keyOverridden": {
-    "ko": "GeoSpace 키를 콘솔 값으로 대체했습니다 — 앱이 넘긴 값과 다릅니다",
-    "ja": "GeoSpace キーをコンソールの値に置き換えました — アプリが渡した値と異なります",
-    "en": "Replaced the GeoSpace key with the console value — it differs from the one the app passed"
-  },
-  "coord.keyFallback": {
-    "ko": "콘솔에서 GeoSpace 키를 받지 못해 앱이 넘긴 값으로 폴백했습니다",
-    "ja": "コンソールから GeoSpace キーを取得できず、アプリが渡した値にフォールバックしました",
-    "en": "Could not get the GeoSpace key from the console; fell back to the one the app passed"
-  },
   "coord.keyUnavailable": {
-    "ko": "GeoSpace 키가 어디에도 없습니다 — 앱도 넘기지 않았고 콘솔에도 설정돼 있지 않습니다. 건물·층·존 조회는 빈 값으로 떨어집니다",
-    "ja": "GeoSpace キーがどこにもありません — アプリも渡しておらず、コンソールにも設定されていません。建物・階・ゾーンの取得は空値になります",
-    "en": "No GeoSpace key anywhere — the app did not pass one and the console has none configured. Buildings/floors/zones will come back empty"
+    "ko": "측위 키를 받지 못했습니다 — 콘솔에 설정돼 있지 않거나 조회에 실패했습니다. 건물·층·존 조회는 빈 값으로 떨어집니다",
+    "ja": "測位キーを取得できませんでした — コンソールに設定されていないか、取得に失敗しました。建物・階・ゾーンの取得は空値になります",
+    "en": "Could not obtain the positioning key — it is not configured in the console, or the lookup failed. Buildings/floors/zones will come back empty"
   },
   "coord.consent": {
     "ko": "consent 기록됨",
@@ -215,9 +205,9 @@
     "en": "Count [%@] %d/%d"
   },
   "zone.countConfirmed": {
-    "ko": "적립 [%@] %d/%d ✓ → PRM IN 대기",
-    "ja": "カウント [%@] %d/%d ✓ → PRM IN 待ち",
-    "en": "Count [%@] %d/%d ✓ → awaiting PRM IN"
+    "ko": "적립 [%@] %d/%d ✓ → 존 진입 대기",
+    "ja": "カウント [%@] %d/%d ✓ → ゾーン進入待ち",
+    "en": "Count [%@] %d/%d ✓ → awaiting zone IN"
   },
   "zone.countReset": {
     "ko": "↩︎ [%@] 적립 리셋 (%d개 소실) — %@",
@@ -255,9 +245,9 @@
     "en": "✗unmatched"
   },
   "zone.paramDump": {
-    "ko": "PRM → %@ 진입거리 %.2f · 확정 %d회/%d초 · 이탈유예 %d초",
-    "ja": "PRM → %@ 進入距離 %.2f · 確定 %d回/%d秒 · 離脱猶予 %d秒",
-    "en": "PRM → %@ inDist %.2f · confirm %d×/%ds · outPeriod %ds"
+    "ko": "존 판정 → %@ 진입거리 %.2f · 확정 %d회/%d초 · 이탈유예 %d초",
+    "ja": "ゾーン判定 → %@ 進入距離 %.2f · 確定 %d回/%d秒 · 離脱猶予 %d秒",
+    "en": "Zone judging → %@ inDist %.2f · confirm %d×/%ds · outPeriod %ds"
   },
   "zone.intervalTooShort": {
     "ko": "⚠️ [%@] 집계간격 %d초 ≤ 좌표 주기 %.2f초 — 카운트가 매번 리셋되어 IN 발화 불가",
@@ -329,182 +319,182 @@
     "ja": "⚠️ エリアを %d 件投入しましたが判定エンジンが開始されていません — 座標を破棄します",
     "en": "⚠️ %d zones were injected but the judging engine did not start — dropping coordinates"
   },
-  "ihub.ready": {
-    "ko": "gpi-ihub %@ 준비됨 · DL-TDoA %@",
-    "ja": "gpi-ihub %@ 準備完了 · DL-TDoA %@",
-    "en": "gpi-ihub %@ ready · DL-TDoA %@"
+  "uwb.ready": {
+    "ko": "측위 엔진 %@ 준비됨 · DL-TDoA %@",
+    "ja": "測位エンジン %@ 準備完了 · DL-TDoA %@",
+    "en": "positioning engine %@ ready · DL-TDoA %@"
   },
-  "ihub.supported": {
+  "uwb.supported": {
     "ko": "지원",
     "ja": "対応",
     "en": "supported"
   },
-  "ihub.unsupported": {
+  "uwb.unsupported": {
     "ko": "미지원",
     "ja": "非対応",
     "en": "unsupported"
   },
-  "ihub.noLicense": {
-    "ko": "⚠️ ihub 라이선스 키가 없습니다 — initialize(geoSdkKey:) 를 확인하세요",
-    "ja": "⚠️ ihub ライセンスキーがありません — initialize(geoSdkKey:) を確認してください",
-    "en": "⚠️ No ihub license key — check initialize(geoSdkKey:)"
+  "uwb.noLicense": {
+    "ko": "⚠️ 측위 라이선스 키가 없습니다 — 콘솔의 측위 키 설정을 확인하세요",
+    "ja": "⚠️ 測位ライセンスキーがありません — コンソールの測位キー設定を確認してください",
+    "en": "⚠️ No positioning engine license key — check the positioning key in the console"
   },
-  "ihub.starting": {
-    "ko": "▶︎ ihub 시작 (라이선스 %@… · 서버 검증 최대 10초)",
-    "ja": "▶︎ ihub 開始 (ライセンス %@… · サーバー検証 最大10秒)",
-    "en": "▶︎ Starting ihub (license %@… · server check up to 10s)"
+  "uwb.starting": {
+    "ko": "▶︎ 측위 엔진 시작 (라이선스 %@… · 서버 검증 최대 10초)",
+    "ja": "▶︎ 測位エンジン開始 (ライセンス %@… · サーバー検証 最大10秒)",
+    "en": "▶︎ Starting the positioning engine (license %@… · server check up to 10s)"
   },
-  "ihub.started": {
+  "uwb.started": {
     "ko": "라이선스 통과 — 층 탐색(BLE) 시작",
     "ja": "ライセンス通過 — フロア探索(BLE)開始",
     "en": "License accepted — floor discovery (BLE) started"
   },
-  "ihub.stopped": {
-    "ko": "ihub 정지됨",
-    "ja": "ihub 停止",
-    "en": "ihub stopped"
+  "uwb.stopped": {
+    "ko": "측위 엔진 정지됨",
+    "ja": "測位エンジン停止",
+    "en": "positioning engine stopped"
   },
-  "ihub.stoppedSelf": {
-    "ko": "⚠️ ihub 가 스스로 정지했습니다 (자동 재개 없음)",
-    "ja": "⚠️ ihub が自ら停止しました (自動再開なし)",
-    "en": "⚠️ ihub stopped on its own (no auto-resume)"
+  "uwb.stoppedSelf": {
+    "ko": "⚠️ 측위 엔진이 스스로 정지했습니다 (자동 재개 없음)",
+    "ja": "⚠️ 測位エンジンが自ら停止しました (自動再開なし)",
+    "en": "⚠️ positioning engine stopped on its own (no auto-resume)"
   },
-  "ihub.trackingStart": {
+  "uwb.trackingStart": {
     "ko": "층 %lld 추적 시작 — UWB 측위",
     "ja": "フロア %lld 追跡開始 — UWB測位",
     "en": "Tracking floor %lld — UWB positioning started"
   },
-  "ihub.trackingStop": {
+  "uwb.trackingStop": {
     "ko": "층 %lld 이탈 — 다시 탐색",
     "ja": "フロア %lld から離脱 — 再探索",
     "en": "Left floor %lld — searching again"
   },
-  "ihub.positioningOn": {
-    "ko": "▶︎ 측위 시작 — 좌표 수집·존 판정 가동 (ihub 층 %@)",
-    "ja": "▶︎ 測位開始 — 座標収集・エリア判定 稼働 (ihub フロア %@)",
-    "en": "▶︎ Positioning on — collecting coordinates, zone events live (ihub floor %@)"
+  "uwb.positioningOn": {
+    "ko": "▶︎ 측위 시작 — 좌표 수집·존 판정 가동 (층 %@)",
+    "ja": "▶︎ 測位開始 — 座標収集・エリア判定 稼働 (フロア %@)",
+    "en": "▶︎ Positioning on — collecting coordinates, zone events live (floor %@)"
   },
-  "ihub.positioningOff": {
+  "uwb.positioningOff": {
     "ko": "■ 측위 종료 (좌표 %d건)",
     "ja": "■ 測位終了 (座標 %d件)",
     "en": "■ Positioning off (%d fixes)"
   },
-  "ihub.stopRequested": {
-    "ko": "■ ihub 정지 요청 (좌표 %d건)",
-    "ja": "■ ihub 停止要求 (座標 %d件)",
-    "en": "■ ihub stop requested (%d fixes)"
+  "uwb.stopRequested": {
+    "ko": "■ 측위 엔진 정지 요청 (좌표 %d건)",
+    "ja": "■ 測位エンジン停止要求 (座標 %d件)",
+    "en": "■ Positioning engine stop requested (%d fixes)"
   },
-  "ihub.area": {
-    "ko": "영역 %@ \"%@\" · 층 %lld (ihub 판정)",
-    "ja": "エリア %@ \"%@\" · フロア %lld (ihub判定)",
-    "en": "Area %@ \"%@\" · floor %lld (judged by ihub)"
+  "uwb.area": {
+    "ko": "영역 %@ \"%@\" · 층 %lld (엔진 판정)",
+    "ja": "エリア %@ \"%@\" · フロア %lld （エンジン判定）",
+    "en": "Area %@ \"%@\" · floor %lld (judged by the positioning engine)"
   },
-  "ihub.areaUnmapped": {
-    "ko": "⚠️ ihub 영역 \"%@\" 가 콘솔 구역 %d개 어디에도 없습니다 — 이벤트를 보내지 않습니다 (이름을 맞추세요)",
-    "ja": "⚠️ ihub エリア \"%@\" がコンソールのエリア %d件 に見つかりません — イベントを送信しません (名称を一致させてください)",
-    "en": "⚠️ ihub area \"%@\" matches none of %d console zones — event dropped (align the names)"
+  "uwb.areaUnmapped": {
+    "ko": "⚠️ 측위 엔진 영역 \"%@\" 가 콘솔 구역 %d개 어디에도 없습니다 — 이벤트를 보내지 않습니다 (이름을 맞추세요)",
+    "ja": "⚠️ 測位エンジンのエリア \"%@\" がコンソールのエリア %d件 に見つかりません — イベントを送信しません (名称を一致させてください)",
+    "en": "⚠️ Positioning engine area \"%@\" matches none of %d console zones — event dropped (align the names)"
   },
-  "ihub.areaUnknown": {
+  "uwb.areaUnknown": {
     "ko": "⚠️ 알 수 없는 영역 상태 \"%@\" (영역 \"%@\") — 무시합니다",
     "ja": "⚠️ 不明なエリア状態 \"%@\" (エリア \"%@\") — 無視します",
     "en": "⚠️ Unknown area status \"%@\" (area \"%@\") — ignored"
   },
-  "ihub.zonesApply": {
-    "ko": "콘솔 구역 %d개 주입 (로케이터 %d대는 진단용 — ihub 는 자기 서버 앵커를 쓴다)",
-    "ja": "コンソールのエリア %d件 を投入 (ロケーター %d台 は診断用 — ihub は自社サーバーのアンカーを使用)",
-    "en": "Applied %d console zones (%d locators are diagnostics only — ihub uses its own anchors)"
+  "uwb.zonesApply": {
+    "ko": "콘솔 구역 %d개 주입 (로케이터 %d대는 진단용 — 측위 엔진은 자기 서버 앵커를 쓴다)",
+    "ja": "コンソールのエリア %d件 を投入 (ロケーター %d台 は診断用 — 測位エンジンは自社サーバーのアンカーを使用)",
+    "en": "Applied %d console zones (%d locators are diagnostics only — the positioning engine uses its own anchors)"
   },
-  "ihub.fullAccuracy": {
+  "uwb.fullAccuracy": {
     "ko": "정밀 위치가 아닙니다 — 임시 정밀 승격을 요청합니다",
     "ja": "正確な位置情報ではありません — 一時的な精度向上を要求します",
     "en": "Not full accuracy — requesting temporary full accuracy"
   },
-  "ihub.diag": {
-    "ko": "ihub %@ · 층 %@ · 좌표 %d건 · 콘솔 로케이터 %d대",
-    "ja": "ihub %@ · フロア %@ · 座標 %d件 · コンソール ロケーター %d台",
-    "en": "ihub %@ · floor %@ · %d fixes · %d console locators"
+  "uwb.diag": {
+    "ko": "측위 엔진 %@ · 층 %@ · 좌표 %d건 · 콘솔 로케이터 %d대",
+    "ja": "エンジン %@ · フロア %@ · 座標 %d件 · コンソール ロケーター %d台",
+    "en": "Engine %@ · floor %@ · %d fixes · %d console locators"
   },
-  "ihub.error": {
+  "uwb.error": {
     "ko": "오류 %d: %@ — %@",
     "ja": "エラー %d: %@ — %@",
     "en": "Error %d: %@ — %@"
   },
-  "ihub.errUnknown": {
+  "uwb.errUnknown": {
     "ko": "알 수 없는 코드",
     "ja": "不明なコード",
     "en": "unknown code"
   },
-  "ihub.err1": {
+  "uwb.err1": {
     "ko": "라이선스 미등록",
     "ja": "ライセンス未登録",
     "en": "license not set"
   },
-  "ihub.err2": {
+  "uwb.err2": {
     "ko": "이미 측위 중",
     "ja": "すでに測位中",
     "en": "already positioning"
   },
-  "ihub.err3": {
+  "uwb.err3": {
     "ko": "Bluetooth 사용 불가",
     "ja": "Bluetooth 使用不可",
     "en": "Bluetooth unavailable"
   },
-  "ihub.err4": {
+  "uwb.err4": {
     "ko": "해당 층 앵커 정보 없음 (재시도됨)",
     "ja": "該当フロアのアンカー情報なし (再試行)",
     "en": "no anchors for this floor (retried)"
   },
-  "ihub.err5": {
+  "uwb.err5": {
     "ko": "DL-TDoA 세션 오류",
     "ja": "DL-TDoA セッションエラー",
     "en": "DL-TDoA session error"
   },
-  "ihub.err6": {
+  "uwb.err6": {
     "ko": "영역 판정 오류",
     "ja": "エリア判定エラー",
     "en": "area judging error"
   },
-  "ihub.err7": {
+  "uwb.err7": {
     "ko": "위치 사용 불가 (권한·정밀·서비스)",
     "ja": "位置情報 使用不可 (権限・精度・サービス)",
     "en": "location unavailable (permission/accuracy/service)"
   },
-  "ihub.err8": {
+  "uwb.err8": {
     "ko": "정지 중 start()",
     "ja": "停止中の start()",
     "en": "start() while stopping"
   },
-  "ihub.err9": {
+  "uwb.err9": {
     "ko": "NSBluetoothAlwaysUsageDescription 누락",
     "ja": "NSBluetoothAlwaysUsageDescription 欠落",
     "en": "NSBluetoothAlwaysUsageDescription missing"
   },
-  "ihub.err10": {
+  "uwb.err10": {
     "ko": "서버가 라이선스 거부",
     "ja": "サーバーがライセンスを拒否",
     "en": "license rejected by server"
   },
-  "ihub.err11": {
+  "uwb.err11": {
     "ko": "라이선스 서버 연결 실패",
     "ja": "ライセンスサーバー接続失敗",
     "en": "license server unreachable"
   },
-  "ihub.err12": {
+  "uwb.err12": {
     "ko": "기기 DL-TDoA 미지원",
     "ja": "端末が DL-TDoA 非対応",
     "en": "device does not support DL-TDoA"
   },
-  "ihub.paramsIgnored": {
+  "uwb.paramsIgnored": {
     "ko": "⚠️ 콘솔 존 판정 파라미터는 이 경로에서 쓰이지 않습니다 (엔진이 자체 지오펜스로 판정) — 해당 존 %d개",
     "ja": "⚠️ コンソールのゾーン判定パラメータはこの経路では使われません（エンジンが自前のジオフェンスで判定）— 該当ゾーン %d件",
     "en": "⚠️ Console zone judging parameters are unused on this path (the engine judges with its own geofences) — %d zone(s) affected"
   },
-  "ihub.locationAsk": {
+  "uwb.locationAsk": {
     "ko": "위치 권한을 요청합니다 — 측위에 필수입니다",
     "ja": "位置情報の許可を求めます — 測位に必須です",
     "en": "Requesting location permission — required for positioning"
   },
-  "ihub.locationDenied": {
+  "uwb.locationDenied": {
     "ko": "❌ 위치 권한이 없어 측위를 시작하지 못했습니다. 설정 앱에서 허용해야 합니다",
     "ja": "❌ 位置情報の許可がないため測位を開始できません。設定アプリで許可してください",
     "en": "❌ Cannot start positioning without location permission. Allow it in Settings"
