@@ -25,19 +25,15 @@ import PackageDescription
 let package = Package(
     name: "OneS1ght",
     platforms: [
-        // ⚠️ 지금 이 값으로는 **iOS 빌드가 되지 않는다** (2026-09-08 실측).
-        //    swift build(맥)는 통과한다 — gpi-ihub 가 iOS 조건부라 맥에서는 링크되지 않기 때문.
-        //    iOS 로 빌드하면 SwiftPM 이 해석 단계에서 막는다:
+        // 최소 iOS 18. gpi-ihub 1.0.0 은 매니페스트가 .iOS("27.0") 이라 iOS 18~26 에서
+        // SwiftPM 이 해석 단계에서 막았고, 바이너리도 minos 27 로 구워져 dyld 가
+        // _OBJC_CLASS_$_NIDLTDOAConfiguration 을 못 찾아 앱이 통째로 죽었다(2026-09-08 실측).
+        // 1.0.1 이 둘 다 고쳤다 — 매니페스트 18.0, 바이너리 minos 18.0, NIDLTDOA* 는 weak 링크.
         //
-        //      error: The package product 'gpi-ihub-product' requires minimum platform
-        //             version 27.0 for the iOS platform, but this target supports 15.0
-        //
-        //    조건부 의존(.when)은 OS 종류만 고를 수 있고 버전으로는 못 고른다. 코드에
-        //    #available 가드를 아무리 두어도 이 검사는 그 앞에서 끝난다.
-        //    → iOS 를 빌드하려면 이 줄을 .iOS("27.0") 로 되돌려야 한다.
-        //      Geoplan 이 ihub 배포 타깃을 낮춰 재빌드해 주면 그때 .v15 가 실제로 통한다.
-        //    ↓ .v15 로 바꾸면 위 에러가 난다. 확인하려면 이 줄과 아래 줄을 맞바꿔라.
-        // .iOS(.v15),
+        // ⚠️ 그래도 **빌드에는 iOS 27 SDK(Xcode 27)가 필요하다.** 우리 소스가
+        //    NIDLTDOAConfiguration 같은 iOS 27 타입을 직접 참조하는데, iOS 26 SDK 에는 그
+        //    타입 자체가 없어 #available 가드로도 컴파일을 통과시킬 수 없다.
+        //    런타임 가드(#available)와 빌드용 SDK 는 서로를 대체하지 못한다 — 둘 다 필요하다.
         .iOS("18.0"),
         .macOS(.v14),          // swift test를 맥에서 돌리기 위함
     ],
