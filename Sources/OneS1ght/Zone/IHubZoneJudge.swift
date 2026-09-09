@@ -70,12 +70,14 @@ final class IHubZoneJudge {
     /// PRM 경로에서는 이 값들이 실제 판정에 들어갔다. ihub 경로에서는 엔진이 자기 서버의
     /// 지오펜스로 판정하므로 **콘솔에서 무엇을 넣든 판정이 변하지 않는다.** 조용히 두면
     /// "값을 바꿨는데 왜 그대로냐"를 현장에서 며칠씩 파게 된다 — 그래서 한 번 말해 준다.
+    /// ⚠️ "값을 손댔는지"로 거르지 않는다. 서버에서 오는 존은 미설정이어도 `inDist` 가
+    ///    기본값 3.0 으로 채워져 내려와(GeospaceClient.RawZone), 설정한 것과 구분되지 않는다.
+    ///    구분되는 척하면 멀쩡한 현장에서 매번 울린다 — 그래서 값은 보지 않고,
+    ///    존이 있을 때 **경로의 성질**을 한 번만 말한다.
     private func warnIfJudgingParamsIgnored() {
-        guard !warnedParamsIgnored else { return }
-        let tuned = zones.filter { $0.inDist > 0 || $0.inCount > 0 || $0.outPeriod > 0 }
-        guard !tuned.isEmpty else { return }
+        guard !warnedParamsIgnored, !zones.isEmpty else { return }
         warnedParamsIgnored = true
-        onLog?(.warn, SdkLocalized.format("ihub.paramsIgnored", tuned.count))
+        onLog?(.warn, SdkLocalized.format("ihub.paramsIgnored", zones.count))
     }
 
     // MARK: - ihub 영역 이벤트

@@ -218,7 +218,9 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     /// gpi-ihub 오류 코드(README §5) → SDK E-코드.
     /// `nil` 은 "로그로만 남길 것" — 2(중복 start)·8(정지 중 start)은 호출 순서 문제라
     /// 현장 진단 가치가 없고, 코드로 올리면 재시도마다 쌓여 진짜 오류를 덮는다.
-    static func sdkCode(forHubError code: Int) -> SdkErrorCode? {
+    /// 상태를 읽지 않는 순수 변환이라 `nonisolated` 다 — 클래스가 `@MainActor` 라는 이유로
+    /// 격리에 묶이면 어느 큐에서 온 오류든 메인으로 건너와야 코드를 매길 수 있게 된다.
+    nonisolated static func sdkCode(forHubError code: Int) -> SdkErrorCode? {
         switch code {
         case 1:  return .invalidKey           // 라이선스 미등록
         case 3:  return .permissionDenied     // Bluetooth 불가(꺼짐·권한·미지원)
