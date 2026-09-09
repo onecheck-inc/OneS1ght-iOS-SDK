@@ -96,6 +96,15 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     /// 콘솔 로케이터 — ihub 가 앵커를 자기 서버에서 받으므로 진단 '등록' 기준으로만 쓴다.
     private var anchors: [Int: simd_double3] = [:]
 
+    /// 층 미탐지 감시. 측위를 켰는데 이 시간이 지나도록 층이 안 잡히면 E3007 을 남긴다.
+    /// ihub 는 층을 못 찾아도 오류를 주지 않고 계속 탐색만 한다 — 앱에서는 "그냥 좌표가
+    /// 안 나온다"로만 보여서, 이 감시가 없으면 BLE 미수신이 아무 흔적도 남기지 않는다.
+    private var floorWatchTask: Task<Void, Never>?
+    static let floorDetectDelay: TimeInterval = 20
+
+    /// 층 불일치는 한 번만 알린다 — 층이 유지되는 동안 반복하면 로그가 덮인다.
+    private var warnedFloorMismatch: Int64?
+
     private let hub = IntelligenceHub.getInstance()
     private let bridge = ListenerBridge()
     private let judge = IHubZoneJudge()
@@ -111,6 +120,7 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
             self.forwardToSDK(event)
         }
         judge.onLog = { [weak self] level, msg in self?.addLog(level, msg) }
+        judge.onReport = { [weak self] code, ctx in self?.reportToSDK(code, ctx) }
         addLog(SdkLocalized.format("ihub.ready", hub.getLibraryVersion(),
                                    SdkLocalized.text(Self.isSupported ? "ihub.supported"
                                                                       : "ihub.unsupported")))
@@ -179,13 +189,45 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     }
 
     /// 프로토콜용 진단 — 코어(SessionCoordinator)가 읽어 로그 코드로 남긴다.
+    ///
+    /// ⚠️ `canAttributePerAnchor: false` 를 반드시 실어 보낸다. 이 값을 빼면 코어의
+    ///    수신 점검이 `missing.isEmpty`·`matched >= 3` 두 조건에 걸려 **영원히 아무것도
+    ///    보고하지 않는다** — 좌표가 안 나오는데 로그가 한 줄도 안 남는 상태가 된다.
     public var positioningDiagnostic: PositioningDiagnostic? {
         let d = diagnostic
         return PositioningDiagnostic(registeredCount: d.registered.count,
                                      receivedCount: d.received.count,
                                      matchedCount: d.matched.count,
                                      missingAddresses: d.missing,
-                                     hasFix: d.hasFix)
+                                     hasFix: d.hasFix,
+                                     canAttributePerAnchor: false)
+    }
+
+    // MARK: - 진단 코드 보고
+
+    /// 엔진 고유의 실패를 SDK 표준 경로(onDebugLog + 서버 E-코드)로 올린다.
+    /// 화면 로그(addLog)만으로는 콘솔 로그 분석기에 한 줄도 안 올라간다.
+    private func reportToSDK(_ code: SdkErrorCode, _ context: String = "") {
+        delegate?.provider(self, didReport: code, context: context)
+    }
+
+    /// gpi-ihub 오류 코드(README §5) → SDK E-코드.
+    /// `nil` 은 "로그로만 남길 것" — 2(중복 start)·8(정지 중 start)은 호출 순서 문제라
+    /// 현장 진단 가치가 없고, 코드로 올리면 재시도마다 쌓여 진짜 오류를 덮는다.
+    static func sdkCode(forHubError code: Int) -> SdkErrorCode? {
+        switch code {
+        case 1:  return .invalidKey           // 라이선스 미등록
+        case 3:  return .permissionDenied     // Bluetooth 불가(꺼짐·권한·미지원)
+        case 4:  return .locatorsMissing      // 그 층의 앵커 정보 없음
+        case 5:  return .uwbSessionFailed     // DL-TDoA 세션 오류
+        case 6:  return .areaJudgeFailed      // 영역 판정 오류
+        case 7:  return .permissionDenied     // 위치 불가(권한·정밀도·서비스 꺼짐)
+        case 9:  return .permissionDenied     // Info.plist BT 키 누락
+        case 10: return .invalidKey           // 서버가 라이선스 거부
+        case 11: return .network              // 라이선스 서버 미도달
+        case 12: return .deviceNotSupported   // DL-TDoA 미지원 기기
+        default: return nil                   // 2 · 8 · 미지의 코드
+        }
     }
 
     // MARK: - HubListener 이벤트 (브리지가 메인으로 넘긴 뒤)
@@ -198,6 +240,7 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     fileprivate func hubStopped() {
         let selfStopped = hubPhase != .stopping     // stopDetection() 을 부르지 않았는데 멈춤
         hubPhase = .idle
+        floorWatchTask?.cancel(); floorWatchTask = nil
         hub.setListener(nil)                        // README: stop() 직후가 아니라 여기서 해제
         if isRunning {
             isRunning = false
@@ -215,8 +258,22 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     fileprivate func trackingStarted(_ fid: Int64) {
         hubPhase = .tracking
         hubFloorId = fid
+        floorWatchTask?.cancel(); floorWatchTask = nil      // 층을 찾았다 — 미탐지 감시 해제
         addLog(.info, SdkLocalized.format("ihub.trackingStart", fid))
+        checkFloorAgreement(fid)
         onHubFloor?(fid)
+    }
+
+    /// 엔진이 잡은 층 ↔ 콘솔이 지정한 층 대조.
+    ///
+    /// 서버로 나가는 `floor_id` 는 엔진 값이다(currentFloorIdString). 두 값이 어긋난 채로
+    /// 두면 좌표·존 이벤트가 콘솔이 모르는 층에 쌓여, 화면에서는 "데이터가 없다"로만 보인다.
+    /// 콘솔 층이 아직 안 정해졌으면(층 자동선택 전) 대조하지 않는다 — 그건 불일치가 아니다.
+    private func checkFloorAgreement(_ fid: Int64) {
+        guard !floorId.isEmpty, floorId != String(fid) else { return }
+        guard warnedFloorMismatch != fid else { return }
+        warnedFloorMismatch = fid
+        reportToSDK(.floorIdMismatch, "engine=\(fid) console=\(floorId)")
     }
 
     fileprivate func trackingStopped(_ fid: Int64) {
@@ -251,6 +308,10 @@ public final class IHubPositioningProvider: NSObject, ObservableObject {
     fileprivate func errored(_ code: Int, _ msg: String) {
         addLog(.error, SdkLocalized.format("ihub.error", code, msg, Self.describe(code)))
         onHubError?(code, msg)
+        // 화면 로그에 더해 E-코드로도 올린다 — 관리자는 콘솔 로그 분석기에서 이걸 본다.
+        if let sdk = Self.sdkCode(forHubError: code) {
+            reportToSDK(sdk, "ihub=\(code) \(msg)")
+        }
         // 시작 자체가 안 된 경우(1·9·11·12)는 onStopped 가 오지 않는다 — 여기서 되돌린다.
         // 3·7·10 은 구동 중이면 ihub 가 스스로 멈추고 onStopped 가 뒤따른다(hubStopped 에서 처리).
         if hubPhase == .starting, [1, 9, 11, 12].contains(code) {
@@ -347,10 +408,24 @@ extension IHubPositioningProvider: PositioningProvider {
         latestPosition = nil
         judge.reset()
         isRunning = true
+        warnedFloorMismatch = nil
         addLog(.info, SdkLocalized.format("ihub.positioningOn",
                                           hubFloorId.map(String.init) ?? "-"))
+        startFloorWatch()
         // 입장 트리거 — SDK 가 buildings/floors 로드를 시작하게
         delegate?.provider(self, didEnter: buildingId)
+    }
+
+    /// 층 미탐지 감시 — 이미 층이 잡혀 있으면 걸지 않는다.
+    private func startFloorWatch() {
+        floorWatchTask?.cancel()
+        guard hubFloorId == nil else { return }
+        floorWatchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.floorDetectDelay * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.isRunning, self.hubFloorId == nil else { return }
+            self.reportToSDK(.floorNotDetected,
+                             "phase=\(self.hubPhase.rawValue) after=\(Int(Self.floorDetectDelay))s")
+        }
     }
 
     /// 측위 종료 — 좌표 표시·수집·판정을 끄고 ihub 도 함께 멈춘다.
@@ -358,6 +433,7 @@ extension IHubPositioningProvider: PositioningProvider {
         guard isRunning else { return }
         isRunning = false
         latestPosition = nil
+        floorWatchTask?.cancel(); floorWatchTask = nil
         addLog(.info, SdkLocalized.format("ihub.positioningOff", measurementCount))
         stopDetection()
     }

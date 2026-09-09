@@ -50,13 +50,25 @@ public struct PositioningDiagnostic: Equatable {
     /// 측위 엔진이 좌표를 실제로 내고 있는가
     public let hasFix: Bool
 
+    /// **앵커 하나하나를 구분해서 답할 수 있는가.**
+    ///
+    /// ⚠️ 이 값이 없으면 진단이 조용히 죽는다. 앵커별 상태를 못 주는 엔진(gpi-ihub)은
+    /// `missingAddresses` 를 항상 비우고 `matchedCount` 를 0 으로 둘 수밖에 없는데,
+    /// 그러면 "미수신이 있으면 알린다"·"신호는 잡히는데 좌표가 없으면 알린다" 두 조건이
+    /// **구조적으로 성립 불가**가 되어 좌표가 안 나와도 아무 로그가 안 남는다.
+    /// 그래서 "모른다"를 0 으로 위장하지 않고 이 플래그로 드러낸다 —
+    /// 읽는 쪽(SessionCoordinator)이 질문 자체를 바꿔 물어야 한다.
+    public let canAttributePerAnchor: Bool
+
     public init(registeredCount: Int, receivedCount: Int, matchedCount: Int,
-                missingAddresses: [Int], hasFix: Bool) {
+                missingAddresses: [Int], hasFix: Bool,
+                canAttributePerAnchor: Bool = true) {
         self.registeredCount = registeredCount
         self.receivedCount = receivedCount
         self.matchedCount = matchedCount
         self.missingAddresses = missingAddresses
         self.hasFix = hasFix
+        self.canAttributePerAnchor = canAttributePerAnchor
     }
 
     /// 로그에 실을 한 줄. 주소는 등록된 표기(0xABCD)를 그대로 쓴다 —
@@ -101,4 +113,16 @@ public protocol PositioningProviderDelegate: AnyObject {
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date)
     /// 입장 트리거(빌딩 진입 감지) — SDK가 buildings/floors 로드 시작
     func provider(_ p: PositioningProvider, didEnter buildingId: String)
+
+    /// 엔진이 진단 코드를 올린다 — SDK 가 onDebugLog + 서버 로그(E-코드)로 옮긴다.
+    ///
+    /// 어댑터가 직접 코드를 매길 수 있어야 하는 이유: 엔진 고유의 실패(라이선스 거부·
+    /// BLE 꺼짐·층 미탐지)는 코어가 밖에서 볼 방법이 없다. 화면 로그로만 남기면
+    /// 콘솔 로그 분석기에 한 줄도 안 올라가 "현장에서 안 됐다"는 말만 남는다.
+    /// 선택 채택 — 기본 no-op 이라 Mock 은 구현하지 않아도 된다.
+    func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String)
+}
+
+public extension PositioningProviderDelegate {
+    func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String) {}
 }

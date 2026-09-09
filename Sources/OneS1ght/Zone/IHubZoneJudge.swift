@@ -32,6 +32,11 @@ final class IHubZoneJudge {
     var onEvent: ((ZoneEvent) -> Void)?
     /// 진단 로그 훅
     var onLog: ((LogLevel, String) -> Void)?
+    /// 진단 코드 훅 — 화면 로그로 끝내지 않고 서버(E-코드)까지 올릴 것만 여기로 보낸다.
+    var onReport: ((SdkErrorCode, String) -> Void)?
+
+    /// 판정 파라미터 무력화 경고는 층당 1회만 — 존을 갈아끼울 때마다 반복하면 로그가 덮인다.
+    private var warnedParamsIgnored = false
 
     private var nameToZone: [String: Zone] = [:]
     private var activeZoneId: String?
@@ -57,6 +62,20 @@ final class IHubZoneJudge {
             while nameToZone[key] != nil { key = "\(z.name)#\(n)"; n += 1 }
             nameToZone[key] = z
         }
+        warnIfJudgingParamsIgnored()
+    }
+
+    /// 콘솔에서 판정 파라미터를 손댔는데 그 값이 아무 데도 안 쓰이는 상황을 드러낸다.
+    ///
+    /// PRM 경로에서는 이 값들이 실제 판정에 들어갔다. ihub 경로에서는 엔진이 자기 서버의
+    /// 지오펜스로 판정하므로 **콘솔에서 무엇을 넣든 판정이 변하지 않는다.** 조용히 두면
+    /// "값을 바꿨는데 왜 그대로냐"를 현장에서 며칠씩 파게 된다 — 그래서 한 번 말해 준다.
+    private func warnIfJudgingParamsIgnored() {
+        guard !warnedParamsIgnored else { return }
+        let tuned = zones.filter { $0.inDist > 0 || $0.inCount > 0 || $0.outPeriod > 0 }
+        guard !tuned.isEmpty else { return }
+        warnedParamsIgnored = true
+        onLog?(.warn, SdkLocalized.format("ihub.paramsIgnored", tuned.count))
     }
 
     // MARK: - ihub 영역 이벤트
@@ -67,8 +86,11 @@ final class IHubZoneJudge {
     ///   - at: 발생 시각 (테스트용 시계 주입)
     func handleAreaEvent(inOut: String, areaName: String, at: Date = Date()) {
         guard let zone = nameToZone[areaName] else {
+            // 이름이 유일한 연결고리라 여기가 끊기면 그 영역의 시책이 통째로 안 돈다.
+            // 화면 로그로만 남기면 현장에서만 보이고 관리자는 영영 모른다 → E-코드로도 올린다.
             if warnedNames.insert(areaName).inserted {
                 onLog?(.warn, SdkLocalized.format("ihub.areaUnmapped", areaName, zones.count))
+                onReport?(.zoneMappingFailed, "area=\(areaName) consoleZones=\(zones.count)")
             }
             return
         }
