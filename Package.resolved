@@ -19,6 +19,15 @@
       }
     },
     {
+      "identity" : "gpi-ihub",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Geoplan-Mobile/gpi-ihub",
+      "state" : {
+        "revision" : "6ad8326e202f156cbbb65a40c3b7c50eb5d1fb54",
+        "version" : "1.0.0"
+      }
+    },
+    {
       "identity" : "gpi-logger",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Geoplan-Mobile/gpi-logger",

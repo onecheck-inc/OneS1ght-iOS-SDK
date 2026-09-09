@@ -328,5 +328,170 @@
     "ko": "⚠️ 구역 %d개를 넣었는데 판정 엔진이 시작되지 않았습니다 — 좌표를 버립니다",
     "ja": "⚠️ エリアを %d 件投入しましたが判定エンジンが開始されていません — 座標を破棄します",
     "en": "⚠️ %d zones were injected but the judging engine did not start — dropping coordinates"
+  },
+  "ihub.ready": {
+    "ko": "gpi-ihub %@ 준비됨 · DL-TDoA %@",
+    "ja": "gpi-ihub %@ 準備完了 · DL-TDoA %@",
+    "en": "gpi-ihub %@ ready · DL-TDoA %@"
+  },
+  "ihub.supported": {
+    "ko": "지원",
+    "ja": "対応",
+    "en": "supported"
+  },
+  "ihub.unsupported": {
+    "ko": "미지원",
+    "ja": "非対応",
+    "en": "unsupported"
+  },
+  "ihub.noLicense": {
+    "ko": "⚠️ ihub 라이선스 키가 없습니다 — initialize(geoSdkKey:) 를 확인하세요",
+    "ja": "⚠️ ihub ライセンスキーがありません — initialize(geoSdkKey:) を確認してください",
+    "en": "⚠️ No ihub license key — check initialize(geoSdkKey:)"
+  },
+  "ihub.starting": {
+    "ko": "▶︎ ihub 시작 (라이선스 %@… · 서버 검증 최대 10초)",
+    "ja": "▶︎ ihub 開始 (ライセンス %@… · サーバー検証 最大10秒)",
+    "en": "▶︎ Starting ihub (license %@… · server check up to 10s)"
+  },
+  "ihub.started": {
+    "ko": "라이선스 통과 — 층 탐색(BLE) 시작",
+    "ja": "ライセンス通過 — フロア探索(BLE)開始",
+    "en": "License accepted — floor discovery (BLE) started"
+  },
+  "ihub.stopped": {
+    "ko": "ihub 정지됨",
+    "ja": "ihub 停止",
+    "en": "ihub stopped"
+  },
+  "ihub.stoppedSelf": {
+    "ko": "⚠️ ihub 가 스스로 정지했습니다 (자동 재개 없음)",
+    "ja": "⚠️ ihub が自ら停止しました (自動再開なし)",
+    "en": "⚠️ ihub stopped on its own (no auto-resume)"
+  },
+  "ihub.trackingStart": {
+    "ko": "층 %lld 추적 시작 — UWB 측위",
+    "ja": "フロア %lld 追跡開始 — UWB測位",
+    "en": "Tracking floor %lld — UWB positioning started"
+  },
+  "ihub.trackingStop": {
+    "ko": "층 %lld 이탈 — 다시 탐색",
+    "ja": "フロア %lld から離脱 — 再探索",
+    "en": "Left floor %lld — searching again"
+  },
+  "ihub.positioningOn": {
+    "ko": "▶︎ 측위 시작 — 좌표 수집·존 판정 가동 (ihub 층 %@)",
+    "ja": "▶︎ 測位開始 — 座標収集・エリア判定 稼働 (ihub フロア %@)",
+    "en": "▶︎ Positioning on — collecting coordinates, zone events live (ihub floor %@)"
+  },
+  "ihub.positioningOff": {
+    "ko": "■ 측위 종료 (좌표 %d건)",
+    "ja": "■ 測位終了 (座標 %d件)",
+    "en": "■ Positioning off (%d fixes)"
+  },
+  "ihub.stopRequested": {
+    "ko": "■ ihub 정지 요청 (좌표 %d건)",
+    "ja": "■ ihub 停止要求 (座標 %d件)",
+    "en": "■ ihub stop requested (%d fixes)"
+  },
+  "ihub.area": {
+    "ko": "영역 %@ \"%@\" · 층 %lld (ihub 판정)",
+    "ja": "エリア %@ \"%@\" · フロア %lld (ihub判定)",
+    "en": "Area %@ \"%@\" · floor %lld (judged by ihub)"
+  },
+  "ihub.areaUnmapped": {
+    "ko": "⚠️ ihub 영역 \"%@\" 가 콘솔 구역 %d개 어디에도 없습니다 — 이벤트를 보내지 않습니다 (이름을 맞추세요)",
+    "ja": "⚠️ ihub エリア \"%@\" がコンソールのエリア %d件 に見つかりません — イベントを送信しません (名称を一致させてください)",
+    "en": "⚠️ ihub area \"%@\" matches none of %d console zones — event dropped (align the names)"
+  },
+  "ihub.areaUnknown": {
+    "ko": "⚠️ 알 수 없는 영역 상태 \"%@\" (영역 \"%@\") — 무시합니다",
+    "ja": "⚠️ 不明なエリア状態 \"%@\" (エリア \"%@\") — 無視します",
+    "en": "⚠️ Unknown area status \"%@\" (area \"%@\") — ignored"
+  },
+  "ihub.zonesApply": {
+    "ko": "콘솔 구역 %d개 주입 (로케이터 %d대는 진단용 — ihub 는 자기 서버 앵커를 쓴다)",
+    "ja": "コンソールのエリア %d件 を投入 (ロケーター %d台 は診断用 — ihub は自社サーバーのアンカーを使用)",
+    "en": "Applied %d console zones (%d locators are diagnostics only — ihub uses its own anchors)"
+  },
+  "ihub.fullAccuracy": {
+    "ko": "정밀 위치가 아닙니다 — 임시 정밀 승격을 요청합니다",
+    "ja": "正確な位置情報ではありません — 一時的な精度向上を要求します",
+    "en": "Not full accuracy — requesting temporary full accuracy"
+  },
+  "ihub.diag": {
+    "ko": "ihub %@ · 층 %@ · 좌표 %d건 · 콘솔 로케이터 %d대",
+    "ja": "ihub %@ · フロア %@ · 座標 %d件 · コンソール ロケーター %d台",
+    "en": "ihub %@ · floor %@ · %d fixes · %d console locators"
+  },
+  "ihub.error": {
+    "ko": "오류 %d: %@ — %@",
+    "ja": "エラー %d: %@ — %@",
+    "en": "Error %d: %@ — %@"
+  },
+  "ihub.errUnknown": {
+    "ko": "알 수 없는 코드",
+    "ja": "不明なコード",
+    "en": "unknown code"
+  },
+  "ihub.err1": {
+    "ko": "라이선스 미등록",
+    "ja": "ライセンス未登録",
+    "en": "license not set"
+  },
+  "ihub.err2": {
+    "ko": "이미 측위 중",
+    "ja": "すでに測位中",
+    "en": "already positioning"
+  },
+  "ihub.err3": {
+    "ko": "Bluetooth 사용 불가",
+    "ja": "Bluetooth 使用不可",
+    "en": "Bluetooth unavailable"
+  },
+  "ihub.err4": {
+    "ko": "해당 층 앵커 정보 없음 (재시도됨)",
+    "ja": "該当フロアのアンカー情報なし (再試行)",
+    "en": "no anchors for this floor (retried)"
+  },
+  "ihub.err5": {
+    "ko": "DL-TDoA 세션 오류",
+    "ja": "DL-TDoA セッションエラー",
+    "en": "DL-TDoA session error"
+  },
+  "ihub.err6": {
+    "ko": "영역 판정 오류",
+    "ja": "エリア判定エラー",
+    "en": "area judging error"
+  },
+  "ihub.err7": {
+    "ko": "위치 사용 불가 (권한·정밀·서비스)",
+    "ja": "位置情報 使用不可 (権限・精度・サービス)",
+    "en": "location unavailable (permission/accuracy/service)"
+  },
+  "ihub.err8": {
+    "ko": "정지 중 start()",
+    "ja": "停止中の start()",
+    "en": "start() while stopping"
+  },
+  "ihub.err9": {
+    "ko": "NSBluetoothAlwaysUsageDescription 누락",
+    "ja": "NSBluetoothAlwaysUsageDescription 欠落",
+    "en": "NSBluetoothAlwaysUsageDescription missing"
+  },
+  "ihub.err10": {
+    "ko": "서버가 라이선스 거부",
+    "ja": "サーバーがライセンスを拒否",
+    "en": "license rejected by server"
+  },
+  "ihub.err11": {
+    "ko": "라이선스 서버 연결 실패",
+    "ja": "ライセンスサーバー接続失敗",
+    "en": "license server unreachable"
+  },
+  "ihub.err12": {
+    "ko": "기기 DL-TDoA 미지원",
+    "ja": "端末が DL-TDoA 非対応",
+    "en": "device does not support DL-TDoA"
   }
 }
