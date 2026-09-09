@@ -199,6 +199,29 @@ public enum SdkDefaults {
     public static let maxRateHz = 100
 }
 
+/// 콘솔이 내려주는 관련 키 — SDK 키 하나로 받는다.
+///
+/// ⚠️ **전부 옵셔널이다.** 서버는 채우지 못한 키를 null 로 두고 200 을 준다(부분 실패).
+/// 하나를 필수로 만들면 그 키가 빈 테넌트에서 초기화가 통째로 실패한다 —
+/// 2026-08-21 의 remote_config 사고와 같은 모양이다.
+public struct ResSdkConfig: Codable {
+    public let tenant_code: String?
+    public let google_map_key: String?
+    public let geo_sdk_key: String?
+    public let geo_partner_key: String?
+    public let geo_base_url: String?
+
+    public init(tenant_code: String? = nil, google_map_key: String? = nil,
+                geo_sdk_key: String? = nil, geo_partner_key: String? = nil,
+                geo_base_url: String? = nil) {
+        self.tenant_code = tenant_code
+        self.google_map_key = google_map_key
+        self.geo_sdk_key = geo_sdk_key
+        self.geo_partner_key = geo_partner_key
+        self.geo_base_url = geo_base_url
+    }
+}
+
 /// GET /positioning/buildings 응답
 public struct FloorRef: Codable {
     public let floor_id: String             // GeoSpace 층 UUID — 이게 키

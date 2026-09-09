@@ -76,6 +76,12 @@ public final class ApiClient {
         try await post("/auth/verify", body: req)
     }
 
+    /// 관련 키 조회 — Google Maps · GeoSpace 모바일/파트너 키와 GeoSpace 주소.
+    /// 실패해도 초기화를 막지 않는다(호출부가 폴백한다).
+    public func config() async throws -> ResSdkConfig {
+        try await get("/config")
+    }
+
     /// ② GET /positioning/buildings — 건물·층 목록 (측위 활성화 시 1회)
     public func buildings() async throws -> ResBuildings {
         try await get("/positioning/buildings")
