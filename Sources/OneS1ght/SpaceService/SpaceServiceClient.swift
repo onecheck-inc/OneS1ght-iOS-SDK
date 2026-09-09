@@ -1,13 +1,13 @@
 //
-//  GeospaceClient.swift
+//  SpaceServiceClient.swift
 //  OneS1ght
 //
 //  ⚠️ SDK 내부 전용 — 호스트 앱은 이 타입을 모른다.
-//     고객사는 initialize(sdkKey:) 로 SDK 키 하나만 넘긴다 — GeoSpace 모바일 키는 콘솔이
+//     고객사는 initialize(sdkKey:) 로 SDK 키 하나만 넘긴다 — 공간 서비스 모바일 키는 콘솔이
 //     정본이라 SDK 가 /config 로 받아 온다(geoSdkKey 인자는 콘솔이 답하지 못할 때의 폴백으로만
 //     남은 deprecated 인자). 앵커·세션·도면·존이 어디서 오는지는 SDK 사정으로 감춘다.
 //
-//  GeoSpace(geoplan.io) 연동 — 한 호스트, 두 키.
+//  공간 서비스 연동 — 한 호스트, 두 키.
 //  · /api/m/floors/{id}/plan       (gsk_, X-SDK-Key)    → 도면 이미지(base64) + widthM + origin
 //  · /api/m/floors/{id}/anchors    (gsk_, X-SDK-Key)    → 앵커(도면 로컬 미터 0~13)
 //  · 존은 콘솔(ock_)에서 — 파트너 키(gpk_)는 존 쓰기 권한이 있어 클라이언트 배포 금지
@@ -19,10 +19,10 @@ import Foundation
 import simd
 
 @MainActor
-final class GeospaceClient {
+final class SpaceServiceClient {
 
     /// 호스트가 initialize 로 넘긴 키 묶음
-    struct Keys { let sdk: String; let geospace: String }
+    struct Keys { let sdk: String; let space: String }
     private let keys: Keys
     /// session 은 테스트에서 URLProtocol 스텁을 물리기 위한 주입점이다(ApiClient 와 같은 방식).
     init(keys: Keys, session: URLSession = .shared) {
@@ -44,14 +44,14 @@ final class GeospaceClient {
 
     // MARK: - 공개 진입점
 
-    /// 건물 목록 — 콘솔(ock_)이 기본, 실패 시 GeoSpace 폴백. 층은 담지 않는다.
+    /// 건물 목록 — 콘솔(ock_)이 기본, 실패 시 공간 서비스 폴백. 층은 담지 않는다.
     /// floorCount 는 서버가 응답에 실어줄 때까지 nil (floor_count TBD).
     func loadBuildings() async throws -> [Building] {
         do {
             let base = ApiClient.defaultBaseURL.absoluteString
             let list: ConsoleBuildingsResponse = try await consoleGet("\(base)/positioning/buildings")
             let out = list.buildings
-                .filter { !$0.buildingId.hasPrefix("sim-") }   // GeoSpace 미연동 sim 매장 제외
+                .filter { !$0.buildingId.hasPrefix("sim-") }   // 공간 서비스 미연동 sim 매장 제외
                 .map { Building(id: $0.buildingId, name: $0.name, floorCount: $0.floorCount) }
             guard !out.isEmpty else { throw GsError.decode }
             return out
@@ -69,7 +69,7 @@ final class GeospaceClient {
     /// 한참 뒤에 뜬다"의 원인이다. 이름은 이 응답이 이미 주고 있었고, 도면 유무도 서버가
     /// 실어 주게 됐다. 도면은 실제로 열 층 하나만 floor(단건)에서 받으면 된다.
     ///
-    /// 콘솔 층이 비면(존 0개 등) GeoSpace 건물 트리로 우회한다 — 그쪽도 이름·도면 유무를 준다.
+    /// 콘솔 층이 비면(존 0개 등) 공간 서비스 건물 트리로 우회한다 — 그쪽도 이름·도면 유무를 준다.
     func loadFloors(buildingId: String) async throws -> [Floor] {
         let base = ApiClient.defaultBaseURL.absoluteString
         if let fl: ConsoleFloorsResponse =
@@ -81,7 +81,7 @@ final class GeospaceClient {
                       hasPlan: $0.hasPlan ?? false)
             }
         }
-        // 콘솔 미러가 비었을 때만 — GeoSpace 건물 트리도 이름·도면 유무를 함께 준다.
+        // 콘솔 미러가 비었을 때만 — 공간 서비스 건물 트리도 이름·도면 유무를 함께 준다.
         let res: BuildingsResponse = try await get("api/m/buildings")
         let floors = res.buildings.first { $0.buildingId == buildingId }?.floors ?? []
         return floors.map { Floor(id: $0.floorId, name: $0.floorName, hasPlan: $0.hasPlan) }
@@ -108,7 +108,7 @@ final class GeospaceClient {
                      widthM: img.widthM, heightM: heightM)
     }
 
-    /// 로케이터 + 세션ID — 측위 시작에 필요한 전부. GeoSpace 앵커 API 에서 온다.
+    /// 로케이터 + 세션ID — 측위 시작에 필요한 전부. 공간 서비스 앵커 API 에서 온다.
     /// ⚠️ **던지지 않는다.** 로케이터를 못 받아도 층은 열려야 한다 — 도면·존은 앵커와
     /// 무관하게 이미 받아 온 것이고, 지도를 통째로 지울 이유가 없다. 못 받으면 빈 목록이라
     /// `positioningReady` 가 거짓이 되어 "측위 불가" 로 자연스럽게 떨어진다.
@@ -167,10 +167,10 @@ final class GeospaceClient {
     private var planCache: [String: ConsolePlanResponse] = [:]                 // floorId → plan
     private var anchorCache: [String: (at: Date, res: AnchorResponse)] = [:]   // floorId → 앵커 (TTL 3분)
 
-    /// 도면 — console 프록시(§6.4b) 우선(+세션 캐시), 실패 시 GeoSpace 직행 폴백.
+    /// 도면 — console 프록시(§6.4b) 우선(+세션 캐시), 실패 시 공간 서비스 직행 폴백.
     /// **도면이 없는 층이면 nil.** 던지지 않는다 — loadFloorState 주석 참고.
     ///
-    /// 콘솔이 `has_plan: false` 라고 **명시**하면 거기서 끝낸다. 예전에는 그때도 GeoSpace
+    /// 콘솔이 `has_plan: false` 라고 **명시**하면 거기서 끝낸다. 예전에는 그때도 공간 서비스
     /// 직행으로 폴백했는데, 그쪽 응답 타입은 이미지가 옵셔널이 아니라 디코드에서 던졌다 —
     /// "도면이 없다"는 정상 사실이 통신 오류로 둔갑하던 자리다.
     /// 콘솔 **조회 자체가 실패**했을 때만(오래된 서버·네트워크) 폴백을 탄다. 그 폴백마저
@@ -207,7 +207,7 @@ final class GeospaceClient {
         dec.keyDecodingStrategy = .convertFromSnakeCase
         return try dec.decode(R.self, from: data)
     }
-    /// 앵커 — GeoSpace 유일 잔존 (console 미제공, §10). TTL 3분 캐시로 층 재방문 시 즉시.
+    /// 앵커 — 공간 서비스 유일 잔존 (console 미제공, §10). TTL 3분 캐시로 층 재방문 시 즉시.
     private func getAnchors(_ floorId: String) async throws -> AnchorResponse {
         if let c = anchorCache[floorId], Date().timeIntervalSince(c.at) < 180 { return c.res }
         let res: AnchorResponse = try await get("api/m/floors/\(floorId)/anchors")
@@ -269,7 +269,7 @@ final class GeospaceClient {
     /// 존 원시 데이터 (폴리곤 단위 미정 — normalizeZones 로 미터 정규화)
     struct RawZone {
         let id: String; let name: String; let polygon: [[Double]]
-        // 판정 파라미터 — 콘솔 존 메타에서 보존 (기본값 = PRM 기본)
+        // 판정 파라미터 — 콘솔 존 메타에서 보존 (기본값 = 서버 기본)
         var inDist: Double = 3.0; var inCount: Int = 0; var inCountInterval: Int = 0
         var outPeriod: Int = 0; var priority: Int = 1; var callInout: Bool = true
         var dwellSeconds: Int? = nil
@@ -302,7 +302,7 @@ final class GeospaceClient {
     // MARK: - HTTP
 
     private func get<R: Decodable>(_ path: String) async throws -> R {
-        try await request(path, header: "X-SDK-Key", value: keys.geospace)
+        try await request(path, header: "X-SDK-Key", value: keys.space)
     }
     private func request<R: Decodable>(_ path: String, header: String, value: String) async throws -> R {
         var req = URLRequest(url: URL(string: "https://\(host)/\(path)")!, timeoutInterval: 20)
@@ -317,9 +317,9 @@ final class GeospaceClient {
 
     // MARK: - DTO
 
-    private typealias BuildingsResponse = GeospaceBuildingsResponse
+    private typealias BuildingsResponse = SpaceBuildingsResponse
 
-    /// GeoSpace 직행 응답. 도면이 **있는** 층에서만 디코드된다 — 없는 층은
+    /// 공간 서비스 직행 응답. 도면이 **있는** 층에서만 디코드된다 — 없는 층은
     /// planImageIfAny 가 콘솔 단계에서 이미 nil 로 끝낸다.
     private struct PlanResponse: Decodable {
         let plan: PlanBody
@@ -343,7 +343,7 @@ final class GeospaceClient {
             let name: String
             let polygon: [[Double]]?
             let isActive: Bool
-            // 판정 파라미터 (§6.4 존 메타) — PRM 엔진이 소비. 구서버 호환 위해 옵셔널
+            // 판정 파라미터 (§6.4 존 메타) — 옛 존 엔진이 소비. 구서버 호환 위해 옵셔널
             let inDist: Double?
             let inCount: Int?
             let inCountInterval: Int?

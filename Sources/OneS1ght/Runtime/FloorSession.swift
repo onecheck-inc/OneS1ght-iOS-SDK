@@ -57,11 +57,11 @@ public final class FloorSession {
     public func begin() async throws {
         #if os(iOS)
         // ⚠️ 이 가드는 지우지 말 것. 지금은 패키지 최소 버전이 iOS 27 이라 형식적이지만,
-        //    Geoplan 이 ihub 배포 타깃을 낮춰 주면 그 순간 실제 방어선이 된다.
+        //    엔진 공급사가 배포 타깃을 낮춰 주면 그 순간 실제 방어선이 된다.
         guard #available(iOS 27.0, *) else { throw SdkError.osVersionTooLow }
         // 시뮬레이터는 여기서 막힌다 (UWB 칩 없음). 테스트는 begin(provider:) 로 Mock 주입.
-        guard IHubPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
-        let hub = (builtInProvider as? IHubPositioningProvider) ?? IHubPositioningProvider()
+        guard UwbPositioningProvider.isSupported else { throw SdkError.deviceNotSupported }
+        let hub = (builtInProvider as? UwbPositioningProvider) ?? UwbPositioningProvider()
         builtInProvider = hub
         // 라이선스는 begin(provider:) 가 넣는다 — 주입 경로도 같은 대우를 받아야 하므로
         // 한 곳에 모았다. 여기서 또 넣으면 두 자리가 갈라진다.
@@ -84,8 +84,8 @@ public final class FloorSession {
     public func begin(provider: PositioningProvider) async throws {
         guard let coordinator else { throw SdkError.notInitialized }
         #if os(iOS)
-        if #available(iOS 27.0, *), let hub = provider as? IHubPositioningProvider {
-            hub.license = OneS1ght.geoSdkKeyForPositioning ?? ""
+        if #available(iOS 27.0, *), let hub = provider as? UwbPositioningProvider {
+            hub.license = coordinator.positioningLicense ?? ""
         }
         #endif
         if !coordinator.isPrepared {

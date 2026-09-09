@@ -84,8 +84,19 @@ final class SnippetsTests: XCTestCase {
         let code = try allCode
         for retired in ["OneS1ghtSDK", "loadFloor", "start(consent:", "geospaceKey",
                         "positioningAvailability", "anonUserId", "onZoneEvent",
-                        "onesight-sdk"] {
+                        "onesight-sdk",
+                        // 고객은 SDK 키 하나만 넣는다 — 나머지는 콘솔이 정본이라 인자가 없다.
+                        "geoSdkKey", "geoPartnerKey", "geoBaseUrl"] {
             XCTAssertFalse(code.contains(retired), "스니펫에 사라진 이름이 남아 있다: \(retired)")
+        }
+    }
+
+    /// 고객이 읽는 코드에 공급사 이름이 나오면 안 된다 — 우리는 OneS1ght 로 판다.
+    func testNoVendorNamesInSnippets() throws {
+        let text = try String(contentsOf: Self.snippetURL, encoding: .utf8)
+        for vendor in ["ihub", "IHub", "IntelligenceHub", "Geoplan", "geoplan",
+                       "Geospace", "GeoSpace", "gpi-", "gpi_"] {
+            XCTAssertFalse(text.contains(vendor), "스니펫에 공급사 이름이 있다: \(vendor)")
         }
     }
 
@@ -155,7 +166,7 @@ final class SnippetsTests: XCTestCase {
     func testRequirementsAreCurrent() throws {
         let req = try json["requirements"] as? [String: Any] ?? [:]
         let build = req["build"] as? [String: String] ?? [:]
-        XCTAssertEqual(build["xcode"], "27.0+", "실제로 빌드되는 Xcode 버전과 맞출 것 — gpi-ihub 가 iOS 27 SDK 를 요구한다")
+        XCTAssertEqual(build["xcode"], "27.0+", "실제로 빌드되는 Xcode 버전과 맞출 것 — 측위 엔진이 iOS 27 SDK 를 요구한다")
 
         let positioning = req["positioning"] as? [String: String] ?? [:]
         XCTAssertEqual(positioning["os"], "iOS 27.0+")

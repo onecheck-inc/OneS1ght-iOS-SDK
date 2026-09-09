@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.17",
+  "currentVersion": "0.1.18",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -57,7 +57,7 @@
       "from": "0.1.6",
       "to": "0.1.7",
       "breaking": false,
-      "summary": "GeoSpace 가 층 ID 를 숫자로 보낼 때 층 목록이 비던 것을 고쳤다. 연동 코드는 그대로다.",
+      "summary": "공간 서버가 층 ID 를 숫자로 보낼 때 층 목록이 비던 것을 고쳤다. 연동 코드는 그대로다.",
       "action": "고칠 것 없다. 빌딩을 골라도 층 드롭다운이 비어 있었다면 이 판올림으로 해결된다 — SDK 안에서 디코딩이 실패하고 있었고, 호출부가 오류를 삼켜 빈 목록만 보였다."
     },
     {
@@ -175,11 +175,11 @@
       "from": "0.1.16",
       "to": "0.1.17",
       "breaking": true,
-      "summary": "측위·판정 엔진이 Geoplan 턴키 gpi-ihub 하나로 바뀌고, GeoSpace·Google Maps 키를 콘솔이 내려준다. UwbPositioningProvider·PrmZoneEngine 공개 클래스가 사라졌고 최소 iOS 가 15→18 로 올라갔다. 빌드에는 Xcode 27(iOS 27 SDK)이 필요하다.",
+      "summary": "측위·판정 엔진이 하나로 통합되고, 측위·지도 키를 콘솔이 내려준다. UwbPositioningProvider·PrmZoneEngine 공개 클래스가 사라졌고 최소 iOS 가 15→18 로 올라갔다. 빌드에는 Xcode 27(iOS 27 SDK)이 필요하다.",
       "action": "① initialize 에서 geoSdkKey 를 뺀다 — 콘솔이 정본이라 넘겨도 무시된다(폴백으로만 쓰인다). ② 지도 키를 자체 API 로 받아 오던 코드는 OneS1ght.googleMapKey 로 바꾼다. ③ Info.plist 에 NSBluetoothAlwaysUsageDescription 과 NSLocationTemporaryUsageDescriptionDictionary(키 이름은 반드시 Positioning)를 추가한다 — 없으면 측위가 시작되지 않는다. ④ UwbPositioningProvider·PrmZoneEngine·zoneEngine·onJudge 를 직접 참조하던 코드가 있으면 지운다. 대체 API 는 없다 — 판정은 이제 엔진이 하고 SDK 는 결과만 받는다. ⑤ Package.swift 의 최소 버전을 iOS 18 이상으로 올린다.",
       "changes": [
         {
-          "why": "GeoSpace 키의 정본이 콘솔로 옮겨졌다. 키를 바꿔도 앱을 다시 배포할 필요가 없고, 앱이 든 값과 콘솔 값이 갈라지는 일 자체가 없어진다.",
+          "why": "측위 키의 정본이 콘솔로 옮겨졌다. 키를 바꿔도 앱을 다시 배포할 필요가 없고, 앱이 든 값과 콘솔 값이 갈라지는 일 자체가 없어진다.",
           "before": "try await OneS1ght.initialize(sdkKey: \"ock_sdk_…\", geoSdkKey: \"gsk_…\")",
           "after": "try await OneS1ght.initialize(sdkKey: \"ock_sdk_…\")"
         },
@@ -192,6 +192,30 @@
           "why": "엔진이 BLE 로 층을 고르고 정밀 위치를 요구한다. 사전 안의 키가 Positioning 이 아니면 승격 요청이 오류도 로그도 없이 무시된다.",
           "before": "<key>NSNearbyInteractionUsageDescription</key>\n<string>…</string>",
           "after": "<key>NSNearbyInteractionUsageDescription</key>\n<string>…</string>\n<key>NSBluetoothAlwaysUsageDescription</key>\n<string>주변 측위 장비를 찾는 데 사용합니다.</string>\n<key>NSLocationTemporaryUsageDescriptionDictionary</key>\n<dict>\n    <key>Positioning</key>\n    <string>정확한 실내 위치를 계산하는 데 사용합니다.</string>\n</dict>"
+        }
+      ]
+    },
+    {
+      "from": "0.1.17",
+      "to": "0.1.18",
+      "breaking": true,
+      "summary": "앱이 넘기던 측위 키 인자가 완전히 사라졌다. 이제 initialize 에 넣는 값은 OneS1ght SDK 키 하나뿐이고, 나머지는 콘솔이 정본이다. 앱 값으로 되돌아가는 폴백이 없어졌으므로 콘솔에 키가 없으면 측위가 시작되지 않는다(E1007).",
+      "action": "① 0.1.17 에서 아직 geoSdkKey 를 넘기고 있었다면 지운다 — 인자가 없어져 컴파일되지 않는다. ② OneS1ght.geoPartnerKey · OneS1ght.geoBaseUrl 을 읽던 코드를 지운다. 대체 값은 없다 — 둘 다 SDK 내부에서만 쓴다. 남는 콘솔 값은 OneS1ght.googleMapKey 하나다. ③ 통합관리자에게 콘솔 → 모바일 SDK 에 측위 키가 설정돼 있는지 확인받는다. 폴백이 없어 비어 있으면 측위가 통째로 뜨지 않는다. ④ E1005 · E1006 을 분기하던 코드가 있으면 지운다 — 발생하지 않는다. E1007 하나로 모인다.",
+      "changes": [
+        {
+          "why": "고객이 넣는 값은 OneS1ght SDK 키 하나여야 한다. 측위 공급자의 키는 통합관리자가 콘솔에 설정하고 SDK 가 내부에서 받아 쓴다.",
+          "before": "try await OneS1ght.initialize(sdkKey: \"ock_sdk_…\", geoSdkKey: \"gsk_…\")",
+          "after": "try await OneS1ght.initialize(sdkKey: \"ock_sdk_…\")"
+        },
+        {
+          "why": "측위 라이선스와 공간 서비스 주소는 SDK 내부 사정이라 밖으로 내주지 않는다. 앱이 쓸 일이 있는 콘솔 값은 지도 키뿐이다.",
+          "before": "let partner = OneS1ght.geoPartnerKey\nlet base = OneS1ght.geoBaseUrl",
+          "after": "// 삭제 — 대체 API 없음. 지도 키만 남는다.\nmapView.apiKey = OneS1ght.googleMapKey"
+        },
+        {
+          "why": "키를 못 받으면 되돌아갈 앱 값이 없다. 조용히 빈 결과가 나오는 대신 E1007 이 뜨므로, 여기를 잡아 두면 현장에서 원인을 파지 않아도 된다.",
+          "before": "// E1005 / E1006 으로 키 폴백을 감지",
+          "after": "// E1007 하나만 본다 — 콘솔에 측위 키가 없거나 조회에 실패했다는 뜻"
         }
       ]
     }

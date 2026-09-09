@@ -183,7 +183,7 @@ final class SessionCoordinatorTests: XCTestCase {
         } catch { XCTFail("SdkError여야 함") }
 
         XCTAssertEqual(c.googleMapKey, "AIza_disabled", "측위가 꺼져도 지도 키는 받아야 한다")
-        XCTAssertEqual(c.geoPartnerKey, "gpk_disabled")
+        XCTAssertEqual(c.spaceServiceKey, "gpk_disabled")
     }
 
     // 존 판정 → events/zone 전송 (바디 검증) → triggers 호스트 콜백

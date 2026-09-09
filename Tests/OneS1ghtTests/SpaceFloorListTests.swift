@@ -12,12 +12,12 @@ import XCTest
  부르도록 되돌려도 통과해 버린다.
  */
 @MainActor
-final class GeospaceFloorListTests: XCTestCase {
+final class SpaceFloorListTests: XCTestCase {
 
-    private func client() -> GeospaceClient {
+    private func client() -> SpaceServiceClient {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [StubURLProtocol.self]
-        return GeospaceClient(keys: .init(sdk: "ock_sdk_x", geospace: "gsk_x"),
+        return SpaceServiceClient(keys: .init(sdk: "ock_sdk_x", space: "gsk_x"),
                               session: URLSession(configuration: cfg))
     }
 

@@ -2,7 +2,7 @@ import XCTest
 @testable import OneS1ght
 
 /**
- GeoSpace 건물 트리의 `floorId` 는 **숫자로 온다.**
+ 공간 서비스 건물 트리의 `floorId` 는 **숫자로 온다.**
 
  2026-08-20 에 같은 원인으로 콘솔 GCH 화면이 전부 500 이 났고(PR#461 에서 경계 정규화로 수습),
  SDK 에는 같은 결함이 남아 있었다 — `floorId` 를 `String` 으로 선언해 두어 JSON 디코딩이
@@ -15,7 +15,7 @@ import XCTest
  아래 픽스처는 2026-08-24 prod `GET https://geospace.geoplan.io/api/m/buildings` 응답을
  그대로 옮긴 것이다.
  */
-final class GeospaceFloorIdDecodingTests: XCTestCase {
+final class SpaceFloorIdDecodingTests: XCTestCase {
 
     /// prod 실응답 — `floorId` 가 따옴표 없는 숫자다.
     private let realResponse = """
@@ -36,7 +36,7 @@ final class GeospaceFloorIdDecodingTests: XCTestCase {
     func testDecodesNumericFloorId() throws {
         let data = Data(realResponse.utf8)
 
-        let res = try JSONDecoder().decode(GeospaceBuildingsResponse.self, from: data)
+        let res = try JSONDecoder().decode(SpaceBuildingsResponse.self, from: data)
 
         XCTAssertEqual(res.buildings.count, 1)
         XCTAssertEqual(res.buildings[0].buildingId, "0fe8f405-a710-44ee-96a2-f927c44b9cde")
@@ -65,7 +65,7 @@ final class GeospaceFloorIdDecodingTests: XCTestCase {
         }
         """.utf8)
 
-        let res = try JSONDecoder().decode(GeospaceBuildingsResponse.self, from: data)
+        let res = try JSONDecoder().decode(SpaceBuildingsResponse.self, from: data)
 
         XCTAssertEqual(res.buildings[0].floors[0].floorId, "15")
         XCTAssertFalse(res.buildings[0].floors[0].hasPlan)
@@ -79,6 +79,6 @@ final class GeospaceFloorIdDecodingTests: XCTestCase {
           "floors": [ { "floorId": null, "floorName": "x", "hasPlan": true } ] } ] }
         """.utf8)
 
-        XCTAssertThrowsError(try JSONDecoder().decode(GeospaceBuildingsResponse.self, from: data))
+        XCTAssertThrowsError(try JSONDecoder().decode(SpaceBuildingsResponse.self, from: data))
     }
 }

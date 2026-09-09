@@ -12,7 +12,7 @@
 //
 //      1xxx  초기화·인증      앱 개발자 / 테넌트 관리자
 //      2xxx  기기·권한        최종 사용자
-//      3xxx  공간·설정        테넌트 관리자 (콘솔·GeoSpace)
+//      3xxx  공간·설정        테넌트 관리자 (콘솔·공간 서비스)
 //      4xxx  측위             테넌트 관리자 (현장 하드웨어)
 //      5xxx  전송             앱 개발자 / 통합 관리자
 //
@@ -39,11 +39,9 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case positioningDisabled = "E1003"
     /// identify(profileId:) 없이 측위를 시작하려 했다.
     case notIdentified       = "E1004"
-    /// GeoSpace 키를 콘솔 값으로 대체했다 — 앱이 넘긴 값과 달랐다. 정본이 바뀌었다는 사실이다.
-    case keyOverridden       = "E1005"
-    /// 콘솔에서 GeoSpace 키를 받지 못해(통신 실패 또는 미설정) 앱이 넘긴 값으로 폴백했다.
-    case keyFallback         = "E1006"
-    /// GeoSpace 키가 어디에도 없다 — 앱도 안 넘겼고 콘솔도 못 줬다. buildings()/floors()/
+    // E1005 · E1006 은 0.1.17 까지 쓰던 키 폴백 코드다. 앱이 키를 넘기는 경로 자체가
+    // 사라져 더는 발생하지 않는다 — 과거 로그 해석을 위해 콘솔 코드집에는 남겨 둔다.
+    /// 측위 키를 못 구했다 — 콘솔에 없거나 조회에 실패했다. buildings()/floors()/
     /// zones() 는 빈 배열로, floor()/locators()/setFloorMap() 은 notInitialized 로 떨어진다 —
     /// isInitialized 는 true 인 채로. 관리자가 콘솔 로그 분석기에서 반드시 봐야 하는 자리다.
     case keyUnavailable      = "E1007"
@@ -71,7 +69,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 그쪽은 "안 깔았다", 이쪽은 "못 받았다" 라서 확인할 곳이 현장이 아니라 연동·네트워크다.
     /// ⚠️ 도면·존 표시는 막지 않는다. 지도는 그대로 뜨고 측위만 못 한다.
     case locatorsFetchFailed = "E3006"
-    /// 측위를 켰는데 **층을 찾지 못했다**. ihub 는 BLE 광고로 층을 고르므로, 이 코드는
+    /// 측위를 켰는데 **층을 찾지 못했다**. 엔진은 BLE 광고로 층을 고르므로, 이 코드는
     /// "앵커가 BLE 를 안 뿌리거나 · 펌웨어가 낮거나 · 그 층에 있지 않다"를 가리킨다.
     /// E3001(층 미지정)과 다르다 — 그쪽은 앱이 안 고른 것이고, 이쪽은 골라줄 층을 못 찾은 것이다. (WARN)
     case floorNotDetected    = "E3007"
@@ -117,7 +115,6 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     public var level: SdkLogLevel {
         switch self {
         case .zonesEmpty, .locatorNotReceived, .pendingDropped,
-             .keyOverridden, .keyFallback,
              .floorNotDetected, .zoneMappingFailed, .areaJudgeFailed:
             return .warn
         default:
@@ -132,9 +129,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .invalidKey:          return "SDK 키 무효 또는 폐기"
         case .positioningDisabled: return "테넌트에서 측위 비활성"
         case .notIdentified:       return "프로필 미연결"
-        case .keyOverridden:       return "GeoSpace 키를 콘솔 값으로 대체"
-        case .keyFallback:         return "GeoSpace 키를 콘솔에서 못 받아 앱 값으로 폴백"
-        case .keyUnavailable:      return "GeoSpace 키가 어디에도 없음"
+        case .keyUnavailable:      return "측위 키를 못 구함"
         case .osVersionTooLow:     return "iOS 버전 미달"
         case .deviceNotSupported:  return "UWB 미지원 기기"
         case .permissionDenied:    return "측위 권한 거부"

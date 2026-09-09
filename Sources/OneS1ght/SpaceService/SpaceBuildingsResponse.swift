@@ -1,8 +1,8 @@
 //
-//  GeospaceBuildingsResponse.swift
-//  GeoSpace 건물 트리 응답 — 경계에서 층 ID 를 문자열로 정규화한다.
+//  SpaceBuildingsResponse.swift
+//  공간 서비스 건물 트리 응답 — 경계에서 층 ID 를 문자열로 정규화한다.
 //
-//  ⚠️ GeoSpace 는 floorId 를 **숫자로** 보낸다. 2026-08-20 에 같은 원인으로 콘솔 GCH 화면이
+//  ⚠️ 공간 서비스 는 floorId 를 **숫자로** 보낸다. 2026-08-20 에 같은 원인으로 콘솔 GCH 화면이
 //     전부 500 이 났고(PR#461 에서 같은 방식으로 수습), SDK 에는 결함이 남아 있었다 —
 //     String 으로 선언해 두면 JSON 디코딩이 통째로 실패하고, 호출부가 try? 로 감싸고 있어
 //     오류가 사라진 채 빈 목록만 남는다. 증상은 "층이 안 뜬다" 뿐이라 원인에 닿기 어렵다.
@@ -13,7 +13,7 @@
 
 import Foundation
 
-struct GeospaceBuildingsResponse: Decodable {
+struct SpaceBuildingsResponse: Decodable {
     let buildings: [BuildingDTO]
 
     struct BuildingDTO: Decodable {
@@ -48,7 +48,7 @@ struct GeospaceBuildingsResponse: Decodable {
             if let i = try? c.decode(Int.self, forKey: key) { return String(i) }
             throw DecodingError.typeMismatch(String.self, .init(
                 codingPath: c.codingPath + [key],
-                debugDescription: "floorId 가 문자열도 숫자도 아닙니다 — GeoSpace 응답 형태가 바뀌었는지 확인하세요"))
+                debugDescription: "floorId 가 문자열도 숫자도 아닙니다 — 공간 서비스 응답 형태가 바뀌었는지 확인하세요"))
         }
     }
 }

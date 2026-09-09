@@ -21,7 +21,7 @@ You also need keys and a configured space before the SDK does anything useful:
 | Prerequisite | Where |
 |---|---|
 | SDK key (`ock_sdk_…`) | OneS1ght Console → **Mobile SDK** |
-| Building · floor · locator setup | GeoSpace |
+| Building · floor · locator setup | Your platform administrator (done at install) |
 | Zones | OneS1ght Console → **Space** |
 
 ---
@@ -91,9 +91,9 @@ import OneS1ght
 try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 ```
 
-> The GeoSpace and Google Maps keys are **served by the console.** You do not embed them
-> in the app, and changing them does not require a new app release. A platform
-> administrator sets them in the console.
+> This is the only key you pass. Everything else positioning and maps need is **served by
+> the console** — you do not embed it in the app, and changing it does not require a new
+> app release. A platform administrator sets it in the console.
 
 ⚠️ `initialize` does **not** look up buildings or floors. Space selection is a separate
 step (Step 5) — only your app knows which floor to use.
@@ -274,13 +274,13 @@ coordinates 240 sent → server accepted 240
 | Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
 | Buffer | `send()` (upload now) · `empty()` (discard) |
 | Status | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
-| Console-provided values | `googleMapKey` · `geoPartnerKey` · `geoBaseUrl` |
+| Console-provided values | `googleMapKey` |
 
 ⚠️ `empty()` **discards** buffered coordinates without sending. Use `send()` to upload.
 
-⚠️ `geoBaseUrl` is for **your app's own** direct calls to GeoSpace. The SDK's internal
-GeoSpace traffic (floor plans, anchors) always uses its built-in host regardless of this
-value.
+⚠️ `googleMapKey` is the only console value your app touches. The positioning license and
+the space-service address are used inside the SDK only and are not exposed — your app
+neither needs them nor has to manage them.
 
 ---
 

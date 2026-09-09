@@ -24,7 +24,7 @@ public struct Zone: Identifiable {
     public let name: String
     public let polygon: [Position]     // 꼭짓점 (순서대로)
 
-    // 판정 파라미터 — 콘솔 존 메타(§6.4)와 1:1, PRM 엔진이 소비 (자체 엔진은 폴리곤만 사용)
+    // 판정 파라미터 — 콘솔 존 메타(§6.4)와 1:1, 옛 존 엔진이 소비 (자체 엔진은 폴리곤만 사용)
     public let inDist: Double          // 진입 판단 거리(m)
     public let inCount: Int            // 진입 확정 감지 횟수
     public let inCountInterval: Int    // 감지 카운트 간격(초)
@@ -95,8 +95,8 @@ public struct ZoneJudge {
 
 /// 존 판정 엔진 계약 — 좌표를 넣으면 IN/DWELL/OUT 이벤트가 나온다.
 /// 구현: ZoneEngine(자체 — 좌표 기반 폴리곤 판정).
-/// ⚠️ 실전 측위 경로는 이 계약을 더 이상 쓰지 않는다 — ihub 가 영역 판정까지 해서 IN/OUT 을
-///    주므로, 그쪽은 IHubZoneJudge 가 좌표 없이 이름으로 받아 옮긴다.
+/// ⚠️ 실전 측위 경로는 이 계약을 더 이상 쓰지 않는다 — 엔진이 영역 판정까지 해서 IN/OUT 을
+///    주므로, 그쪽은 UwbAreaJudge 가 좌표 없이 이름으로 받아 옮긴다.
 @MainActor
 public protocol ZoneJudging: AnyObject {
     var zones: [Zone] { get }

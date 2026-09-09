@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.1.17",
+  "sdkVersion": "0.1.18",
   "language": "swift",
   "requirements": {
     "positioning": {
@@ -54,7 +54,7 @@
       "title": "초기화 — 앱 시작 시 1회",
       "order": 3,
       "language": "swift",
-      "code": "import OneS1ght\n\ntry await OneS1ght.initialize(\n    sdkKey: \"ock_sdk_...\"         // OneS1ght 콘솔 발급 — GeoSpace·Google Maps 키는 콘솔이 내려준다\n)",
+      "code": "import OneS1ght\n\ntry await OneS1ght.initialize(\n    sdkKey: \"ock_sdk_...\"         // OneS1ght 콘솔 발급 — 측위·지도 키는 콘솔에서 내려온다\n)",
       "throws": [
         "E1002",
         "E1003",
