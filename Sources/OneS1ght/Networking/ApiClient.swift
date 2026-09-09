@@ -69,7 +69,7 @@ public final class ApiClient {
         self.session = session
     }
 
-    // MARK: - 엔드포인트 5종 (사양서 §6)
+    // MARK: - 엔드포인트 6종 (사양서 §6 5종 + config — 키 배포 설계에서 추가)
 
     /// ① POST /auth/verify — 키 검증 + 클라 등록 (초기화 1회)
     public func verify(_ req: ReqVerify) async throws -> ResVerify {

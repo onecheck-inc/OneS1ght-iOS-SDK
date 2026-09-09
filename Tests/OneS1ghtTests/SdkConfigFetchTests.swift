@@ -65,7 +65,8 @@ final class SdkConfigFetchTests: XCTestCase {
         XCTAssertEqual(cfg.tenant_code, "acme")
     }
 
-    func testSendsTheSdkKeyHeader() async throws {
+    // GET 경로 + X-SDK-Key 헤더 — verify()의 pathHeaderBodyAndDecode 시험과 같은 확인을 config()에도.
+    func testConfig_pathMethodAndSdkKeyHeader() async throws {
         var seen: String?
         StubURLProtocol.handler = { req in
             seen = req.value(forHTTPHeaderField: "X-SDK-Key")
@@ -75,5 +76,8 @@ final class SdkConfigFetchTests: XCTestCase {
         _ = try await client().config()
 
         XCTAssertEqual(seen, "ock_sdk_x")
+        let req = try XCTUnwrap(StubURLProtocol.lastRequest)
+        XCTAssertEqual(req.url?.path, "/api/sdk/v1/config")
+        XCTAssertEqual(req.httpMethod, "GET")
     }
 }
