@@ -49,10 +49,14 @@ final class OneS1ghtConsoleProvidedValuesTests: XCTestCase {
         StubURLProtocol.reset()
     }
 
-    override func tearDown() {
+    /// ⚠️ `OneS1ght.reset()` 을 여기로 옮겼다 — 예전에는 두 테스트 바디의 **끝**에서만
+    /// 불렀는데, 그 앞줄에서 단언이 던지면(예: `try await initialize` 실패) 건너뛰어
+    /// 세션이 다음 테스트로 샜다. tearDown 은 테스트가 실패해도 항상 돈다.
+    override func tearDown() async throws {
+        await OneS1ght.reset()
         URLProtocol.unregisterClass(StubURLProtocol.self)
         StubURLProtocol.reset()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// verify 는 항상 통과시키고, /config 는 세 값을 서로 다르게 응답한다 —
@@ -93,8 +97,7 @@ final class OneS1ghtConsoleProvidedValuesTests: XCTestCase {
         XCTAssertEqual(OneS1ght.googleMapKey, "AIza_facade")
         XCTAssertEqual(OneS1ght.geoPartnerKey, "gpk_facade")
         XCTAssertEqual(OneS1ght.geoBaseUrl, "https://geospace.facade.test")
-
-        await OneS1ght.reset()   // 다음 테스트로 세션이 새지 않게
+        // 세션 정리는 tearDown 이 맡는다 — 여기서 또 부르면 assert 가 던졌을 때 건너뛴다.
     }
 
     /// reset() 이후에는 다시 nil 로 돌아가야 한다 — 값이 세션에 묶여 있고 전역 상수가

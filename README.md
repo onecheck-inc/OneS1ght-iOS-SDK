@@ -262,6 +262,10 @@ coordinates 240 sent → server accepted 240
 
 ⚠️ `empty()` **discards** buffered coordinates without sending. Use `send()` to upload.
 
+⚠️ `geoBaseUrl` is for **your app's own** direct calls to GeoSpace. The SDK's internal
+GeoSpace traffic (floor plans, anchors) always uses its built-in host regardless of this
+value.
+
 ---
 
 ## Appendix

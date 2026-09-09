@@ -78,7 +78,9 @@ public final class ApiClient {
 
     /// 관련 키 조회 — Google Maps · GeoSpace 모바일/파트너 키와 GeoSpace 주소.
     /// 실패해도 초기화를 막지 않는다(호출부가 폴백한다).
-    public func config() async throws -> ResSdkConfig {
+    /// ⚠️ internal 까지만 — public 으로 올리면 앱이 GeoSpace 모바일 키를 직접 꺼내 들 수
+    /// 있게 된다. OneS1ght.swift 는 "앱이 이 키를 들고 있을 이유가 없다"고 명시한다(M1).
+    func config() async throws -> ResSdkConfig {
         try await get("/config")
     }
 

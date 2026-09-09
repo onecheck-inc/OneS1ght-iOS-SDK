@@ -150,4 +150,78 @@ final class SdkConfigResolutionTests: XCTestCase {
         XCTAssertEqual(c.geoPartnerKey, "gpk_1")
         XCTAssertEqual(c.geoBaseUrl, "https://geospace.geoplan.io")
     }
+
+    // MARK: - I2: 새 경고가 report() 채널(콘솔 로그 분석기)에도 남는가
+    //
+    // onDebugLog(onLog) 만으로는 앱이 훅을 등록해야만 보인다 — OneS1ght.swift 는 그 훅을
+    // "운영에선 미등록 권장"이라 문서화한다. report() 는 onLog 에도 "[E코드] 요약 — 문맥"
+    // 형태의 줄을 남기고 logBuffer(콘솔로 나가는 채널)에도 같은 코드를 적재한다 — 그 줄이
+    // 찍히는지 확인하면 report() 가 실제로 불렸는지(=logBuffer 로도 갔는지) 알 수 있다.
+    // logBuffer.entries 를 직접 들여다보지 않는 이유 — ERROR 는 add() 가 즉시 flush 를
+    // 스케줄링해서 나중에 비워질 수 있어(전송 성공 여부와 무관하게 먼저 뗀다), 그 시점을
+    // 테스트가 관찰하려 들면 레이스가 된다. onLog 줄은 report() 안에서 동기로 남는다.
+
+    func testKeyOverriddenReachesReportChannel() async throws {
+        stub(configStatus: 200, configBody: #"{ "geo_sdk_key": "gsk_console" }"#)
+
+        let (_, lines) = try await prepared(appKey: "gsk_app")
+
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[\(SdkErrorCode.keyOverridden.rawValue)]") }, "\(lines)")
+    }
+
+    func testKeyFallbackReachesReportChannel() async throws {
+        stub(configStatus: 500, configBody: #"{ "detail": "boom" }"#)
+
+        let (_, lines) = try await prepared(appKey: "gsk_app")
+
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[\(SdkErrorCode.keyFallback.rawValue)]") }, "\(lines)")
+    }
+
+    /// 앱도 콘솔도 키가 없는 경우 — I1 이 지적한 가장 조용히 새던 자리. E1007 이 반드시
+    /// report() 채널로 남아야 한다.
+    func testKeyUnavailableReachesReportChannel() async throws {
+        stub(configStatus: 200, configBody: #"{ "geo_sdk_key": null }"#)
+
+        let (_, lines) = try await prepared(appKey: nil)
+
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[\(SdkErrorCode.keyUnavailable.rawValue)]") }, "\(lines)")
+    }
+
+    // MARK: - I3: 콘솔 키로 갈아끼운 GeospaceClient 도 주입된 세션을 물려받는가
+    //
+    // 갈아끼우기 전에는 문제가 드러나지 않는다 — 이 라운드 전까지는 그 뒤로 실제 조회가
+    // 이어지는 테스트가 없었기 때문이다. buildings() 를 실제로 호출해, 응답이 스텁에서
+    // 오는지(= 주입된 세션을 물려받았는지) 확인한다. 세션을 안 물려주면 `.shared` 로
+    // 떨어져 실제 geospace.geoplan.io 로 나가려다 이 샌드박스에서는 실패/타임아웃한다.
+    func testReplacedGeospaceClientUsesInjectedSession() async throws {
+        StubURLProtocol.handler = { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("/auth/verify") {
+                return (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
+            }
+            if path.hasSuffix("/config") {
+                return (200, Data(#"{ "geo_sdk_key": "gsk_console" }"#.utf8))
+            }
+            if path.hasSuffix("/positioning/buildings") {
+                // 빈 배열이면 loadBuildings() 가 GeoSpace 직행(api/m/buildings)으로 폴백한다
+                // (콘솔 미러가 비었을 때의 정상 동작) — 이 테스트가 보려는 건 그 분기가 아니라
+                // "콘솔 요청 자체가 스텁 세션을 탔는가"이므로, 폴백을 안 타게 값을 하나 채운다.
+                return (200, Data(#"{ "buildings": [ { "building_id": "B1", "name": "Test" } ] }"#.utf8))
+            }
+            return (200, Data("{}".utf8))
+        }
+        let api = ApiClient(apiKey: "ock_sdk_x",
+                            baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
+                            session: makeStubSession())
+        // geospace: nil — appKey 를 안 넘긴 기본경로. resolveKeysFromConsole() 이 콘솔 키로
+        // 새 GeospaceClient 를 "만드는" 자리를 검증해야 하므로 미리 만들어 두지 않는다.
+        let c = SessionCoordinator(api: api, identity: identity, session: makeStubSession())
+        try await c.prepare()
+
+        let buildings = try await c.buildings()
+
+        XCTAssertEqual(buildings.map(\.id), ["B1"])
+        XCTAssertTrue(StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/buildings") },
+                      "갈아끼운 GeospaceClient 가 스텁 세션을 타지 않았다 — session 주입이 안 됐다")
+    }
 }

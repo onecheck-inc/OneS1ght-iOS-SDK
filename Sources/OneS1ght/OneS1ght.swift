@@ -85,7 +85,9 @@ public final class OneS1ght {
     /// initialize 가 성공하기 전에는 `nil`이다.
     public static var geoPartnerKey: String? { coordinator?.geoPartnerKey }
 
-    /// 콘솔이 내려준 GeoSpace 베이스 URL.
+    /// 콘솔이 내려준 GeoSpace 베이스 URL — **앱이 GeoSpace 를 직접 호출할 때** 쓰는 값이다.
+    /// ⚠️ SDK 내부 통신(도면·앵커 등)은 이 값과 무관하게 내장 호스트(geospace.geoplan.io)를
+    ///    그대로 쓴다 — 이 값이 바뀌어도 SDK 트래픽의 목적지는 바뀌지 않는다.
     /// initialize 가 성공하기 전에는 `nil`이다.
     public static var geoBaseUrl: String? { coordinator?.geoBaseUrl }
 
@@ -204,7 +206,10 @@ public final class OneS1ght {
 
     // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 · 목록 ↔ 단건)
 
-    /// 건물 목록. geoSdkKey 없이 초기화했으면 빈 배열. 층은 floors() 로 따로.
+    /// 건물 목록. 층은 floors() 로 따로.
+    /// ⚠️ 빈 배열이 "이 테넌트에 건물이 없다"는 뜻만은 아니다 — GeoSpace 키를 하나도 못
+    ///    구했을 때도(콘솔 미응답 + geoSdkKey 미제공) 똑같이 빈 배열이 온다. 구분하려면
+    ///    onDebugLog 나 콘솔 로그 분석기에서 E1007 을 확인해야 한다.
     public static func buildings() async throws -> [Building] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.buildings()
