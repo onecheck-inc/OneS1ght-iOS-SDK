@@ -305,7 +305,11 @@ final class SessionCoordinator {
         let state = try await spaceClient.loadFloorState(buildingId: buildingId, floorId: floor.id)
         floorState = state
         currentFloor = floor
-        log(SdkLocalized.format("coord.floorLoaded", state.locators.count, String(floor.id.prefix(8))))
+        // ⚠️ 예전에는 여기서 `coord.floorLoaded`("zones %d개")를 썼는데 넘기는 값은 **로케이터 수**였다.
+        //    로그만 보면 "존이 4개 있다" 로 읽혀, 실제로는 존이 0개인 상황을 정반대로 해석하게 된다
+        //    (2026-09-10 장애 분석에서 실제로 이 줄 때문에 원인을 한참 헤맸다). 둘 다 이름을 붙여 찍는다.
+        log(SdkLocalized.format("coord.floorLoaded", state.locators.count, state.zones.count,
+                                String(floor.id.prefix(8))))
         report(.floorSet, "building=\(buildingId) floor=\(floor.id) " +
                           "locators=\(state.locators.count) zones=\(state.zones.count)")
         // 측위가 실제로 가능한 상태인지 — 관리자가 콘솔에서 원인을 바로 볼 수 있게 코드로 남긴다
@@ -334,11 +338,24 @@ final class SessionCoordinator {
         do {
             let zones = try await spaceClient.loadZones(buildingId: state.buildingId,
                                                      floorId: state.floorId)
+            let changed = Self.geofencesChanged(from: state.zones, to: zones)
             floorState?.zones = zones
             // 구역을 전부 지웠을 때도 엔진에 반영해야 한다 — 안 그러면 판정 엔진이 삭제된 구역을
             // 계속 물고 있어 지도에서 사라진 자리에서 없어진 시책이 계속 발화한다.
             if isRunning {
                 provider?.apply(config: PositioningConfig(zones: zones))
+                // ⚠️ 위 apply 만으로는 **판정이 안 바뀐다.** 측위 엔진은 지오펜스를 자기 서버에서
+                //    받아 start() 때 한 번만 읽는다(주입한 존은 zone_id 매핑·진단용). 그래서
+                //    영역이 바뀐 순간 엔진을 다시 읽게 해야 한다 — 안 하면 새로 그린 구역은
+                //    지도에만 보이고 진입·이탈이 영원히 안 나온다(2026-09-10 실기기 확인:
+                //    PRM 로그에 `영역 추가` 가 start 시점에만 찍힌다).
+                //
+                //    **바뀐 순간에만** 부른다. 이 경로는 앱이 5초마다 폴링하는 자리라, 매번
+                //    부르면 엔진이 계속 껐다 켜져 측위가 아예 서지 않는다.
+                if changed {
+                    log(.warn, SdkLocalized.format("zone.geofenceReload", zones.count))
+                    provider?.reloadGeofences()
+                }
             }
             let names = zones.map(\.name).joined(separator: ", ")
             logZoneOutcome(.info, zones.isEmpty ? SdkLocalized.text("zone.refreshEmpty")
@@ -350,6 +367,15 @@ final class SessionCoordinator {
                            key: "err:\(error)")
             return state.zones
         }
+    }
+
+    /// 엔진이 지오펜스를 다시 읽어야 하는가 — **어느 구역이 있느냐**만 본다.
+    ///
+    /// 이름·폴리곤이 아니라 id 집합으로 비교한다. 구역을 다시 그리면 콘솔이 새 id 를 주므로
+    /// (실측: `020461cd…` → `258dae1e…`) 도형이 바뀐 경우도 여기서 잡힌다. 반대로 id 가 같으면
+    /// 엔진이 이미 그 구역을 물고 있으니 다시 읽힐 이유가 없다.
+    static func geofencesChanged(from old: [Zone], to new: [Zone]) -> Bool {
+        Set(old.map(\.id)) != Set(new.map(\.id))
     }
 
     /// 직전과 결과가 같으면 침묵 (폴링 도배 방지). 호스트가 버튼으로 부른 건 앱이 따로 남긴다.
@@ -611,7 +637,7 @@ final class SessionCoordinator {
             do {
                 let config = try await api.floorConfig(floorId: floorId)
                 floorConfigs[floorId] = config
-                log(SdkLocalized.format("coord.floorLoaded", config.zones.count, String(floorId.prefix(8))))
+                log(SdkLocalized.format("coord.floorZones", config.zones.count, String(floorId.prefix(8))))
             } catch ApiError.notFound {
                 log(.info, SdkLocalized.text("coord.floorEmpty"))
                 // 404 = 이 층에 존 없음 → "정상 분기" (사양서 §9). 빈 설정으로 마킹해 재조회 방지
