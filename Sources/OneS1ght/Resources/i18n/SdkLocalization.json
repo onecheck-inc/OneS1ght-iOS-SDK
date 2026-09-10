@@ -349,6 +349,16 @@
     "ja": "ライセンス通過 — フロア探索(BLE)開始",
     "en": "License accepted — floor discovery (BLE) started"
   },
+  "uwb.paused": {
+    "ko": "⏸ 측위 일시정지 — 엔진은 계속 돕니다(층 유지)",
+    "ja": "⏸ 測位を一時停止 — エンジンは動作継続(フロア維持)",
+    "en": "⏸ Positioning paused — the engine keeps running (floor kept)"
+  },
+  "uwb.resumed": {
+    "ko": "▶︎ 측위 재개",
+    "ja": "▶︎ 測位を再開",
+    "en": "▶︎ Positioning resumed"
+  },
   "uwb.stopped": {
     "ko": "측위 엔진 정지됨",
     "ja": "測位エンジン停止",
