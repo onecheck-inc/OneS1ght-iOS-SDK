@@ -38,7 +38,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.22")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.23")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -372,6 +372,7 @@ Every failure carries a code. Include it when contacting support.
 | Zone events never fire | `E3004` | Are zones registered in Console? Were they there **when positioning started**? |
 | A zone drawn while running never fires | — | Fixed in 0.1.21 — the engine now reloads geofences when the zone set changes |
 | Paused but zone events keep coming | — | Fixed in 0.1.22 |
+| `begin()` right after `end()` does nothing | — | Fixed in 0.1.23 — `start` now waits for the in-flight stop instead of returning silently |
 | Fails on specific devices | `E2001` · `E2002` | iOS 27 / iPhone 12 or later? |
 | Permission prompt never returns | `E2003` | Denied once — guide to Settings |
 | 401 right after integration | `E1002` | Key status and environment (production/development) |

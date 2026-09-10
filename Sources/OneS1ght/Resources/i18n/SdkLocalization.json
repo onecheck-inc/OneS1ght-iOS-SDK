@@ -119,6 +119,11 @@
     "ja": "consent 記録済み",
     "en": "consent recorded"
   },
+  "coord.startIgnored": {
+    "ko": "이미 측위 중이라 시작 요청을 넘깁니다",
+    "ja": "すでに測位中のため開始要求をスキップします",
+    "en": "Already positioning \u2014 start request ignored"
+  },
   "coord.stopFlush": {
     "ko": "종료 — 잔여 %d건 flush 시도",
     "ja": "終了 — 残り %d件を flush",
