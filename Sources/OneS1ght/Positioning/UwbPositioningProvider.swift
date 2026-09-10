@@ -55,6 +55,10 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     @Published public private(set) var log: [String] = []
     /// 엔진 상태 — `.idle` 이 아니면 엔진이 돌고 있다.
     @Published public private(set) var phase: PositioningPhase = .idle
+    /// 사람이 일시정지를 눌렀는가. **엔진은 계속 돈다** — 층·앵커를 그대로 붙들고 있어야
+    /// 재개가 즉시 되고, 재개할 때마다 앵커를 처음부터 찾게 만들면 걷기 검증이 못 쓰게 된다.
+    /// 멈추는 것은 좌표의 **소비**(표시·수집·판정)뿐이다.
+    @Published public private(set) var isPaused = false
     /// 엔진이 지금 추적 중인 층 (공간 서비스 층 번호). nil = 층 탐색 중.
     @Published public private(set) var detectedFloorId: Int64?
 
@@ -293,6 +297,9 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     fileprivate func positioned(_ fid: Int64, _ x: Double, _ y: Double, _ z: Double) {
         // 탐색만 하는 동안(측위 시작 전)의 좌표는 버린다 — 화면에도, 서버에도, 판정에도 안 간다.
         guard isRunning else { return }
+        // 일시정지 중에도 엔진은 좌표를 계속 준다. 여기서 버린다 — 엔진을 끄지 않는 것이
+        // 일시정지의 요점이라(층·앵커 유지), 소비하는 자리에서 막아야 한다.
+        guard !isPaused else { return }
         let coord = Coordinates(x: x, y: y, z: z)
         latestPosition = coord
         measurementCount += 1
@@ -463,6 +470,7 @@ extension UwbPositioningProvider: PositioningProvider {
         latestPosition = nil
         judge.reset()
         isRunning = true
+        isPaused = false
         warnedFloorMismatch = nil
         addLog(.info, SdkLocalized.format("uwb.positioningOn",
                                           detectedFloorId.map(String.init) ?? "-"))
@@ -483,10 +491,30 @@ extension UwbPositioningProvider: PositioningProvider {
         }
     }
 
+    /// 좌표 소비만 멈춘다 — **엔진은 계속 돈다.**
+    ///
+    /// `stop()` 과 다르다: stop 은 엔진까지 꺼서 층·앵커를 잃고, 재개하면 앵커를 처음부터
+    /// 다시 찾는다. 걷기 검증 중에 잠깐 끄고 싶을 때 그건 과하다. 여기서는 화면의 내 위치,
+    /// 서버 전송, 존 판정만 멈추고 층 추적은 그대로 둔다.
+    public func pause() {
+        guard isRunning, !isPaused else { return }
+        isPaused = true
+        latestPosition = nil            // 마지막 점을 살아 있는 것처럼 두지 않는다
+        addLog(.info, SdkLocalized.text("uwb.paused"))
+    }
+
+    /// 일시정지 해제. 엔진이 계속 돌고 있었으므로 다음 좌표부터 바로 이어진다.
+    public func resume() {
+        guard isPaused else { return }
+        isPaused = false
+        addLog(.info, SdkLocalized.text("uwb.resumed"))
+    }
+
     /// 측위 종료 — 좌표 표시·수집·판정을 끄고 엔진도 함께 멈춘다.
     public func stop() {
         guard isRunning else { return }
         isRunning = false
+        isPaused = false
         latestPosition = nil
         floorWatchTask?.cancel(); floorWatchTask = nil
         addLog(.info, SdkLocalized.format("uwb.positioningOff", measurementCount))

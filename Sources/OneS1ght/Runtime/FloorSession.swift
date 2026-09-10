@@ -98,6 +98,34 @@ public final class FloorSession {
         try await coordinator.start(provider: provider)
     }
 
+    /// 측위 **일시정지** — 좌표 표시·수집·판정만 멈추고 엔진은 계속 돌린다.
+    ///
+    /// `end()` 와 다르다: end 는 엔진까지 꺼서 층·앵커를 잃고, 다시 `begin()` 하면 앵커를
+    /// 처음부터 찾는다. 걷다가 잠깐 끄는 데에는 그게 과하다 — 이 호출은 층 추적을 그대로
+    /// 둔 채 좌표만 버리므로 `resume()` 이 즉시 이어진다.
+    ///
+    /// 쌓인 좌표는 그대로 둔다(버퍼는 살아 있다) — 재개하면 같은 세션이 이어진다.
+    public func pause() {
+        #if os(iOS)
+        if #available(iOS 27.0, *) { (coordinator?.activeProvider as? UwbPositioningProvider)?.pause() }
+        #endif
+    }
+
+    /// 일시정지 해제.
+    public func resume() {
+        #if os(iOS)
+        if #available(iOS 27.0, *) { (coordinator?.activeProvider as? UwbPositioningProvider)?.resume() }
+        #endif
+    }
+
+    /// 일시정지 중인가.
+    public var isPaused: Bool {
+        #if os(iOS)
+        if #available(iOS 27.0, *) { return (coordinator?.activeProvider as? UwbPositioningProvider)?.isPaused ?? false }
+        #endif
+        return false
+    }
+
     /// 측위 종료 + 잔여 좌표 전송. 초기화·층 설정은 유지 → begin 재호출로 재개.
     public func end() async {
         await coordinator?.stop()

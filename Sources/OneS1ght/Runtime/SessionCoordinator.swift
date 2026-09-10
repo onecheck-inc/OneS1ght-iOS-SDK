@@ -36,6 +36,10 @@ final class SessionCoordinator {
     /// setFloorMap() 은 notInitialized 로 떨어진다(isInitialized 는 그래도 true — I1 참고).
     private var spaceClient: SpaceServiceClient?
     private var provider: PositioningProvider?   // start(consent:provider:)에서 장착
+    /// 지금 물려 있는 프로바이더 — FloorSession 의 pause/resume 이 읽는다.
+    /// 코어는 일시정지를 알 필요가 없다(좌표가 안 올라오면 그만이다). 그래서 상태를
+    /// 여기 복제하지 않고 프로바이더에게 그대로 묻는다 — 두 벌이 되면 어긋난다.
+    var activeProvider: PositioningProvider? { provider }
     /// SpaceServiceClient 를 새로 만들 때 물려줄 세션 — 테스트는 스텁을 주입한다.
     /// 이게 없으면 콘솔 키로 만든 클라이언트가 항상 `.shared` 로 떨어져, 그 뒤의 첫
     /// 조회가 스텁을 우회하고 실제 서비스로 나간다(I3).
