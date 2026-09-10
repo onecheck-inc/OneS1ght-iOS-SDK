@@ -13,18 +13,23 @@ import XCTest
 
 final class SdkLogLevelPolicyTests: XCTestCase {
 
-    /// 고칠 것이 없는 사실은 ERROR 가 아니다.
+    /// 기기가 못 하는 것은 고장이 아니다 — ERROR 가 아니어야 한다.
     ///
     /// 이 둘은 우리가 설계로 보장한 "미지원 기기에서도 앱은 살아 있다" 의 바로 그
     /// 상태다. 여기가 ERROR 로 돌아가면 그 보장이 로그상으로는 사고처럼 보인다.
-    func testDeviceFactsAreInfo() {
-        XCTAssertEqual(SdkErrorCode.osVersionTooLow.level, .info)
-        XCTAssertEqual(SdkErrorCode.deviceNotSupported.level, .info)
+    ///
+    /// ⚠️ 그렇다고 INFO 도 아니다. 관리자에게는 고칠 것이 없어 보여도 **앱 개발자에게는
+    ///    할 일이 있고**(안내 화면), 콘솔 코드집이 "INFO 는 조치를 갖지 않는다"를
+    ///    불변식으로 둔다. WARN 이 이 둘의 자리다.
+    func testDeviceFactsAreWarnNotError() {
+        XCTAssertEqual(SdkErrorCode.osVersionTooLow.level, .warn)
+        XCTAssertEqual(SdkErrorCode.deviceNotSupported.level, .warn)
     }
 
     /// 정상 경로이거나 계속 동작하는 상태는 ERROR 가 아니다.
     func testBenignStatesAreNotError() {
         for code: SdkErrorCode in [
+            .osVersionTooLow, .deviceNotSupported,
             .positioningDisabled,   // 테넌트가 일부러 꺼 둔 설정
             .permissionDenied,      // 설정에서 풀 수 있다
             .floorNotSet,           // BLE 흐름에서는 정상 경로

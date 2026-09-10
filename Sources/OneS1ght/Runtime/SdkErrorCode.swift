@@ -134,14 +134,15 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 기본 레벨 — 위 "등급 기준" 참고. 번호가 아니라 **알람 세기**를 정하는 자리다.
     public var level: SdkLogLevel {
         switch self {
-        // 고칠 것이 없는 사실. 기기가 못 하는 것이지 고장이 아니다 — 이 둘을 ERROR 로
-        // 두면 멀쩡한 기기들이 콘솔 로그 분석기를 가득 채우고, 우리가 설계로 보장한
-        // "미지원 기기에서도 앱은 살아 있다"가 로그상으로는 사고처럼 보인다.
-        case .osVersionTooLow, .deviceNotSupported:
-            return .info
-
         // 계속 동작하지만 알아야 하는 것.
-        case .zonesEmpty,           // 구역이 없는 층 — 지도는 그대로 뜬다
+        //
+        // ⚠️ 기기 미지원(E2001·E2002)을 INFO 까지 내리지 말 것. 관리자에게는 고칠 것이
+        //    없어 보이지만 **앱 개발자에게는 할 일이 있다**(안내 화면을 띄우는 것). 콘솔
+        //    코드집이 "INFO 는 조치를 갖지 않는다"를 불변식으로 두고 있어, INFO 로 내리면
+        //    그 조치 문구를 함께 버려야 한다. ERROR 만 벗기면 목적은 이미 달성된다.
+        case .osVersionTooLow,      // 기기가 못 하는 것이지 고장이 아니다
+             .deviceNotSupported,   // 위와 같다
+             .zonesEmpty,           // 구역이 없는 층 — 지도는 그대로 뜬다
              .locatorNotReceived,   // 일부 미수신 — 좌표는 나온다
              .pendingDropped,       // 미전송 좌표 유실
              .floorNotDetected,     // BLE 로 층을 아직 못 찾음
