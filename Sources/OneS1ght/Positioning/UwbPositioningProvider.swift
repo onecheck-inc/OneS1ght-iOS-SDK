@@ -58,7 +58,10 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 사람이 일시정지를 눌렀는가. **엔진은 계속 돈다** — 층·앵커를 그대로 붙들고 있어야
     /// 재개가 즉시 되고, 재개할 때마다 앵커를 처음부터 찾게 만들면 걷기 검증이 못 쓰게 된다.
     /// 멈추는 것은 좌표의 **소비**(표시·수집·판정)뿐이다.
-    @Published public private(set) var isPaused = false
+    /// 일시정지 중인가. **setter 는 모듈 내부까지만 연다** — 밖에서는 여전히 읽기 전용이고,
+    /// 테스트가 pause()/resume() 없이 이 상태에서의 동작(영역 이벤트 차단)을 그대로 밟을 수 있게
+    /// 하기 위해서다. 라이선스 서버가 필요한 start() 를 거치지 않고는 isRunning 을 못 만든다.
+    @Published public internal(set) var isPaused = false
     /// 엔진이 지금 추적 중인 층 (공간 서비스 층 번호). nil = 층 탐색 중.
     @Published public private(set) var detectedFloorId: Int64?
 
@@ -276,6 +279,12 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
             detectedFloorId = nil
             onFloorDetected?(nil)
         }
+        // 내려가는 동안 들어와 있던 start 를 이제 이어받는다 — phase 가 .idle 이 됐으니
+        // 정상 경로를 그대로 탄다.
+        if startAfterStop {
+            startAfterStop = false
+            start()
+        }
     }
 
     fileprivate func trackingStarted(_ fid: Int64) {
@@ -322,8 +331,22 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         // ② 존 판정은 엔진이 한다 — 여기서 좌표를 넣지 않는다 (areaEvent 로 들어온다)
     }
 
-    fileprivate func areaEvent(_ fid: Int64, _ name: String, _ inOut: String) {
+    /// 엔진이 올린 영역 전환. `fileprivate` 이 아니라 내부 공개 — 테스트가 직접 밟는다.
+    func areaEvent(_ fid: Int64, _ name: String, _ inOut: String) {
         let now = Date()
+        // 일시정지 중에는 여기서 끝난다.
+        //
+        // pause() 는 "화면의 내 위치·서버 전송·존 판정을 멈춘다" 고 약속한다. 그런데 이 경로는
+        // isRunning 만 보고 있었고 pause 는 isRunning 을 건드리지 않는다 — 좌표(positioned)에는
+        // 가드를 넣었으면서 영역 이벤트에는 빠뜨렸다. 그래서 「내 위치 표시 중지」를 눌러도
+        // 진입·이탈 알림이 계속 떴다(2026-09-10 실기기).
+        //
+        // 엔진은 계속 돌고 있어 판정 자체는 들어온다 — 그 사실만 로그에 남기고 밖으로는
+        // 내보내지 않는다. 로그까지 지우면 "멈춘 건지 신호가 끊긴 건지" 를 구분할 수 없다.
+        guard !isPaused else {
+            addLog(SdkLocalized.format("uwb.areaPaused", inOut, name))
+            return
+        }
         addLog(.info, SdkLocalized.format("uwb.area", inOut, name, fid))
         onRawAreaEvent?(fid, name, inOut, now)      // 원본 그대로 — 진단용
         // 가동 중이 아니면 여기서 끝. 수집·전송은 측위 세션 안에서만 한다.
@@ -425,6 +448,9 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 구역 재적재 때문에 우리가 껐는가 — `hubStopped()` 가 세션 정리를 건너뛰게 한다.
     private var reloadingGeofences = false
 
+    /// 정지가 끝나는 대로 다시 띄워야 하는가 — 내려가는 중에 start 가 온 경우.
+    private var startAfterStop = false
+
     /// 시작 전 단계에서 되돌린다 — phase 를 .starting 에 남기면 이후 start 가 전부 막힌다.
     private func abortStart() {
         guard phase == .starting else { return }
@@ -495,6 +521,20 @@ extension UwbPositioningProvider: PositioningProvider {
     /// 엔진이 아직 안 돌고 있으면 여기서 띄운다.
     public func start() {
         guard !isRunning else { return }
+        // 내려가는 중이면 지금 띄우면 안 된다.
+        //
+        // hub.stop() 은 비동기다 — onStopped 가 나중에 온다. 그 사이에 start 하면
+        // isRunning=true 로 만들어 놓고, 뒤늦게 도착한 onStopped 가 hubStopped() 에서
+        // 그것을 도로 꺼 버린다. 앱은 켜졌다고 믿는데 엔진은 꺼져 있어 **신호를 영영
+        // 못 찾는다**(2026-09-10 실기기: 14:14:37.056 시작 → 14:14:37.823 정지됨).
+        // 백그라운드에서 돌아올 때처럼 stop 과 start 가 붙어 오는 자리에서 터진다.
+        //
+        // 그래서 예약만 하고 물러난다. 정지가 끝나면 hubStopped() 가 이어서 띄운다.
+        guard phase != .stopping else {
+            startAfterStop = true
+            addLog(SdkLocalized.text("uwb.startQueued"))
+            return
+        }
         if phase == .idle { startDetection() }
         guard phase != .idle else { return }     // 라이선스 없음 등으로 못 뜬 경우
         measurementCount = 0
@@ -538,11 +578,18 @@ extension UwbPositioningProvider: PositioningProvider {
     public func resume() {
         guard isPaused else { return }
         isPaused = false
+        // 판정기를 초기화한다. 멈춰 있는 동안 들어온 영역 이벤트를 버렸으므로, 안에 있을 때
+        // 멈추고 밖으로 걸어 나온 뒤 재개하면 판정기는 아직 "안에 있다" 고 믿는다. 그러면
+        // 이탈이 영영 안 나오고 다음 진입도 통째로 묻힌다. 비워 두면 엔진이 보내는 다음
+        // 전환에서 다시 맞춰진다.
+        judge.reset()
         addLog(.info, SdkLocalized.text("uwb.resumed"))
     }
 
     /// 측위 종료 — 좌표 표시·수집·판정을 끄고 엔진도 함께 멈춘다.
     public func stop() {
+        // 예약된 start 가 있으면 먼저 지운다 — 끄겠다는 최신 의사가 이긴다.
+        startAfterStop = false
         guard isRunning else { return }
         isRunning = false
         isPaused = false

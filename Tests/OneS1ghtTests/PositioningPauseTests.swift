@@ -56,5 +56,43 @@ final class PositioningPauseTests: XCTestCase {
         p.stop()
         XCTAssertFalse(p.isPaused)
     }
+    // MARK: - 일시정지는 영역 이벤트도 막아야 한다
+
+    /// ⚠️ **이게 이번 회귀의 본체다.**
+    ///
+    /// `pause()` 는 "화면의 내 위치·서버 전송·**존 판정**을 멈춘다" 고 약속한다. 그런데
+    /// 영역 경로는 `isRunning` 만 보고 있었고 pause 는 isRunning 을 건드리지 않는다 —
+    /// 좌표 경로에는 가드를 넣었으면서 여기에는 빠뜨렸다. 그래서 「내 위치 표시 중지」를
+    /// 눌러도 진입·이탈 알림이 계속 떴다(2026-09-10 실기기 로그에 그대로 찍혔다).
+    ///
+    /// 기존 pause 테스트 4건은 **상태 전이만** 봤기 때문에 이걸 못 잡았다.
+    func test_일시정지_중에는_영역이벤트를_내보내지_않는다() {
+        let provider = UwbPositioningProvider()
+        var delivered: [String] = []
+        provider.onRawAreaEvent = { _, name, inOut, _ in delivered.append("\(inOut):\(name)") }
+
+        provider.isPaused = true
+        provider.areaEvent(14, "새 존 2", "IN")
+        provider.areaEvent(14, "새 존 2", "OUT")
+
+        XCTAssertTrue(delivered.isEmpty,
+                      "일시정지 중인데 영역 이벤트가 밖으로 나갔다: \(delivered)")
+    }
+
+    /// 막는 것만 맞으면 절반이다 — 재개하면 다시 나가야 한다.
+    /// 이게 없으면 "영원히 막는" 구현도 위 테스트를 통과한다.
+    func test_재개하면_영역이벤트가_다시_나간다() {
+        let provider = UwbPositioningProvider()
+        var delivered: [String] = []
+        provider.onRawAreaEvent = { _, name, inOut, _ in delivered.append("\(inOut):\(name)") }
+
+        provider.isPaused = true
+        provider.areaEvent(14, "새 존 2", "IN")
+        provider.isPaused = false
+        provider.areaEvent(14, "새 존 2", "IN")
+
+        XCTAssertEqual(delivered, ["IN:새 존 2"], "재개 뒤의 이벤트가 한 건만 나가야 한다")
+    }
+
 }
 #endif
