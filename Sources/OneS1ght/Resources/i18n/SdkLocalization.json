@@ -523,5 +523,15 @@
     "ko": "구역 재적재 — 엔진을 다시 시작합니다(잠시 좌표가 끊깁니다)",
     "en": "Reloading zones — restarting the engine (positions pause briefly)",
     "ja": "エリア再読み込み — エンジンを再起動します(座標が一時的に途切れます)"
+  },
+  "uwb.areaPaused": {
+    "ko": "일시정지 중 — 영역 %@ %@ 을 넘깁니다",
+    "en": "Paused - skipping area %@ %@",
+    "ja": "一時停止中 - エリア %@ %@ をスキップ"
+  },
+  "uwb.startQueued": {
+    "ko": "엔진이 아직 내려가는 중 — 정지가 끝나면 이어서 시작합니다",
+    "en": "Engine still stopping - will start once it finishes",
+    "ja": "エンジンが停止中 - 停止完了後に開始します"
   }
 }
