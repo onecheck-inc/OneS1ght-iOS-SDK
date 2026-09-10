@@ -38,7 +38,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.22")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -208,6 +208,22 @@ try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
 `setFloorMap` fetches locators, the UWB session ID and zones, then injects them into the
 engines. Calling it again while running switches floors — the session stays.
 
+### You may not need to pick a floor at all
+
+Renewed locators advertise their floor over BLE, so the engine finds the floor by itself
+a second or two after `begin()`. Watch `onFloorDetected` and follow it instead of asking
+the user to choose:
+
+```swift
+session.onFloorDetected = { engineFloorId in
+    guard let engineFloorId else { return }        // nil = lost the floor
+    // Map the engine's floor number to your console floor, then setFloorMap that one.
+}
+```
+
+⚠️ Do **not** stop positioning to switch floors. `setFloorMap` while running is safe and
+keeps the session — stopping makes the engine hunt for locators from scratch.
+
 ### Drawing the map
 
 ```swift
@@ -252,6 +268,27 @@ await session.end()
 `floorSession()` always returns the same instance — the UWB radio, judgement engine and
 coordinate buffer are one per device, so multiple sessions would physically collide.
 
+### Pausing is not stopping
+
+```swift
+session.pause()      // stop showing/collecting — the engine keeps running
+session.resume()
+session.isPaused
+```
+
+| | `pause()` | `end()` |
+|---|---|---|
+| Position callbacks | stop | stop |
+| Zone enter/exit | stop | stop |
+| Upload to server | stop | flush, then stop |
+| Engine · floor · locators | **kept** | released |
+| Cost of coming back | instant | locators found from scratch |
+
+Use `pause()` for "stop showing my position for a moment". `end()` is for leaving the
+space. Resuming clears the judgement state, so the first zone event after `resume()`
+re-establishes where you are — you will not get a stale exit for a zone you walked out
+of while paused.
+
 **Expected logs**
 
 ```
@@ -270,8 +307,8 @@ coordinates 240 sent → server accepted 240
 | Profile | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
 | Space | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
 | Floor | `setFloorMap(_:buildingID:)` · `refreshZones()` |
-| Positioning | `floorSession()` → `begin()` · `end()` |
-| Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
+| Positioning | `floorSession()` → `begin()` · `end()` · `pause()` · `resume()` · `isPaused` |
+| Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` · `onFloorDetected` |
 | Buffer | `send()` (upload now) · `empty()` (discard) |
 | Status | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 | Console-provided values | `googleMapKey` |
@@ -298,6 +335,17 @@ initialize ─→ begin ─→ [UWB coordinates] ─┬─→ onPosition        
 `onZoneEnter` fires immediately from on-device judgement. `onTriggers` arrives after the
 server responds — if the network is down you get the former but not the latter.
 
+### Where zone judgement happens
+
+The positioning engine judges zone enter/exit against **its own geofences**, fetched from
+the space service when it starts. The zones you get from `zones(_:_:)` are for naming and
+mapping ids — changing their parameters in Console does not change the judgement.
+
+The SDK watches for zone changes during `refreshZones()` and reloads the engine when the
+set actually changes (a zone added, removed or redrawn). That reload restarts the engine,
+so **positions pause for a second or so**. If your UI treats a gap as "signal lost", give
+it a grace period longer than that.
+
 ### Batching
 
 | Trigger | Value |
@@ -321,7 +369,9 @@ Every failure carries a code. Include it when contacting support.
 | Symptom | Codes | First check |
 |---|---|---|
 | App runs but no coordinates | `E3001` · `E3003` · `E4002` | Floor set? → UWB session? → locator placement |
-| Zone events never fire | `E3004` | Are zones registered in Console? |
+| Zone events never fire | `E3004` | Are zones registered in Console? Were they there **when positioning started**? |
+| A zone drawn while running never fires | — | Fixed in 0.1.21 — the engine now reloads geofences when the zone set changes |
+| Paused but zone events keep coming | — | Fixed in 0.1.22 |
 | Fails on specific devices | `E2001` · `E2002` | iOS 27 / iPhone 12 or later? |
 | Permission prompt never returns | `E2003` | Denied once — guide to Settings |
 | 401 right after integration | `E1002` | Key status and environment (production/development) |
