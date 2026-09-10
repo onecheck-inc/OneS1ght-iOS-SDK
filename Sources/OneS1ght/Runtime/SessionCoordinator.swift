@@ -402,7 +402,15 @@ final class SessionCoordinator {
 
     /// 시작(매장 진입 시) — 측위 가동. 서버 왕복 없음 (prepare 가 미리 끝나 있다).
     func start(provider: PositioningProvider) async throws {
-        guard !isRunning else { return }                             // 멱등
+        // 내려가는 중이면 그 정지가 끝나기를 기다렸다가 이어서 켠다.
+        // (UwbPositioningProvider 가 엔진에 대해 하는 것과 같은 대우를 세션에도 준다.)
+        if let stopping = stopInFlight { await stopping.value }
+        guard !isRunning else {                                      // 멱등
+            // ⚠️ 조용히 돌아가지 않는다. 여기서 삼킨 start 하나 때문에 화면은 「찾는 중」인데
+            //    실제로는 아무것도 안 도는 상태가 되고, 그 사실이 어디에도 안 남았다.
+            log(.warn, SdkLocalized.text("coord.startIgnored"))
+            return
+        }
         guard isPrepared else { throw SdkError.notInitialized }
         _ = try requireUserId()                                      // 인증이 앞에 있어야 한다
 
@@ -508,9 +516,28 @@ final class SessionCoordinator {
     /// 쌓인 좌표를 전송 없이 폐기
     func discardPending() { buffer.empty() }
 
+    /// 진행 중인 정지 — `start` 는 이걸 기다렸다가 이어서 켠다.
+    ///
+    /// ⚠️ 이 한 줄이 없어서 **[측위 종료] 뒤 재시작이 영영 안 살아났다**(2026-09-10 실기기).
+    ///    `stop()` 은 잔여 좌표를 서버로 flush 하느라 `await` 하고, `isRunning = false` 는
+    ///    그 왕복이 끝난 뒤에야 세운다(현장 로그에서 157ms). 종료 직후에 오는 `start()` 는
+    ///    그 창에 정확히 들어가 `guard !isRunning` 에 걸렸고, **아무 로그도 남기지 않고**
+    ///    돌아갔다 — 앱에는 "세션 id 는 발급됐는데 엔진 시작 줄이 없다" 로만 보였다.
+    private var stopInFlight: Task<Void, Never>?
+
     /// 종료: 측위 정지 + 잔여 좌표 flush (도식 11)
+    ///
+    /// 이미 내려가는 중이면 그 정지에 합류한다 — 두 번 끄지 않는다.
     func stop() async {
+        if let running = stopInFlight { await running.value; return }
         guard isRunning else { return }
+        let task = Task { @MainActor in await self.performStop() }
+        stopInFlight = task
+        await task.value
+        stopInFlight = nil
+    }
+
+    private func performStop() async {
         provider?.stop()
         flushTimer?.invalidate(); flushTimer = nil
         receptionCheckTask?.cancel(); receptionCheckTask = nil
