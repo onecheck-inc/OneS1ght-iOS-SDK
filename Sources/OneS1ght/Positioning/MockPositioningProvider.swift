@@ -23,6 +23,10 @@ public final class MockPositioningProvider: PositioningProvider {
     public func start() { isRunning = true }
     public func stop() { isRunning = false }
 
+    /// 코어가 "영역이 바뀌었다" 고 판단한 횟수 — 테스트가 이 값을 본다.
+    public private(set) var reloadGeofencesCount = 0
+    public func reloadGeofences() { reloadGeofencesCount += 1 }
+
     public func apply(buildingId: String, floorId: String) {
         appliedBuildingId = buildingId
         appliedFloorId = floorId

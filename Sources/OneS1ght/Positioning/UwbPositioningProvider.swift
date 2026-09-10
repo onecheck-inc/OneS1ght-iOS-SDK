@@ -248,6 +248,19 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     }
 
     fileprivate func hubStopped() {
+        // 구역 재적재로 우리가 끈 것이면 여기서 조용히 다시 켠다.
+        //
+        // ⚠️ **아래 정리 코드를 타면 안 된다.** isRunning=false·detectedFloorId=nil·
+        //    onFloorDetected(nil) 이 나가면 호스트 앱은 "측위가 끝났다 / 층을 잃었다" 로 읽고
+        //    지도를 「앵커를 찾는 중」으로 되돌린다. 구역을 하나 그릴 때마다 화면이 튀게 된다.
+        //    재적재는 사용자가 끈 것이 아니라 우리가 잠깐 껐다 켜는 것이므로 세션은 그대로 둔다.
+        if reloadingGeofences {
+            reloadingGeofences = false
+            phase = .idle
+            hub.setListener(nil)
+            startDetection()          // 다시 뜨면서 서버에서 지오펜스를 새로 읽는다
+            return
+        }
         let selfStopped = phase != .stopping     // stopDetection() 을 부르지 않았는데 멈춤
         phase = .idle
         floorWatchTask?.cancel(); floorWatchTask = nil
@@ -409,6 +422,9 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         onEngineError?(7, "location authorization denied")
     }
 
+    /// 구역 재적재 때문에 우리가 껐는가 — `hubStopped()` 가 세션 정리를 건너뛰게 한다.
+    private var reloadingGeofences = false
+
     /// 시작 전 단계에서 되돌린다 — phase 를 .starting 에 남기면 이후 start 가 전부 막힌다.
     private func abortStart() {
         guard phase == .starting else { return }
@@ -456,6 +472,21 @@ extension UwbPositioningProvider: PositioningProvider {
         if !config.anchors.isEmpty { anchors = config.anchors }
         judge.apply(zones: config.zones)
         addLog(SdkLocalized.format("uwb.zonesApply", config.zones.count, config.anchors.count))
+    }
+
+    /// 엔진이 지오펜스를 다시 읽게 한다 — **껐다 켜는 것 말고는 방법이 없다.**
+    ///
+    /// 엔진 공개 API 는 `setListener`·`start`·`stop`·`getLibraryVersion` 뿐이라 영역만 갱신할
+    /// 길이 없다. 엔진은 `start()` 때 자기 서버에서 지오펜스를 한 번 읽고 그대로 물고 간다.
+    ///
+    /// 다시 뜨는 동안(실측 1.5초 남짓) 좌표가 끊기고 층을 BLE 로 다시 찾는다. 같은 층이면
+    /// 호스트에는 아무 일도 없었던 것처럼 보인다 — `hubStopped()` 가 세션 정리를 건너뛴다.
+    public func reloadGeofences() {
+        // 측위 중이 아니면 할 일이 없다 — 다음 start() 가 어차피 새로 읽는다.
+        guard isRunning, phase != .idle, phase != .stopping, !reloadingGeofences else { return }
+        reloadingGeofences = true
+        addLog(.warn, SdkLocalized.text("uwb.geofenceReload"))
+        hub.stop()          // onStopped → hubStopped() 에서 다시 켠다
     }
 
     // positioningDiagnostic 은 클래스 본문에 있다 (프로토콜 요구사항을 그쪽이 충족한다).

@@ -95,12 +95,26 @@ public protocol PositioningProvider: AnyObject {
     /// 측위 설정(앵커·세션) 주입 (선택 채택 — 기본 no-op).
     /// ★ 소스 무관 통로 — 앱이 공간 서비스/서버에서 받은 값을 여기로 꽂는다. start 전에 호출.
     func apply(config: PositioningConfig)
+
+    /// **판정 영역이 바뀌었다 — 엔진이 지오펜스를 다시 읽게 하라** (선택 채택 — 기본 no-op).
+    ///
+    /// `apply(config:)` 로는 안 되기 때문에 따로 있다. 측위 엔진은 지오펜스를 **자기 서버에서**
+    /// 받고, 그것을 `start()` 때 **한 번만** 읽는다. 그래서 콘솔에서 구역을 새로 그려도 엔진은
+    /// 끝까지 모른다 — 지도에는 보이는데 진입·이탈 판정만 안 나오는, 눈으로는 설명이 안 되는
+    /// 상태가 된다(2026-09-10 실기기 확인).
+    ///
+    /// ⚠️ 엔진에는 영역만 갱신하는 API 가 없다(공개 API 는 start·stop·setListener·버전 뿐).
+    ///    그래서 구현은 **엔진을 껐다 켜는 것**이 된다. 부르는 쪽은 이게 공짜가 아님을 알아야
+    ///    한다 — 다시 뜨는 동안(실측 1.5초 남짓) 좌표가 끊긴다. 영역이 **실제로 바뀌었을 때만**
+    ///    부를 것.
+    func reloadGeofences()
 }
 
 public extension PositioningProvider {
     func apply(buildingId: String, floorId: String) {}   // 기본: 무시 (Mock 등)
     func apply(config: PositioningConfig) {}              // 기본: 무시
     var positioningDiagnostic: PositioningDiagnostic? { nil }   // 기본: 진단 없음
+    func reloadGeofences() {}                             // 기본: 무시 (엔진이 없는 구현)
 }
 
 @MainActor

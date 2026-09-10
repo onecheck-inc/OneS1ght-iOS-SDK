@@ -140,9 +140,9 @@
     "en": "Failed to send %d coordinates → buffer kept, will retry"
   },
   "coord.floorLoaded": {
-    "ko": "층 설정 로드: zones %d개 (floor %@…)",
-    "ja": "階設定をロード: zones %d件 (floor %@…)",
-    "en": "Floor config loaded: %d zones (floor %@…)"
+    "ko": "층 설정 로드: 로케이터 %d대 · 구역 %d개 (floor %@…)",
+    "en": "Floor config loaded: %d locators · %d zones (floor %@…)",
+    "ja": "階設定をロード: ロケーター %d台 · エリア %d件 (floor %@…)"
   },
   "coord.floorEmpty": {
     "ko": "층에 존 없음(404) — 정상 분기",
@@ -508,5 +508,20 @@
     "ko": "❌ 위치 권한이 없어 측위를 시작하지 못했습니다. 설정 앱에서 허용해야 합니다",
     "ja": "❌ 位置情報の許可がないため測位を開始できません。設定アプリで許可してください",
     "en": "❌ Cannot start positioning without location permission. Allow it in Settings"
+  },
+  "coord.floorZones": {
+    "ko": "층 구역 설정 로드: %d개 (floor %@…)",
+    "en": "Floor zone config loaded: %d (floor %@…)",
+    "ja": "階エリア設定をロード: %d件 (floor %@…)"
+  },
+  "zone.geofenceReload": {
+    "ko": "구역이 바뀌었습니다(%d개) — 판정 엔진이 구역을 다시 읽습니다",
+    "en": "Zones changed (%d) — reloading geofences in the positioning engine",
+    "ja": "エリアが変わりました(%d件) — 判定エンジンがエリアを読み直します"
+  },
+  "uwb.geofenceReload": {
+    "ko": "구역 재적재 — 엔진을 다시 시작합니다(잠시 좌표가 끊깁니다)",
+    "en": "Reloading zones — restarting the engine (positions pause briefly)",
+    "ja": "エリア再読み込み — エンジンを再起動します(座標が一時的に途切れます)"
   }
 }
