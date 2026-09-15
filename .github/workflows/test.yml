@@ -1,0 +1,22 @@
+# PR 검사 — 대상 브랜치를 가리지 않는다 (main · release/* 모두).
+# 테스트에 더해 "지금 버전으로 내보낼 수 있는 상태인가" 를 같이 본다: 버전 세 곳 일치 ·
+# 마이그레이션 마지막 칸 · CHANGELOG 항목. 이걸 PR 에서 잡아야 머지 뒤 릴리스 워크플로가 안 죽는다.
+name: test
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - run: swift --version
+      - run: swift test
+      - name: 릴리스 가능 상태 검사
+        run: SKIP_TESTS=1 Scripts/check-release.sh

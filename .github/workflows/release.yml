@@ -1,0 +1,79 @@
+# 정식 배포 — main 에 푸시(머지)되면 소스의 OneS1ght.sdkVersion 으로 v x.y.z 태그 + Release.
+#
+# · 그 버전의 태그가 이미 있으면 아무것도 하지 않는다. 버전을 올리지 않은 머지(문서·CI 등)는
+#   릴리스가 아니다. 릴리스는 "sdkVersion 을 태그 없는 번호로 올린 커밋이 main 에 들어온 것" 이다.
+# · 태그는 절대 옮기지 않는다 — 빠진 게 있으면 다음 번호로 다시 릴리스한다.
+# · 고객 SPM `from:` 은 태그를 보고, MCP 는 태그 URL 의 Snippets·Migrations 를 읽는다.
+#   그래서 릴리스의 실체는 main 머지가 아니라 이 태그다.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # 태그 목록이 필요하다
+      - uses: actions/cache@v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: 릴리스할 판인가
+        id: ver
+        run: |
+          VERSION=$(Scripts/sdk-version.sh)
+          TAG="v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::notice::$TAG 가 이미 있다 — 버전을 올리지 않은 머지라 릴리스하지 않는다"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$TAG 를 릴리스한다"
+            { echo "skip=false"; echo "version=$VERSION"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 검사 (버전 일치 · 마이그레이션 · CHANGELOG · swift test)
+        if: steps.ver.outputs.skip == 'false'
+        run: Scripts/check-release.sh "${{ steps.ver.outputs.version }}"
+
+      - name: 정식 태그
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+
+      - name: 태그가 실제로 담은 것 확인
+        if: steps.ver.outputs.skip == 'false'
+        run: Scripts/verify-tag.sh "${{ steps.ver.outputs.tag }}"
+
+      - name: Release
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          {
+            Scripts/changelog-section.sh "$VERSION"
+            echo
+            echo "---"
+            echo
+            echo "**다음 단계 (콘솔):** \`backend-spring/src/main/resources/sdk/codes-ios.json\` 의 \`minSdkVersion\` 을 \`$VERSION\` 으로 올리고 배포 — MCP 가 그 값으로 이 태그의 스니펫·마이그레이션 URL 을 만듭니다."
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest

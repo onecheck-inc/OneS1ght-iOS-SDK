@@ -1,0 +1,81 @@
+# 내부 테스트 배포 — release/x.y.z 에 푸시(머지)될 때마다 v x.y.z-rc.N 태그 + Pre-release.
+#
+# · 브랜치 이름의 버전과 소스의 OneS1ght.sdkVersion 이 같아야 한다.
+# · 고객의 `from:` 범위는 프리릴리즈 태그를 고르지 않는다(실측) — 테스트 앱만
+#   `.package(url: …, exact: "x.y.z-rc.N")` 으로 받는다.
+# · 정식 v x.y.z 가 이미 있으면 실패한다. 배포된 판에 rc 를 더 달 수 없다.
+name: prerelease
+
+on:
+  push:
+    branches: ['release/**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prerelease-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rc:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # 태그 목록이 필요하다
+      - uses: actions/cache@v6
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: 브랜치 이름과 소스 버전 대조
+        id: ver
+        run: |
+          BRANCH_VERSION="${GITHUB_REF_NAME#release/}"
+          SRC_VERSION=$(Scripts/sdk-version.sh)
+          if [[ ! "$BRANCH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::브랜치 이름이 release/x.y.z 형식이 아니다: $GITHUB_REF_NAME"; exit 1
+          fi
+          if [[ "$BRANCH_VERSION" != "$SRC_VERSION" ]]; then
+            echo "::error::브랜치는 release/$BRANCH_VERSION 인데 소스 sdkVersion 은 $SRC_VERSION — 판올림 커밋이 빠졌다"; exit 1
+          fi
+          TAG=$(Scripts/next-rc-tag.sh "$SRC_VERSION")
+          { echo "version=$SRC_VERSION"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
+          echo "::notice::$TAG 를 만든다"
+
+      - name: 검사 (버전 일치 · 마이그레이션 · CHANGELOG · swift test)
+        run: Scripts/check-release.sh "${{ steps.ver.outputs.version }}"
+
+      - name: rc 태그
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG (내부 테스트)"
+          git push origin "$TAG"
+
+      - name: 태그가 실제로 담은 것 확인
+        run: Scripts/verify-tag.sh "${{ steps.ver.outputs.tag }}"
+
+      - name: Pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          {
+            echo "**내부 테스트용** — 고객의 \`from:\` 범위에는 잡히지 않습니다."
+            echo
+            echo "테스트 앱에서 받기:"
+            echo '```swift'
+            echo ".package(url: \"https://github.com/onecheck-inc/OneS1ght-iOS-SDK\", exact: \"${TAG#v}\")"
+            echo '```'
+            echo
+            echo "---"
+            echo
+            Scripts/changelog-section.sh "$VERSION"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --prerelease --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
