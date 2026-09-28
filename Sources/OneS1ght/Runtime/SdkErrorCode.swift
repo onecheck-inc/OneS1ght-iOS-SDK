@@ -69,6 +69,9 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     case deviceNotSupported  = "E2002"
     /// 사용자가 측위 권한을 거부했다. 앱에서 재요청 불가 — 설정 앱으로 안내해야 한다.
     case permissionDenied    = "E2003"
+    /// Bluetooth 가 **꺼져 있다**(권한은 허용). 제어 센터·설정에서 켜면 풀린다 — 권한 거부(E2003)와
+    /// 할 일이 달라 코드를 나눴다. 엔진은 둘 다 오류 3 으로 주고 메시지(`powered off`)로만 가른다.
+    case bluetoothOff        = "E2004"
 
     // MARK: 3xxx — 공간·설정
 
@@ -151,6 +154,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
              .floorNotSet,          // 층 없이 시작 — BLE 흐름에서는 정상 경로
              .positioningDisabled,  // 테넌트가 **일부러** 꺼 둔 설정
              .permissionDenied,     // 사용자가 거부 — 설정에서 풀 수 있다
+             .bluetoothOff,         // 꺼 둔 것 — 켜면 풀린다
              .locatorsMissing,      // 아직 설치 전인 층일 수 있다. 지도는 정상
              .sessionIdMissing:     // 위와 같은 계열
             return .warn
@@ -180,6 +184,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .osVersionTooLow:     return "iOS 버전 미달"
         case .deviceNotSupported:  return "UWB 미지원 기기"
         case .permissionDenied:    return "측위 권한 거부"
+        case .bluetoothOff:        return "Bluetooth 꺼짐"
         case .floorNotSet:         return "층 미지정"
         case .locatorsMissing:     return "층에 로케이터 없음"
         case .sessionIdMissing:    return "층에 UWB 세션 없음"

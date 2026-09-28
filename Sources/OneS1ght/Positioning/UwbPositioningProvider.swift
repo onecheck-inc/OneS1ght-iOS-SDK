@@ -227,10 +227,16 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 현장 진단 가치가 없고, 코드로 올리면 재시도마다 쌓여 진짜 오류를 덮는다.
     /// 상태를 읽지 않는 순수 변환이라 `nonisolated` 다 — 클래스가 `@MainActor` 라는 이유로
     /// 격리에 묶이면 어느 큐에서 온 오류든 메인으로 건너와야 코드를 매길 수 있게 된다.
-    nonisolated static func sdkCode(forHubError code: Int) -> SdkErrorCode? {
+    ///
+    /// `message` 는 엔진이 같이 준 문장이다. 오류 3 하나로 Bluetooth "꺼짐·권한·미지원" 이 다 오는데,
+    /// 꺼짐(`powered off`)은 켜면 풀리고 권한은 설정 앱에서 풀어야 해 할 일이 다르다 — 그래서 그것만
+    /// 따로 E2004 로 올린다. 예전엔 꺼짐도 E2003 「측위 권한 거부」로 찍혔다(2026-09-28 실기기).
+    nonisolated static func sdkCode(forHubError code: Int, message: String = "") -> SdkErrorCode? {
         switch code {
         case 1:  return .invalidKey           // 라이선스 미등록
-        case 3:  return .permissionDenied     // Bluetooth 불가(꺼짐·권한·미지원)
+        case 3 where message.localizedCaseInsensitiveContains("powered off"):
+                 return .bluetoothOff         // Bluetooth 꺼짐 — 켜면 풀린다
+        case 3:  return .permissionDenied     // Bluetooth 불가(권한·미지원)
         case 4:  return .locatorsMissing      // 그 층의 앵커 정보 없음
         case 5:  return .uwbSessionFailed     // DL-TDoA 세션 오류
         case 6:  return .areaJudgeFailed      // 영역 판정 오류
@@ -358,16 +364,31 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         addLog(.error, SdkLocalized.format("uwb.error", code, msg, Self.describe(code)))
         onEngineError?(code, msg)
         // 화면 로그에 더해 E-코드로도 올린다 — 관리자는 콘솔 로그 분석기에서 이걸 본다.
-        if let sdk = Self.sdkCode(forHubError: code) {
+        if let sdk = Self.sdkCode(forHubError: code, message: msg) {
             reportToSDK(sdk, "engine=\(code) \(msg)")
         }
-        // 시작 자체가 안 된 경우(1·9·11·12)는 onStopped 가 오지 않는다 — 여기서 되돌린다.
-        // 3·7·10 은 구동 중이면 엔진이 스스로 멈추고 onStopped 가 뒤따른다(hubStopped 에서 처리).
-        if phase == .starting, [1, 9, 11, 12].contains(code) {
+        // 시작 단계에서 난 오류는 엔진이 **아예 뜨지 못한** 것이라 onStopped 가 오지 않는다 —
+        // 여기서 되돌린다(abortsStart 주석). 구동 중에 난 3·7·10 은 엔진이 스스로 멈추고
+        // onStopped 가 뒤따른다(hubStopped 에서 처리).
+        if phase == .starting, Self.abortsStart(hubError: code) {
             phase = .idle
             if isRunning { isRunning = false; latestPosition = nil }
             hub.setListener(nil)
         }
+    }
+
+    /// 시작 단계(`.starting` — 아직 onStarted 가 안 옴)에서 이 오류가 나면 엔진이 뜨지 못한 것인가.
+    ///
+    /// ⚠️ 3(Bluetooth)·7(위치)·10(라이선스 거부)을 예전엔 "구동 중에만 나고 onStopped 가 뒤따른다" 고
+    ///    보고 여기서 뺐다. 그런데 **Bluetooth 가 꺼진 채 시작하면 3 이 시작 단계에서 나고 onStopped 는
+    ///    오지 않는다.** phase 가 .starting 에 남은 채 stopDetection() 이 .stopping 으로 바꾸면 정지 완료가
+    ///    영영 안 와 거기서 굳고, 이후 start() 는 전부 startAfterStop 으로 미뤄져 **Bluetooth 를 켜도 앱을
+    ///    다시 켜기 전엔 측위가 안 돌아왔다**(2026-09-28 실기기: `uwb.startQueued` 반복, "정지됨" 없음).
+    ///    시작 단계에서 나는 치명 오류는 번호와 무관하게 전부 "뜨지 못함" 이다.
+    /// 2(이미 측위 중)·8(정지 중 start)은 호출 순서 문제라 엔진 상태를 바꾸지 않는다. 4·5·6 은 층·세션·
+    /// 판정 오류로 엔진이 뜬 뒤에 난다.
+    nonisolated static func abortsStart(hubError code: Int) -> Bool {
+        [1, 3, 7, 9, 10, 11, 12].contains(code)
     }
 
     /// 측위 엔진 오류 코드표 (1~12)

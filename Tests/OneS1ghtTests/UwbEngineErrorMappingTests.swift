@@ -21,6 +21,31 @@ final class UwbEngineErrorMappingTests: XCTestCase {
         UwbPositioningProvider.sdkCode(forHubError: hub)
     }
 
+    /// Bluetooth 꺼짐은 권한 거부와 할 일이 달라(켜면 풀린다) E2004 로 따로 간다 — 엔진은 둘 다
+    /// 오류 3 이고 메시지로만 갈린다(실기기 문장 그대로).
+    func testBluetoothPoweredOffIsNotPermissionDenied() {
+        XCTAssertEqual(UwbPositioningProvider.sdkCode(forHubError: 3,
+                                                     message: "bluetooth unavailable: powered off"),
+                       .bluetoothOff)
+        XCTAssertEqual(UwbPositioningProvider.sdkCode(forHubError: 3, message: "unauthorized"),
+                       .permissionDenied, "권한 쪽은 그대로 E2003")
+    }
+
+    /// 시작 단계에서 난 치명 오류는 엔진이 뜨지 못한 것이다 — onStopped 가 안 오므로 되돌려야 한다.
+    /// 3·7·10 이 빠져 있어 Bluetooth 를 끈 채 시작하면 정지가 영영 안 끝나고 굳었다(2026-09-28).
+    func testFatalErrorsDuringStartAbortTheStart() {
+        for hub in [1, 3, 7, 9, 10, 11, 12] {
+            XCTAssertTrue(UwbPositioningProvider.abortsStart(hubError: hub), "엔진 \(hub)")
+        }
+    }
+
+    /// 호출 순서 문제(2·8)와 뜬 뒤의 오류(4·5·6)는 시작을 되돌리지 않는다.
+    func testNonFatalErrorsDoNotAbortTheStart() {
+        for hub in [2, 4, 5, 6, 8, 0, 13] {
+            XCTAssertFalse(UwbPositioningProvider.abortsStart(hubError: hub), "엔진 \(hub)")
+        }
+    }
+
     /// 권한 계열 셋(BT 불가·위치 불가·Info.plist 키 누락)은 모두 E2003 이다 —
     /// 관리자가 할 일이 같다: 사용자에게 설정을 안내한다.
     func testPermissionFamilyMapsToPermissionDenied() {
