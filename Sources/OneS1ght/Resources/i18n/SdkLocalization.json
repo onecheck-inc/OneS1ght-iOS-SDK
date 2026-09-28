@@ -419,6 +419,21 @@
     "ja": "コンソールのエリア %d件 を投入 (ロケーター %d台 は診断用 — 測位エンジンは自社サーバーのアンカーを使用)",
     "en": "Applied %d console zones (%d locators are diagnostics only — the positioning engine uses its own anchors)"
   },
+  "uwb.clamped": {
+    "ko": "⛔ 로케이터 범위 밖 · (%.1f, %.1f) → 경계로 (%.1f, %.1f) · 밖 %.1f초",
+    "ja": "⛔ ロケーター範囲外 · (%.1f, %.1f) → 境界へ (%.1f, %.1f) · 範囲外 %.1f秒",
+    "en": "⛔ Outside locator bounds · (%.1f, %.1f) → snapped to edge (%.1f, %.1f) · out for %.1fs"
+  },
+  "uwb.clampExpired": {
+    "ko": "⛔ 로케이터 범위 밖 %.0f초 초과 → 좌표 없음 · (%.1f, %.1f) · 범위 x %.1f~%.1f · y %.1f~%.1f",
+    "ja": "⛔ ロケーター範囲外 %.0f秒超過 → 座標なし · (%.1f, %.1f) · 範囲 x %.1f~%.1f · y %.1f~%.1f",
+    "en": "⛔ Outside locator bounds over %.0fs → no fix · (%.1f, %.1f) · bounds x %.1f~%.1f · y %.1f~%.1f"
+  },
+  "uwb.clampBack": {
+    "ko": "✅ 로케이터 범위 복귀 · (%.1f, %.1f) · 밖에 %.1f초",
+    "ja": "✅ ロケーター範囲に復帰 · (%.1f, %.1f) · 範囲外 %.1f秒",
+    "en": "✅ Back inside locator bounds · (%.1f, %.1f) · was out %.1fs"
+  },
   "uwb.fullAccuracy": {
     "ko": "정밀 위치가 아닙니다 — 임시 정밀 승격을 요청합니다",
     "ja": "正確な位置情報ではありません — 一時的な精度向上を要求します",

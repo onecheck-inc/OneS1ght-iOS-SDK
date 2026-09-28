@@ -96,6 +96,37 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 비어 있으면 start 하지 않고 오류로 통지한다 (조용한 실패 금지).
     public var license = ""
 
+    // MARK: - 로케이터 범위 클램프 (2026-09-28)
+
+    /// 로케이터 설치 범위(x·y 각각 min~max + 여유) 밖의 좌표는 두 단계로 다룬다:
+    ///   · `locatorHoldSeconds` 안 — 잠깐의 오차로 보고 **밖으로 나간 축을 경계값에 붙인다**. 안에 있는
+    ///     축은 그대로라 점이 벽을 따라 계속 움직인다.
+    ///   · 그보다 오래 밖 — 실제로 나간 것으로 보고 `latestPosition` 을 **nil** 로 내린다. 앱은 좌표가
+    ///     끊긴 것과 같은 흐름(신호 상실 → "로케이터 근처로 이동")을 탄다.
+    /// z 는 검사하지 않는다 — 로케이터는 천장에 있어 z 범위로 자르면 모든 좌표가 걸린다.
+    ///
+    /// 2026-09-28 현장에서 세 방식을 비교했다: ① 밖으로 나간 축만 직전 값 → 한 축이 오래 밖이면 점이
+    /// 직선을 따라 미끄러짐. ② 통째로 직전 좌표 유지 → 경계를 넘나들 때마다 점이 멈췄다 튀어
+    /// **뚝뚝 끊겨 보임**(클램프를 끄면 매끄러움). ③ 경계값에 붙이기 → 연속성이 유지된다. ③ 으로 확정.
+    /// "오래 밖 = 없음" 단계는 직전 좌표를 계속 돌려주면 값이 안 바뀌어 앱의 좌표 감시(onChange)가
+    /// 어차피 신호 상실로 판정하기 때문에 — SDK 가 명시적으로 말하는 쪽이 맞다.
+    ///
+    /// 엔진(gpi-ihub)에는 영역 제한 옵션이 없다 — 공개 API 가 start/stop/setListener 뿐이고, 내부
+    /// 클램프는 `maxSpeedMetersPerSecond` 속도 제한이다. 그래서 여기서 한다. 끄면 원본이 그대로 흐른다.
+    /// true — 클램프 실행: 좌표를 로케이터 영역 안으로 제한한다(밖이면 경계에 붙이고, 오래 밖이면 없음).
+    /// false — 클램프 무시: 엔진 좌표가 원본 그대로 흐른다(영역 밖으로도 나감).
+    public var clampToLocatorBounds = true
+    /// 범위 밖 좌표를 경계에 붙여 두는 최대 시간(초). 넘으면 좌표 없음(nil)으로 넘긴다.
+    public var locatorHoldSeconds: TimeInterval = 5
+    /// 범위 바깥 여유(m). 벽에 붙은 로케이터 옆에 서면 오차로 살짝 밖이 나오므로 0 은 너무 빡빡하다.
+    /// 우선 0.3(30 cm)으로 정했다 — 현장에 따라 조정한다.
+    public var locatorBoundsMarginM = 0.3
+    /// 범위 밖이 시작된 시각. 안으로 돌아오면 nil.
+    private var outOfBoundsSince: Date?
+    /// 로그는 초당 1줄로 묶는다 — 좌표는 초당 여러 건이라 그대로 찍으면 판정 이벤트를 묻는다.
+    /// 진단은 이 로그(판정 로그 파일)로 충분하다 — 별도 훅·카운터는 확인 뒤 뺐다(2026-09-28).
+    private var lastClampLogAt = Date.distantPast
+
     // MARK: - 내부
 
     private var buildingId = ""
@@ -322,13 +353,60 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         // 일시정지 중에도 엔진은 좌표를 계속 준다. 여기서 버린다 — 엔진을 끄지 않는 것이
         // 일시정지의 요점이라(층·앵커 유지), 소비하는 자리에서 막아야 한다.
         guard !isPaused else { return }
-        let coord = Coordinates(x: x, y: y, z: z)
+        // 로케이터 범위 밖: 잠깐이면 경계에 붙이고, 오래면 좌표 없음으로 내린다.
+        guard let (cx, cy) = clampedToLocatorBounds(x, y) else {
+            if latestPosition != nil { latestPosition = nil }   // 오래 밖 → 앱이 신호 상실 흐름을 탄다
+            return
+        }
+        let coord = Coordinates(x: cx, y: cy, z: z)
         latestPosition = coord
         measurementCount += 1
         // 좌표 라인은 로그에서 제외 — 초당 여러 건이라 판정 이벤트를 묻어버린다.
         // ① SDK 로 좌표 전달 (버퍼링 → positioning/logs 는 코어 몫)
         delegate?.provider(self, didUpdate: coord, floorId: String(fid), at: Date())
         // ② 존 판정은 엔진이 한다 — 여기서 좌표를 넣지 않는다 (areaEvent 로 들어온다)
+    }
+
+    /// 콘솔 로케이터의 x·y 범위 + 여유. 로케이터가 없으면 nil (= 클램프 안 함).
+    private var locatorBounds: (minX: Double, maxX: Double, minY: Double, maxY: Double)? {
+        let xs = anchors.values.map(\.x), ys = anchors.values.map(\.y)
+        guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { return nil }
+        let m = locatorBoundsMarginM
+        return (x0 - m, x1 + m, y0 - m, y1 + m)
+    }
+
+    /// 범위 안이면 (x, y) 그대로. 밖이면 `locatorHoldSeconds` 까지는 나간 축을 경계값에 붙인 좌표,
+    /// 그 뒤로는 nil. nil 을 받은 호출부가 latestPosition 을 비운다.
+    private func clampedToLocatorBounds(_ x: Double, _ y: Double) -> (Double, Double)? {
+        guard clampToLocatorBounds, let b = locatorBounds else { return (x, y) }
+        let now = Date()
+        let inside = (b.minX...b.maxX).contains(x) && (b.minY...b.maxY).contains(y)
+        if inside {
+            if let since = outOfBoundsSince {
+                outOfBoundsSince = nil
+                addLog(.info, SdkLocalized.format("uwb.clampBack", x, y, now.timeIntervalSince(since)))
+            }
+            return (x, y)
+        }
+
+        let since = outOfBoundsSince ?? now
+        outOfBoundsSince = since
+        let outFor = now.timeIntervalSince(since)
+        let expired = outFor > locatorHoldSeconds
+        // 나간 축만 경계에 붙는다 — 안에 있는 축은 새 값 그대로라 점이 벽을 따라 계속 움직인다.
+        let projected: (Double, Double)? = expired ? nil
+            : (min(max(x, b.minX), b.maxX), min(max(y, b.minY), b.maxY))
+
+        if now.timeIntervalSince(lastClampLogAt) >= 1 {
+            lastClampLogAt = now
+            if let projected {
+                addLog(.warn, SdkLocalized.format("uwb.clamped", x, y, projected.0, projected.1, outFor))
+            } else {
+                addLog(.warn, SdkLocalized.format("uwb.clampExpired", locatorHoldSeconds, x, y,
+                                                  b.minX, b.maxX, b.minY, b.maxY))
+            }
+        }
+        return projected
     }
 
     /// 엔진이 올린 영역 전환. `fileprivate` 이 아니라 내부 공개 — 테스트가 직접 밟는다.
@@ -538,6 +616,7 @@ extension UwbPositioningProvider: PositioningProvider {
         if phase == .idle { startDetection() }
         guard phase != .idle else { return }     // 라이선스 없음 등으로 못 뜬 경우
         measurementCount = 0
+        outOfBoundsSince = nil
         latestPosition = nil
         judge.reset()
         isRunning = true
