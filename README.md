@@ -387,6 +387,7 @@ Every failure carries a code. Include it when contacting support.
 | `E2001` | iOS version too low |
 | `E2002` | Device does not support UWB |
 | `E2003` | Positioning permission denied |
+| `E2004` | Bluetooth is off |
 | `E3001` | No floor set |
 | `E3002` | No locators on floor |
 | `E3003` | No UWB session on floor |

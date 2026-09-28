@@ -32,6 +32,7 @@ final class SdkLogLevelPolicyTests: XCTestCase {
             .osVersionTooLow, .deviceNotSupported,
             .positioningDisabled,   // 테넌트가 일부러 꺼 둔 설정
             .permissionDenied,      // 설정에서 풀 수 있다
+            .bluetoothOff,          // 켜면 풀린다
             .floorNotSet,           // BLE 흐름에서는 정상 경로
             .locatorsMissing,       // 설치 전 층일 수 있다
             .sessionIdMissing,
@@ -60,7 +61,7 @@ final class SdkLogLevelPolicyTests: XCTestCase {
     func testEveryCodeIsClassified() {
         let known: Set<SdkErrorCode> = [
             .osVersionTooLow, .deviceNotSupported,
-            .positioningDisabled, .permissionDenied, .floorNotSet, .locatorsMissing,
+            .positioningDisabled, .permissionDenied, .bluetoothOff, .floorNotSet, .locatorsMissing,
             .sessionIdMissing, .zonesEmpty, .noPositionFix, .floorNotDetected,
             .zoneMappingFailed, .areaJudgeFailed, .locatorNotReceived, .pendingDropped,
             .notInitialized, .invalidKey, .notIdentified, .keyUnavailable,
