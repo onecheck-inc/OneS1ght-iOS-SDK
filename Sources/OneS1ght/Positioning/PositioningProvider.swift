@@ -135,8 +135,20 @@ public protocol PositioningProviderDelegate: AnyObject {
     /// 콘솔 로그 분석기에 한 줄도 안 올라가 "현장에서 안 됐다"는 말만 남는다.
     /// 선택 채택 — 기본 no-op 이라 Mock 은 구현하지 않아도 된다.
     func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String)
+
+    /// **켜 달라고 했는데 엔진이 스스로 꺼졌다** — 시작이 접혔거나(권한·라이선스·Bluetooth),
+    /// 돌다가 엔진 오류로 멈췄다. 부르는 쪽(SDK 코어)이 `stop()` 한 경우에는 오지 않는다.
+    ///
+    /// 이게 없던 동안 코어는 세션을 "측위 중" 으로 둔 채 몰랐다. 백그라운드 복귀 때 코어가 다시 켠
+    /// 엔진이 접히면 앱의 `begin()` 은 "이미 측위 중" 으로 삼켜지고, 앱을 껐다 켜기 전엔 측위가
+    /// 돌아오지 않았다(2026-10-02 온보딩 앱 피드백).
+    /// - Parameter retryable: 다시 켜 볼 만한가. 권한 거부·Bluetooth 꺼짐·라이선스 거부처럼
+    ///   사람이 풀어야 하는 것은 false.
+    /// 선택 채택 — 기본 no-op.
+    func provider(_ p: PositioningProvider, didStopUnexpectedly retryable: Bool, context: String)
 }
 
 public extension PositioningProviderDelegate {
     func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String) {}
+    func provider(_ p: PositioningProvider, didStopUnexpectedly retryable: Bool, context: String) {}
 }

@@ -88,6 +88,16 @@ final class SessionCoordinator {
     private let receptionCheckDelay: TimeInterval
     private var lifecycleObservers: [NSObjectProtocol] = []
 
+    /// 엔진이 **스스로** 꺼졌을 때 다시 켜 보는 간격 — 이만큼 해도 안 되면 세션을 닫는다.
+    ///
+    /// 닫는 이유: 세션을 "측위 중" 으로 둔 채 엔진만 죽어 있으면 앱의 `begin()` 이 "이미 측위 중" 으로
+    /// 삼켜져, 앱을 껐다 켜기 전엔 측위가 안 돌아왔다(2026-10-02 온보딩 앱 — 백그라운드 복귀 후
+    /// 층을 못 찾고 강제 종료). 닫으면 `FloorSession.isRunning` 이 false 가 되어 앱이 알고 다시 연다.
+    private let engineRestartDelays: [TimeInterval]
+    /// 지금까지 다시 켠 횟수 — 좌표가 한 번 나오거나 포그라운드로 돌아오면 0 으로.
+    private var engineRestartAttempts = 0
+    private var engineRestartTask: Task<Void, Never>?
+
     /// 존 이벤트 응답의 개인화 액션 → 호스트 전달 (zoneId, triggers)
     var onTriggers: ((String, [Trigger]) -> Void)?
 
@@ -148,8 +158,10 @@ final class SessionCoordinator {
          flushThreshold: Int = 300,
          flushInterval: TimeInterval = 60,
          maxPerRequest: Int = 500,
-         receptionCheckDelay: TimeInterval = 7) {
+         receptionCheckDelay: TimeInterval = 7,
+         engineRestartDelays: [TimeInterval] = [3, 10, 30]) {
         self.receptionCheckDelay = receptionCheckDelay
+        self.engineRestartDelays = engineRestartDelays
         self.api = api
         self.identity = identity
         self.spaceClient = spaceClient
@@ -420,10 +432,11 @@ final class SessionCoordinator {
         if floorState != nil {
             applyFloorStateToProvider()
         } else {
-            // WARN 이다 — 엔진이 BLE 로 층을 찾는 흐름에서는 여기가 정상 경로다.
-            // 층이 **끝내** 안 잡히는 것은 별개 코드(E3007 floorNotDetected)가 알린다.
-            log(.warn, SdkLocalized.text("coord.noFloorLoaded"))
-            report(.floorNotSet)
+            // 엔진이 BLE 로 층을 찾는 흐름에서는 **여기가 정상 경로다** — 서버에 E3001 을 올리지 않는다.
+            // 예전엔 시작할 때마다 올라가(0.1.19 에 ERROR→WARN 으로만 내렸다) 콘솔 로그가 이 줄로
+            // 덮였다(2026-10-02). 층이 **끝내** 안 잡히는 것은 E3007 floorNotDetected 가 알린다.
+            // 화면 로그(onDebugLog)에는 남긴다 — "왜 아직 좌표가 없지" 의 답이다.
+            log(.info, SdkLocalized.text("coord.noFloorLoaded"))
         }
 
         // 방문 시작
@@ -431,8 +444,12 @@ final class SessionCoordinator {
         lastRecordedAt = nil
         report(.positioningOn, "visitor=\(visitorId)")
         provider.delegate = self
-        provider.start()
+        // ⚠️ isRunning 을 **먼저** 세운다. 엔진은 시작 안에서 동기로 접힐 수 있다(라이선스 없음·위치 권한이
+        //    이미 거부됨) — 그 알림(didStopUnexpectedly)이 isRunning=false 일 때 오면 무시돼, 세션은
+        //    「측위 중」 인 채 엔진만 죽은 상태로 남았다.
         isRunning = true
+        provider.start()
+        guard isRunning else { return }   // 시작 안에서 이미 닫혔다(재시도 불가) — 타이머를 걸지 않는다
         startFlushTimer()
         startReceptionCheck()
         ensureLiveStream()
@@ -538,6 +555,8 @@ final class SessionCoordinator {
     }
 
     private func performStop() async {
+        engineRestartTask?.cancel(); engineRestartTask = nil
+        engineRestartAttempts = 0
         provider?.stop()
         flushTimer?.invalidate(); flushTimer = nil
         receptionCheckTask?.cancel(); receptionCheckTask = nil
@@ -720,6 +739,8 @@ final class SessionCoordinator {
                            object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
+                    // 내려가면 다시 켜 보기를 멈춘다 — 백그라운드에선 UWB 가 안 돈다. 돌아오면 아래에서 켠다.
+                    self.engineRestartTask?.cancel(); self.engineRestartTask = nil
                     if self.isRunning {                 // 측위는 세션이 돌 때만
                         self.provider?.stop()
                         await self.buffer.flush()
@@ -734,12 +755,24 @@ final class SessionCoordinator {
                            object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
+                    // 복귀는 새 기회다 — 내려가기 전의 재시도 횟수는 잊는다. 이 시작이 접히면
+                    // provider 가 didStopUnexpectedly 로 알려 오고, 거기서 다시 켜 보거나 세션을 닫는다.
+                    self.engineRestartAttempts = 0
                     if self.isRunning { self.provider?.start() }
                     self.live = nil                     // 배경에서 끊긴 것 — 새로 붙인다
                     self.ensureLiveStream()
                 }
             },
         ]
+        #endif
+    }
+
+    /// 앱이 화면에 떠 있는가. UIKit 이 없는 곳(macOS swift test)에선 true — 판정할 것이 없다.
+    static var isAppActive: Bool {
+        #if canImport(UIKit) && !os(watchOS)
+        return UIApplication.shared.applicationState == .active
+        #else
+        return true
         #endif
     }
 
@@ -771,9 +804,39 @@ extension SessionCoordinator: PositioningProviderDelegate {
         report(code, context)
     }
 
+    /// 엔진이 스스로 꺼졌다 — 다시 켜 보거나(포그라운드·재시도 가능·횟수 남음), 세션을 닫는다.
+    ///
+    /// ⚠️ 그대로 두지 않는다. 세션이 "측위 중" 인 채 엔진만 죽어 있으면 앱의 `begin()` 이 삼켜지고,
+    ///    화면은 「찾는 중」인데 아무것도 안 도는 상태가 앱을 껐다 켤 때까지 간다.
+    func provider(_ p: PositioningProvider, didStopUnexpectedly retryable: Bool, context: String) {
+        guard isRunning, stopInFlight == nil, provider === p else { return }
+        engineRestartTask?.cancel(); engineRestartTask = nil
+        let attempt = engineRestartAttempts
+        guard retryable, attempt < engineRestartDelays.count else {
+            // 사람이 풀어야 하는 원인(권한·Bluetooth·라이선스)은 엔진이 이미 제 코드(E2003·E2004 등)로
+            // 올렸다 — E4001(ERROR)을 덧붙이면 같은 일이 「고장」 으로 두 번 찍힌다. 재시도를 다 쓴 것만 올린다.
+            if retryable { report(.uwbSessionFailed, "engine stopped, session closed — \(context)") }
+            log(.warn, SdkLocalized.format("coord.engineGaveUp", context))
+            Task { await self.stop() }
+            return
+        }
+        engineRestartAttempts += 1
+        let delay = engineRestartDelays[attempt]
+        report(.uwbSessionFailed, "engine stopped, retry \(attempt + 1)/\(engineRestartDelays.count) in \(Int(delay))s — \(context)")
+        log(.warn, SdkLocalized.format("coord.engineRetry", attempt + 1, engineRestartDelays.count, Int(delay)))
+        engineRestartTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.isRunning, self.provider === p else { return }
+            // 백그라운드면 켜지 않는다 — UWB 가 안 돈다. 포그라운드 복귀가 대신 켠다.
+            guard Self.isAppActive else { return }
+            p.start()
+        }
+    }
+
     /// 좌표 fix — 층 설정 확보 + 버퍼 적재, 임계 도달 시 flush
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,
                   floorId: String, at capturedAt: Date) {
+        engineRestartAttempts = 0         // 다시 살아났다 — 다음 고장은 처음부터 센다
         onPosition?(coordinates)          // 앱 훅 — 원속도 유지 (지도 렌더)
         ensureFloorLoaded(floorId)
         // ⚠️ 서버 전송분만 솎는다. 존 판정(provider 내부 zoneEngine)은 원속도 그대로 —

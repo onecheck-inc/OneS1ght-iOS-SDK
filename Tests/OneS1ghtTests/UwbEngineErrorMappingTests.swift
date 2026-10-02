@@ -40,6 +40,19 @@ final class UwbEngineErrorMappingTests: XCTestCase {
     }
 
     /// 호출 순서 문제(2·8)와 뜬 뒤의 오류(4·5·6)는 시작을 되돌리지 않는다.
+    /// 스스로 멈춘 엔진을 코어가 다시 켜 볼 것인가 — 사람이 풀어야 하는 것(라이선스 없음·Bluetooth·
+    /// 위치·라이선스 거부)은 아니다. 다시 켜 봐야 같은 자리에서 접힌다. 원인 모름(nil)·라이선스 서버
+    /// 연결(11) 등은 잠시 뒤 풀릴 수 있어 다시 켠다(2026-10-02 복귀 재시작 실패).
+    func testRetryableEngineStops() {
+        for hub in [1, 3, 7, 10] {
+            XCTAssertFalse(UwbPositioningProvider.isRetryable(hubError: hub), "엔진 \(hub)")
+        }
+        for hub in [2, 9, 11, 12] {
+            XCTAssertTrue(UwbPositioningProvider.isRetryable(hubError: hub), "엔진 \(hub)")
+        }
+        XCTAssertTrue(UwbPositioningProvider.isRetryable(hubError: nil))
+    }
+
     func testNonFatalErrorsDoNotAbortTheStart() {
         for hub in [2, 4, 5, 6, 8, 0, 13] {
             XCTAssertFalse(UwbPositioningProvider.abortsStart(hubError: hub), "엔진 \(hub)")

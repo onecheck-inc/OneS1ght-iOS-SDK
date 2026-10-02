@@ -131,6 +131,9 @@ final class LiveConfigStream {
             }
             return true
         } catch {
+            // 우리가 끊은 것(층 전환·백그라운드·정지 — stop() 의 cancel)은 끊김이 아니다. WARN 으로 남기면
+            // 층을 정할 때마다 「끊김 -999 cancelled」 가 찍혀 진짜 끊김과 섞였다(2026-10-02 실기기 로그).
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return false }
             onLog?(.warn, "live: 끊김 \(error)")
             return false
         }
