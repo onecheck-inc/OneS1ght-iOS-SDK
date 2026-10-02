@@ -26,7 +26,7 @@ final class RestartAfterStopTests: XCTestCase {
         provider = MockPositioningProvider()
         let defaults = UserDefaults(suiteName: "RestartAfterStopTests")!
         defaults.removePersistentDomain(forName: "RestartAfterStopTests")
-        identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        identity = IdentityStore(defaults: defaults)
     }
 
     /// 좌표 전송만 느리게 만든다 — `stop()` 이 실기기처럼 flush 에서 실제로 매달리게.

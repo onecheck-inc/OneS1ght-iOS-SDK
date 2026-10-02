@@ -16,7 +16,7 @@ final class SdkConfigResolutionTests: XCTestCase {
         StubURLProtocol.reset()
         let defaults = UserDefaults(suiteName: "SdkConfigResolutionTests")!
         defaults.removePersistentDomain(forName: "SdkConfigResolutionTests")
-        identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        identity = IdentityStore(defaults: defaults)
     }
 
     /// verify 는 늘 통과시키고, /config 응답만 테스트가 정한다.

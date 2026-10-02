@@ -74,7 +74,6 @@ final class SessionCoordinator {
 
     // 서버가 verify 로 내려주는 테넌트 설정
     private(set) var positionRateHz = SdkDefaults.positionRateHz
-    private(set) var remoteConfig: [String: String] = [:]
     /// 서버 전송용 좌표 다운샘플 기준 시각 — 판정 입력은 솎지 않는다
     private var lastRecordedAt: Date?
     private(set) var floorState: FloorState?    // setFloorMap 결과 — start 시 provider 에 주입
@@ -207,7 +206,6 @@ final class SessionCoordinator {
         // 테넌트 설정 반영 — 범위 밖·미회신은 기본값(4Hz)으로 접는다
         let hz = verified.position_rate_hz ?? SdkDefaults.positionRateHz
         positionRateHz = min(max(hz, SdkDefaults.minRateHz), SdkDefaults.maxRateHz)
-        remoteConfig = verified.remote_config ?? [:]
         log(SdkLocalized.format("coord.verifyPass", verified.tenant_code ?? "?"))
         report(.initialized, "tenant=\(verified.tenant_code ?? "?")")
         if positionRateHz != SdkDefaults.positionRateHz {
@@ -733,18 +731,8 @@ final class SessionCoordinator {
         return profileId
     }
 
-    private func baseClientInfo(_ profileId: String) -> ClientInfo {
-        var c = ClientInfo(profile_id: profileId)
-        c.sdk_version = OneS1ght.sdkVersion
-        #if canImport(UIKit)
-        c.os_name = "iOS"
-        c.os_version = UIDevice.current.systemVersion
-        #endif
-        return c
-    }
-
     private func makeVerifyRequest() -> ReqVerify {
-        ReqVerify(platform_name: "iOS", app_id: Self.appId, client: nil)
+        ReqVerify(platform_name: SdkPlatform.name, app_id: Self.appId)
     }
 
     // MARK: - 배치 트리거 (300건 / 60초 / 백그라운드)

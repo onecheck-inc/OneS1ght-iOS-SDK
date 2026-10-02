@@ -23,8 +23,7 @@ final class ApiClientTests: XCTestCase {
         StubURLProtocol.handler = { _ in
             (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
         }
-        let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x",
-                                                    client: nil))
+        let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x"))
         XCTAssertTrue(res.valid)
         let req = try XCTUnwrap(StubURLProtocol.lastRequest)
         XCTAssertEqual(req.url?.path, "/api/sdk/v1/auth/verify")
@@ -53,7 +52,7 @@ final class ApiClientTests: XCTestCase {
                               "customPayload":"{}"}}
             """#.utf8))
         }
-        let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x", client: nil))
+        let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x"))
 
         // 초기화를 가르는 값은 그대로 살아 있어야 한다.
         XCTAssertTrue(res.valid)
@@ -76,7 +75,7 @@ final class ApiClientTests: XCTestCase {
             StubURLProtocol.handler = { _ in
                 (200, Data(#"{"valid":true,"positioning_enabled":true,"remote_config":\#(weird)}"#.utf8))
             }
-            let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x", client: nil))
+            let res = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x"))
             XCTAssertTrue(res.valid, "remote_config=\(weird) 때문에 초기화가 막혔다")
         }
     }
@@ -88,7 +87,7 @@ final class ApiClientTests: XCTestCase {
             (200, Data(#"{"tenant_code":"t"}"#.utf8))     // valid·positioning_enabled 없음
         }
         do {
-            _ = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x", client: nil))
+            _ = try await client.verify(ReqVerify(platform_name: "iOS", app_id: "com.x"))
             XCTFail("디코드가 실패했어야 한다")
         } catch let e as ApiError {
             guard case .decoding(let detail) = e else { return XCTFail("decoding 이 아님: \(e)") }
@@ -101,21 +100,22 @@ final class ApiClientTests: XCTestCase {
         }
     }
 
-    // ② buildings — GET 경로
-    func testBuildings_isGET() async throws {
+    // GET 경로
+    func testGetProfile_isGET() async throws {
         StubURLProtocol.handler = { _ in
-            (200, Data(#"{ "synced_at": "s", "buildings": [] }"#.utf8))
+            (200, Data(#"{ "profile_id": "p1", "attributes": { "age": 20 } }"#.utf8))
         }
-        _ = try await client.buildings()
+        let res = try await client.getProfile("p1")
         XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "GET")
-        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/sdk/v1/positioning/buildings")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/sdk/v1/profiles/p1")
+        XCTAssertEqual(res.attributes?["age"], "20", "숫자 속성도 문자열로 접어 읽는다(S17)")
     }
 
-    // ③ floors 404 → notFound (정상 분기용 — detail 파싱 포함)
-    func testFloor404_mapsToNotFound() async {
+    // 404 → notFound (detail 파싱 포함)
+    func test404_mapsToNotFound() async {
         StubURLProtocol.handler = { _ in (404, Data(#"{ "detail": "no zones" }"#.utf8)) }
         do {
-            _ = try await client.floorConfig(floorId: "f-uuid")
+            _ = try await client.getProfile("missing")
             XCTFail("에러여야 함")
         } catch let e as ApiError {
             XCTAssertEqual(e, .notFound(detail: "no zones"))
@@ -126,7 +126,7 @@ final class ApiClientTests: XCTestCase {
     func test401_mapsToInvalidKey() async {
         StubURLProtocol.handler = { _ in (401, Data(#"{ "detail": "bad key" }"#.utf8)) }
         do {
-            _ = try await client.buildings()
+            _ = try await client.config()
             XCTFail("에러여야 함")
         } catch let e as ApiError {
             XCTAssertEqual(e, .invalidKey(detail: "bad key"))

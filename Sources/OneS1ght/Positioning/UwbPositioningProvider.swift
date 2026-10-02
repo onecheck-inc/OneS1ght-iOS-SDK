@@ -93,9 +93,10 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     public var onRawAreaEvent: ((_ floorId: Int64, _ areaName: String,
                                  _ inOut: String, _ at: Date) -> Void)?
 
-    /// 엔진 라이선스 키. `initialize(geoSdkKey:)` 값을 FloorSession 이 넣어 준다.
+    /// 엔진 라이선스 키 — 콘솔(/config)이 내려준 값을 `FloorSession.begin(provider:)` 이 넣는다.
     /// 비어 있으면 start 하지 않고 오류로 통지한다 (조용한 실패 금지).
-    public var license = ""
+    /// ⚠️ internal — 앱이 엔진 키를 보거나 넣을 일이 없다(0.1.24 까지 public 이었다 — 감사 K4).
+    var license = ""
 
     // MARK: - 내부
 

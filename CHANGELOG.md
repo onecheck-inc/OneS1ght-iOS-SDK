@@ -11,7 +11,51 @@
 
 ## [Unreleased]
 
-**엔진이 스스로 꺼져도 세션이 「측위 중」에 굳지 않습니다.**
+**엔진이 스스로 꺼져도 세션이 「측위 중」에 굳지 않습니다.** 공개 표면을 정리했습니다 — 이름이 바뀐 API 는
+옛 이름이 경고만 내고 그대로 동작하지만, 고객이 쓸 일이 없던 내부 타입은 공개에서 내렸습니다(**Breaking**).
+
+### Breaking
+
+> 마이그레이션 지침(`Migrations/ios.json`)은 이 판을 릴리스할 때 함께 싣는다 — 릴리스 검사가 마지막 칸을
+> 현재 버전에 묶어 두므로 [Unreleased] 동안에는 넣지 않는다. **릴리스 때 넣을 것:** 아래 표 그대로.
+
+**공개에서 내린 것(internal)** — README·스니펫이 안내한 적 없는 내부 부품입니다. 쓰고 있었다면 오른쪽으로 옮기세요.
+
+| 0.1.24 공개 심볼 | 옮길 곳 |
+|---|---|
+| `ApiClient` 의 생성자·`verify`·`buildings`·`floorConfig`·`sendZoneEvent`·`sendPositionLogs`·`createProfile`·`getProfile`·`putProfile`·`deleteProfile`·`sendLogs` | `OneS1ght` 의 같은 기능(`createProfile`·`fetchProfile`·`replaceProfile`·`deleteProfile`). 존 이벤트·좌표 전송은 SDK 가 한다 — 직접 보내면 방문 ID·다운샘플·재시도를 우회한다. 타입 `ApiClient` 와 `ApiClient.defaultBaseURL`(deprecated) 만 남았다. |
+| 요청·응답 봉투 `ClientInfo` `ReqVerify` `ReqZoneEvent` `PositionPoint` `ReqPositionBulk` `ReqProfile` `ResProfileCreate` `ResProfile` `ResProfileDelete` `SdkLogEntry` `ReqSdkLogs` `ResSdkLogs` `ResVerify` `FloorRef` `BuildingRef` `ResBuildings` `ZoneMeta` `ResFloorConfig` `ResZoneEvent` `ResPositionBulk` | 없음 — 서버 계약은 SDK 안의 일이다. 트리거는 `Trigger`(공개 유지)로 온다. `ClientInfo`·`FloorRef`·`BuildingRef`·`ResBuildings`·`ZoneMeta`·`ResFloorConfig` 는 아예 지웠다. |
+| `SdkDefaults` | 없음 — 서버가 값을 안 줄 때의 내부 기본값이다. |
+| `ZoneEngine` `ZoneJudging` `ZoneJudge` | 없음 — 측위 엔진이 판정한다. 구역 이벤트는 `FloorSession.onZoneEnter/Exit/Dwell`. 지웠다. |
+| `IdentityStore` `SecureStore` `KeychainSecureStore` | 없음 — 방문 ID 는 SDK 가 발급한다. Keychain 저장소는 아무것도 저장하지 않아 지웠다. |
+| `MockPositioningProvider` | 직접 `PositioningProvider` 를 채택한다(요구사항은 `delegate`·`start()`·`stop()` 셋, 나머지는 기본 구현). |
+| `UwbPositioningProvider.license` | 없음 — 엔진 라이선스는 콘솔이 내려주고 SDK 가 넣는다. |
+
+**이름 바꿈(옛 이름은 deprecated — 경고만, Xcode Fix-it 이 바꿔 줌)**
+
+| 0.1.24 | 0.1.25 |
+|---|---|
+| `OneS1ght.building(_:)` | `OneS1ght.building(id:)` |
+| `OneS1ght.floors(_:)` | `OneS1ght.floors(buildingId:)` |
+| `OneS1ght.floor(_:_:)` | `OneS1ght.floor(buildingId:floorId:)` |
+| `OneS1ght.zones(_:_:)` | `OneS1ght.zones(buildingId:floorId:)` |
+| `OneS1ght.zone(_:_:_:)` | `OneS1ght.zone(buildingId:floorId:zoneId:)` |
+| `OneS1ght.locators(_:_:)` | `OneS1ght.locators(buildingId:floorId:)` |
+| `OneS1ght.setFloorMap(_:buildingID:)` | `OneS1ght.setFloorMap(_:buildingId:)` |
+| `OneS1ght.permissions()` | `OneS1ght.requestPermission()` — 확인이 아니라 **시스템 창을 띄운다** |
+| `OneS1ght.getProfile(_:)` | `OneS1ght.fetchProfile(_:)` |
+| `OneS1ght.putProfile(_:_:)` | `OneS1ght.replaceProfile(_:attributes:)` — 넘기지 않은 속성은 지워진다 |
+| `OneS1ght.send()` | `OneS1ght.uploadPendingPositions()` |
+| `OneS1ght.empty()` | `OneS1ght.discardPendingPositions()` |
+| `ApiClient.defaultBaseURL` | `OneS1ght.defaultBaseURL` |
+| `Trigger.trigger_id` · `Trigger(trigger_id:type:payload:)` | `Trigger.triggerId` · `Trigger(triggerId:type:payload:)` (JSON 키는 그대로 `trigger_id`) |
+
+**동작 바뀜**
+
+- `Trigger.trigger_id`(→`triggerId`)는 서버가 빼면 빈 문자열, `type` 은 서버가 빼면 `"generic"` 입니다(예전엔
+  그 존 이벤트의 트리거 전체가 사라졌습니다).
+- `UwbPositioningProvider.stop()`·`start()` 가 일시정지를 풀지 않습니다. `FloorSession` 의 `begin()`·`end()` 는
+  예전처럼 일시정지 없이 시작·종료합니다.
 
 ### 고침
 

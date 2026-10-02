@@ -30,7 +30,7 @@ final class EngineUnexpectedStopTests: XCTestCase {
         provider = MockPositioningProvider()
         let defaults = UserDefaults(suiteName: "EngineUnexpectedStopTests")!
         defaults.removePersistentDomain(forName: "EngineUnexpectedStopTests")
-        identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        identity = IdentityStore(defaults: defaults)
     }
 
     /// 재시도 간격은 짧게 — 0.05초씩 두 번.

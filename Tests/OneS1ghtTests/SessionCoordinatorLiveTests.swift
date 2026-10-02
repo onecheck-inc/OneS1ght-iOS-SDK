@@ -8,7 +8,7 @@ final class SessionCoordinatorLiveTests: XCTestCase {
     private func makeCoordinator(suite: String) -> SessionCoordinator {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
-        let identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        let identity = IdentityStore(defaults: defaults)
         return SessionCoordinator(api: ApiClient(apiKey: "ock_test"), identity: identity)
     }
 

@@ -1,6 +1,6 @@
 //
 //  ApiClient.swift
-//  서버 통신 — URLSession 경량 클라이언트 (사양서 §6 엔드포인트 5종)
+//  서버 통신 — URLSession 경량 클라이언트 (SDK 내부 전용)
 //
 //  · 모든 요청: X-SDK-Key 헤더 + JSON. JWT/토큰 교환 없음 (사양서 §2)
 //  · 상태코드 → 타입화 에러 (에러 본문 {detail} 파싱)
@@ -46,8 +46,14 @@ extension ApiError: CustomStringConvertible {
 /// 에러 본문 { "detail": "..." }
 private struct ErrorBody: Decodable { let detail: String? }
 
+/// SDK 백엔드 클라이언트 — **SDK 내부 전용.**
+///
+/// 0.1.24 까지는 생성자·엔드포인트가 전부 public 이라 고객이 `ApiClient(apiKey:).sendZoneEvent` 로 SDK 를
+/// 우회할 수 있었다(2026-10-02 감사 K4). 타입 이름만 남긴 것은 옛 `ApiClient.defaultBaseURL` 을 쓰던 코드가
+/// 경고만 받고 계속 컴파일되게 하려는 것이다.
 public final class ApiClient {
 
+    @available(*, deprecated, renamed: "OneS1ght.defaultBaseURL")
     public static let defaultBaseURL = OneS1ght.defaultBaseURL
 
     // 같은 모듈의 LiveConfigStream 이 스트림 요청을 만들 때 쓴다.
@@ -55,13 +61,13 @@ public final class ApiClient {
     let apiKey: String
     let baseURL: URL
     private let session: URLSession
-    private let timeout: TimeInterval = 10
+    private let timeout = SdkTimeouts.api
 
     /// - Parameters:
     ///   - apiKey: `<SDK 키>` (헤더에만 실림 — 저장·로그 금지)
     ///   - baseURL: 환경별 교체 가능 (기본 prod)
     ///   - session: 테스트에서 URLProtocol 스텁 세션 주입
-    public init(apiKey: String,
+    init(apiKey: String,
                 baseURL: URL = OneS1ght.defaultBaseURL,
                 session: URLSession = .shared) {
         self.apiKey = apiKey
@@ -69,69 +75,61 @@ public final class ApiClient {
         self.session = session
     }
 
-    // MARK: - 엔드포인트 6종 (사양서 §6 5종 + config — 키 배포 설계에서 추가)
+    // MARK: - 엔드포인트
 
-    /// ① POST /auth/verify — 키 검증 + 클라 등록 (초기화 1회)
-    public func verify(_ req: ReqVerify) async throws -> ResVerify {
+    /// ① POST /auth/verify — 키 검증 (초기화 1회)
+    func verify(_ req: ReqVerify) async throws -> ResVerify {
         try await post("/auth/verify", body: req)
     }
 
-    /// 관련 키 조회 — Google Maps · 공간 서비스 모바일/파트너 키와 공간 서비스 주소.
-    /// 실패해도 초기화를 막지 않는다(호출부가 폴백한다).
-    /// ⚠️ internal 까지만 — public 으로 올리면 앱이 공간 서비스 모바일 키를 직접 꺼내 들 수
-    /// 있게 된다. OneS1ght.swift 는 "앱이 이 키를 들고 있을 이유가 없다"고 명시한다(M1).
+    /// ② GET /config — 관련 키(Google Maps · 공간 서비스 모바일/파트너 키 · 공간 서비스 주소).
+    /// 실패해도 초기화를 막지 않는다(호출부가 begin() 에서 다시 시도한다).
+    /// ⚠️ 앱에 내주지 않는다 — 앱이 공간 서비스 모바일 키를 들고 있을 이유가 없다(M1).
     func config() async throws -> ResSdkConfig {
         try await get("/config")
     }
 
-    /// ② GET /positioning/buildings — 건물·층 목록 (측위 활성화 시 1회)
-    public func buildings() async throws -> ResBuildings {
-        try await get("/positioning/buildings")
-    }
+    // 0.1.24 까지 있던 GET /positioning/buildings · /positioning/floors/{id} 는 지웠다 — 공간 조회는
+    // SpaceServiceClient 가 콘솔 프록시로 하고, 층 설정 lazy 조회는 결과를 아무도 안 읽었다(S4).
 
-    /// ③ GET /positioning/floors/{floor_id} — 층 존 설정 (층 진입 시 해당 층만)
-    public func floorConfig(floorId: String) async throws -> ResFloorConfig {
-        try await get("/positioning/floors/\(floorId)")
-    }
-
-    /// ④ POST /events/zone — 존 입장/체류/퇴장 (판정 즉시)
-    public func sendZoneEvent(_ req: ReqZoneEvent) async throws -> ResZoneEvent {
+    /// ③ POST /events/zone — 존 입장/이탈 (판정 즉시)
+    func sendZoneEvent(_ req: ReqZoneEvent) async throws -> ResZoneEvent {
         try await post("/events/zone", body: req)
     }
 
-    /// ⑤ POST /positioning/logs — 동선 좌표 벌크 (300건/60초/종료)
-    public func sendPositionLogs(_ req: ReqPositionBulk) async throws -> ResPositionBulk {
+    /// ④ POST /positioning/logs — 동선 좌표 벌크 (300건/60초/종료)
+    func sendPositionLogs(_ req: ReqPositionBulk) async throws -> ResPositionBulk {
         try await post("/positioning/logs", body: req)
     }
 
-    // MARK: - 프로필 (서버 TBD)
+    // MARK: - 프로필
 
-    /// ⑥ POST /profiles — 프로필 생성, 서버가 profile_id 발급
-    public func createProfile(_ req: ReqProfile) async throws -> ResProfileCreate {
+    /// ⑤ POST /profiles — 프로필 생성, 서버가 profile_id 발급
+    func createProfile(_ req: ReqProfile) async throws -> ResProfileCreate {
         try await post("/profiles", body: req)
     }
 
-    /// ⑦ GET /profiles/{id}
-    public func getProfile(_ profileId: String) async throws -> ResProfile {
+    /// ⑥ GET /profiles/{id}
+    func getProfile(_ profileId: String) async throws -> ResProfile {
         try await get("/profiles/\(profileId)")
     }
 
-    /// ⑧ PUT /profiles/{id} — 속성 전체 교체
-    public func putProfile(_ profileId: String, _ req: ReqProfile) async throws -> ResProfile {
+    /// ⑦ PUT /profiles/{id} — 속성 전체 교체
+    func putProfile(_ profileId: String, _ req: ReqProfile) async throws -> ResProfile {
         try await send("/profiles/\(profileId)", method: "PUT", body: req)
     }
 
-    /// ⑨ DELETE /profiles/{id}
-    public func deleteProfile(_ profileId: String) async throws -> ResProfileDelete {
+    /// ⑧ DELETE /profiles/{id}
+    func deleteProfile(_ profileId: String) async throws -> ResProfileDelete {
         try await send("/profiles/\(profileId)", method: "DELETE", body: Optional<ReqProfile>.none)
     }
 
     // MARK: - SDK 로그
 
-    /// ⑩ POST /logs — 관리자가 콘솔 로그 분석기에서 볼 줄을 적재한다.
+    /// ⑨ POST /logs — 관리자가 콘솔 로그 분석기에서 볼 줄을 적재한다.
     /// 서버가 느슨하게 받도록 설계돼 있어(레벨 정규화·2000자 절단·시각 결측 보정)
     /// 실패해도 앱 동작에는 영향이 없다.
-    public func sendLogs(_ req: ReqSdkLogs) async throws -> ResSdkLogs {
+    func sendLogs(_ req: ReqSdkLogs) async throws -> ResSdkLogs {
         try await post("/logs", body: req)
     }
 

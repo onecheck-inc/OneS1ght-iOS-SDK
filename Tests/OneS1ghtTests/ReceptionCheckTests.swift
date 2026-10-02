@@ -41,7 +41,7 @@ final class ReceptionCheckTests: XCTestCase {
         }
         let defaults = UserDefaults(suiteName: "ReceptionCheckTests")!
         defaults.removePersistentDomain(forName: "ReceptionCheckTests")
-        identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        identity = IdentityStore(defaults: defaults)
     }
 
     /// 진단을 붙인 채 측위를 켜고, 확인이 돌 때까지 기다린 뒤 남은 로그를 돌려준다.

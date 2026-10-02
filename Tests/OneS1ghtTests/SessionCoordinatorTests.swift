@@ -18,7 +18,7 @@ final class SessionCoordinatorTests: XCTestCase {
         provider = MockPositioningProvider()
         let defaults = UserDefaults(suiteName: "SessionCoordinatorTests")!
         defaults.removePersistentDomain(forName: "SessionCoordinatorTests")
-        identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        identity = IdentityStore(defaults: defaults)
     }
 
     private func makeCoordinator(flushThreshold: Int = 100) -> SessionCoordinator {
@@ -89,9 +89,9 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.requests.map(\.path),
                        ["/api/sdk/v1/auth/verify", "/api/sdk/v1/config"])
         // verify 는 키 검증만 — 클라이언트 정보를 싣지 않는다
-        let body = try JSONDecoder().decode(ReqVerify.self,
-                                            from: XCTUnwrap(StubURLProtocol.requests[0].body))
-        XCTAssertNil(body.client)
+        let body = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(StubURLProtocol.requests[0].body)) as? [String: Any]
+        XCTAssertNil(body?["client"])
     }
 
     // start: provider 가동. consent 가 사라져 verify 재호출도 없어졌다.

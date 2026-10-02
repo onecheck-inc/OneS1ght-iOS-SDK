@@ -275,7 +275,7 @@ final class RuntimeAuditFixesTests: XCTestCase {
         """#
         let res = try JSONDecoder().decode(ResZoneEvent.self, from: Data(json.utf8))
         XCTAssertEqual(res.event_id, "123")
-        XCTAssertEqual(res.triggers.map(\.trigger_id), ["7", "", "t2"])
+        XCTAssertEqual(res.triggers.map(\.triggerId), ["7", "", "t2"])
         XCTAssertEqual(res.triggers.first?.payload?["title"], "무료")
     }
 
