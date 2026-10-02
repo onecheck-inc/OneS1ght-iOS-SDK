@@ -402,6 +402,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         let key = license.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             addLog(.error, SdkLocalized.text("uwb.noLicense"))
+            // 화면 로그·엔진 훅만으로는 콘솔에 안 올라간다 — 엔진 오류 1 과 같은 E1007 로도 올린다(2026-10-03 안드 감사 SP-B9).
+            reportToSDK(.keyUnavailable, "engine=\(HubError.licenseMissing.rawValue) license not set")
             onEngineError?(HubError.licenseMissing.rawValue, "license not set")
             return
         }

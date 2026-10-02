@@ -50,20 +50,33 @@ enum HubError: Int, CaseIterable {
     /// 진짜 오류를 덮는다.
     /// `message` 는 엔진이 같이 준 문장이다. 오류 3 하나로 Bluetooth "꺼짐·권한·미지원" 이 다 오는데,
     /// 꺼짐(`powered off`)은 켜면 풀리고 권한은 설정 앱에서 풀어야 해 할 일이 다르다(2026-09-28 실기기).
+    ///
+    /// 2026-10-03 안드 감사 SP-B9 — 기존 코드 안에서 할 일이 맞는 곳으로 옮겼다(새 E-코드는 만들지 않는다, 안드로이드와 같은 값):
+    ///  · 1 라이선스 미등록 · 10 라이선스 거부 → **E1007**(측위 키 문제). 엔진 라이선스는 콘솔이 주는 측위 키다 —
+    ///    예전 E1002(SDK 키 무효)로 올리면 멀쩡한 SDK 키(`ock_sdk_`)를 의심하게 했다.
+    ///  · 3 + `unsupported on this device` → **E2002**(미지원 기기). 예전엔 E2003(권한 거부)이라 설정 안내로 갔다.
+    ///  · 7(위치 권한·정밀도·서비스 꺼짐)·9(Info.plist BT 키 누락)는 E2003 그대로 — 맞는 기존 코드가 없다.
     func sdkCode(message: String = "") -> SdkErrorCode? {
         switch self {
-        case .licenseMissing:            return .invalidKey
+        case .licenseMissing:            return .keyUnavailable
         case .bluetoothUnavailable:
-            return message.localizedCaseInsensitiveContains("powered off") ? .bluetoothOff : .permissionDenied
+            if message.localizedCaseInsensitiveContains(Self.bluetoothPoweredOff) { return .bluetoothOff }
+            if message.localizedCaseInsensitiveContains(Self.bluetoothUnsupported) { return .deviceNotSupported }
+            return .permissionDenied
         case .anchorsMissing:            return .locatorsMissing
         case .sessionFailed:             return .uwbSessionFailed
         case .areaJudgeFailed:           return .areaJudgeFailed
         case .locationUnavailable:       return .permissionDenied
         case .bluetoothKeyMissing:       return .permissionDenied
-        case .licenseRejected:           return .invalidKey
+        case .licenseRejected:           return .keyUnavailable
         case .licenseServerUnreachable:  return .network
         case .dltdoaUnsupported:         return .deviceNotSupported
         case .alreadyRunning, .startWhileStopping: return nil
         }
     }
+
+    /// 엔진 오류 3 의 문장 중 「Bluetooth 꺼짐」 을 가르는 구절(실기기 `bluetooth unavailable: powered off`).
+    static let bluetoothPoweredOff = "powered off"
+    /// 엔진 오류 3 의 문장 중 「Bluetooth 미지원 기기」 를 가르는 구절 — 안드로이드 엔진 1.1.0 과 같은 문장.
+    static let bluetoothUnsupported = "unsupported on this device"
 }

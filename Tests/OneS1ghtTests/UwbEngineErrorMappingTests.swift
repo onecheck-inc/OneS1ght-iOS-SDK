@@ -65,12 +65,48 @@ final class UwbEngineErrorMappingTests: XCTestCase {
         XCTAssertEqual(code(3), .permissionDenied)
         XCTAssertEqual(code(7), .permissionDenied)
         XCTAssertEqual(code(9), .permissionDenied)
+        XCTAssertEqual(UwbPositioningProvider.sdkCode(forHubError: 3,
+                                                     message: "bluetooth unavailable: permission required"),
+                       .permissionDenied)
     }
 
-    /// 라이선스 계열은 키 문제다 — 재시도해도 소용없다는 뜻이 담긴 코드로 간다.
-    func testLicenseFamilyMapsToInvalidKey() {
-        XCTAssertEqual(code(1),  .invalidKey, "라이선스 미등록")
-        XCTAssertEqual(code(10), .invalidKey, "서버가 거부")
+    /// Bluetooth 미지원 기기는 권한 거부가 아니라 미지원 기기(E2002)다 — 설정 안내로는 안 풀린다
+    /// (2026-10-03 안드 감사 SP-B9, 엔진 1.1.0 문장 그대로).
+    func testBluetoothUnsupportedIsDeviceNotSupported() {
+        XCTAssertEqual(UwbPositioningProvider.sdkCode(forHubError: 3,
+                                                     message: "bluetooth unavailable: unsupported on this device"),
+                       .deviceNotSupported)
+    }
+
+    /// 라이선스 계열은 측위 키(콘솔이 주는 엔진 라이선스) 문제다 — E1007. 예전엔 E1002(SDK 키 무효)라
+    /// 멀쩡한 SDK 키를 의심하게 했다(2026-10-03 안드 감사 SP-B9).
+    func testLicenseFamilyMapsToKeyUnavailable() {
+        XCTAssertEqual(code(1),  .keyUnavailable, "라이선스 미등록")
+        XCTAssertEqual(code(10), .keyUnavailable, "서버가 거부")
+    }
+
+    /// 라이선스가 비어 시작하지 못한 것도 콘솔까지 E1007 로 올라간다 — 예전엔 엔진 훅(onEngineError)만 불렀다.
+    @MainActor
+    func testEmptyLicenseReportsKeyUnavailable() {
+        final class Spy: PositioningProviderDelegate {
+            var codes: [SdkErrorCode] = []
+            func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates, floorId: String, at: Date) {}
+            func provider(_ p: PositioningProvider, didDetectZone zoneId: String, status: ZoneEventStatus,
+                          floorId: String, at: Date) {}
+            func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String) {
+                codes.append(code)
+            }
+        }
+        let p = UwbPositioningProvider()
+        let spy = Spy()
+        p.delegate = spy
+        var engineErrors: [Int] = []
+        p.onEngineError = { c, _ in engineErrors.append(c) }
+        p.license = "  "
+        p.startDetection()
+        XCTAssertEqual(spy.codes, [.keyUnavailable])
+        XCTAssertEqual(engineErrors, [1])
+        XCTAssertEqual(p.phase, .idle)
     }
 
     /// 라이선스 서버에 못 닿은 것은 키 문제가 아니라 통신 문제다 — 재시도가 유효하다.

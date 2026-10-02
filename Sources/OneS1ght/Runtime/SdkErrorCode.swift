@@ -51,6 +51,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// initialize 없이 다른 API 를 호출했다.
     case notInitialized      = "E1001"
     /// SDK 키가 무효하거나 폐기됐다 (401). 재시도해도 소용없다.
+    /// 측위 엔진의 라이선스 오류(엔진 1·10)는 여기가 아니라 E1007 이다(2026-10-03~, 안드 감사 SP-B9).
     case invalidKey          = "E1002"
     /// 키는 유효하나 테넌트에서 측위가 꺼져 있다.
     case positioningDisabled = "E1003"
@@ -61,6 +62,8 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 측위 키를 못 구했다 — 콘솔에 없거나 조회에 실패했다. buildings()/floors()/
     /// zones() 는 빈 배열로, floor()/locators()/setFloorMap() 은 notInitialized 로 떨어진다 —
     /// isInitialized 는 true 인 채로. 관리자가 콘솔 로그 분석기에서 반드시 봐야 하는 자리다.
+    /// 측위 엔진이 그 키(라이선스)를 거부하거나 비어 있다고 할 때(엔진 오류 1·10)도 이 코드다 —
+    /// 예전엔 E1002 라 멀쩡한 SDK 키를 의심하게 했다(2026-10-03, 안드 감사 SP-B9).
     case keyUnavailable      = "E1007"
 
     // MARK: 2xxx — 기기·권한
@@ -68,6 +71,8 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// iOS 27 미만. OS 업데이트로 해결된다.
     case osVersionTooLow     = "E2001"
     /// UWB(DL-TDoA) 칩이 없다. iPhone 12 이상 필요.
+    /// 엔진이 「Bluetooth 미지원 기기」(오류 3 + `unsupported on this device`)라고 할 때도 이 코드다 —
+    /// 설정 안내로 풀리지 않아 권한 거부(E2003)와 가른다(2026-10-03, 안드 감사 SP-B9).
     case deviceNotSupported  = "E2002"
     /// 사용자가 측위 권한을 거부했다. 앱에서 재요청 불가 — 설정 앱으로 안내해야 한다.
     case permissionDenied    = "E2003"
@@ -185,9 +190,9 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .invalidKey:          return "SDK 키 무효 또는 폐기"
         case .positioningDisabled: return "테넌트에서 측위 비활성"
         case .notIdentified:       return "프로필 미연결"
-        case .keyUnavailable:      return "측위 키를 못 구함"
+        case .keyUnavailable:      return "측위 키를 못 구함 또는 엔진이 거부"
         case .osVersionTooLow:     return "iOS 버전 미달"
-        case .deviceNotSupported:  return "UWB 미지원 기기"
+        case .deviceNotSupported:  return "측위 미지원 기기 (UWB·Bluetooth)"
         case .permissionDenied:    return "측위 권한 거부"
         case .bluetoothOff:        return "Bluetooth 꺼짐"
         case .floorNotSet:         return "층 미지정"

@@ -440,9 +440,9 @@ Every failure carries a code. Include it when contacting support.
 | `E1002` | Invalid or revoked SDK key |
 | `E1003` | Positioning disabled for tenant |
 | `E1004` | No profile attached |
-| `E1007` | Positioning key unavailable (not in Console, or lookup failed) |
+| `E1007` | Positioning key unavailable (not in Console, lookup failed, or rejected by the positioning engine) |
 | `E2001` | iOS version too low |
-| `E2002` | Device does not support UWB |
+| `E2002` | Device does not support positioning (no UWB, or Bluetooth unsupported) |
 | `E2003` | Positioning permission denied (or Info.plist key missing) |
 | `E2004` | Bluetooth is off |
 | `E3001` | No floor set — shown in `onDebugLog` only; not uploaded (normal when the engine finds the floor) |
