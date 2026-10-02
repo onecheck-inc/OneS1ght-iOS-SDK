@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.1.24",
+  "currentVersion": "0.2.0",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -261,6 +261,40 @@
       "summary": "Bluetooth 를 끈 채 측위를 시작하면 그 뒤로 켜도 측위가 돌아오지 않던 것을 고쳤다. Bluetooth 꺼짐을 E2003(측위 권한 거부)에서 떼어 E2004 로 올린다.",
       "action": "① 앱 코드는 고칠 것이 없다 — 의존성 해석만 다시 하면 된다. ② onDebugLog 에서 E2003 으로 Bluetooth 꺼짐을 판단하던 코드가 있었다면 E2004 도 보라. 꺼짐은 제어 센터에서 켜면 풀리고(다시 시작하면 된다), E2003 은 설정 앱에서 권한을 풀어야 한다.",
       "changes": []
+    },
+    {
+      "from": "0.1.24",
+      "to": "0.2.0",
+      "breaking": true,
+      "summary": "공개 표면을 정리했다. 고객이 쓸 일이 없던 내부 타입(서버 통신 ApiClient 의 생성자·엔드포인트, 요청·응답 봉투, IdentityStore·SecureStore·KeychainSecureStore, ZoneEngine 계열, SdkDefaults, MockPositioningProvider, UwbPositioningProvider.license)을 공개에서 내렸다. 이름이 들쭉날쭉하던 API 는 새 이름을 붙이고 옛 이름은 deprecated 로 남겼다(경고만). 엔진이 스스로 꺼지면 재시도 뒤 세션을 닫는다(FloorSession.isRunning=false, onStopped).",
+      "action": "① 컴파일이 깨지는 곳은 위 내부 타입을 직접 쓰던 자리뿐이다 — OneS1ght 의 같은 기능으로 옮긴다(프로필은 createProfile·fetchProfile·replaceProfile·deleteProfile, 존 이벤트·좌표 전송은 SDK 가 한다). 커스텀 provider 테스트에 MockPositioningProvider 를 썼다면 PositioningProvider 를 직접 채택한다(필수는 delegate·start()·stop()). ② deprecated 경고는 Xcode Fix-it 으로 새 이름으로 바꾼다 — 동작은 같다. ③ 측위 화면이 FloorSession.isRunning 이나 새 onStopped 를 보고 「다시 찾기」 를 띄우게 한다 — 엔진을 다시 켜지 못하면 SDK 가 세션을 닫는다. ④ onDebugLog 를 문구로 거르던 코드는 확인한다 — 코드 줄이 [코드] 문구 — 문맥 한 줄로 합쳐지고 등급(.error/.warn/.info)이 붙는다. ⑤ 0.x 에서 from: 은 0.2.0 을 자동으로 받으므로, 위 내부 타입을 쓰는 앱은 의존성 해석 전에 ① 을 먼저 한다.",
+      "changes": [
+        {
+          "why": "인자 이름이 없어 건물·층 ID 를 바꿔 넣기 쉬웠다. 라벨을 붙였다(옛 이름은 경고만).",
+          "before": "let floors = try await OneS1ght.floors(buildingID)\nlet floor = try await OneS1ght.floor(buildingID, floorID)\ntry await OneS1ght.setFloorMap(floor, buildingID: buildingID)",
+          "after": "let floors = try await OneS1ght.floors(buildingId: buildingID)\nlet floor = try await OneS1ght.floor(buildingId: buildingID, floorId: floorID)\ntry await OneS1ght.setFloorMap(floor, buildingId: buildingID)"
+        },
+        {
+          "why": "확인처럼 보이던 permissions() 는 시스템 권한 창을 띄운다. 프로필·전송 함수는 하는 일이 이름에 드러나게 했다.",
+          "before": "let status = await OneS1ght.permissions()\nlet attrs = try await OneS1ght.getProfile(id)\ntry await OneS1ght.putProfile(id, attrs)\nawait OneS1ght.send()\nOneS1ght.empty()",
+          "after": "let status = await OneS1ght.requestPermission()\nlet attrs = try await OneS1ght.fetchProfile(id)\ntry await OneS1ght.replaceProfile(id, attributes: attrs)   // 넘기지 않은 속성은 지워진다\nawait OneS1ght.uploadPendingPositions()\nOneS1ght.discardPendingPositions()"
+        },
+        {
+          "why": "Swift 이름 규칙(camelCase). JSON 키는 그대로 trigger_id 다.",
+          "before": "session.onTriggers = { _, triggers in triggers.forEach { log($0.trigger_id) } }",
+          "after": "session.onTriggers = { _, triggers in triggers.forEach { log($0.triggerId) } }"
+        },
+        {
+          "why": "서버 통신은 SDK 안의 일이다 — 직접 보내면 방문 ID·다운샘플·재시도를 우회한다. 기본 주소만 OneS1ght 로 옮겼다.",
+          "before": "let api = ApiClient(apiKey: key)\ntry await api.sendZoneEvent(ReqZoneEvent(...))\nlet base = ApiClient.defaultBaseURL",
+          "after": "// 삭제 — 존 이벤트는 FloorSession 이 보낸다(onZoneEnter/Exit/Dwell 로 받는다)\nlet base = OneS1ght.defaultBaseURL"
+        },
+        {
+          "why": "엔진을 다시 켜지 못하면 SDK 가 세션을 닫는다. 화면이 「찾는 중」에 굳지 않게 알림을 받는다.",
+          "before": "// 세션이 닫혀도 알 길이 없었다",
+          "after": "session.onStopped = { reason in\n    if reason == .engineFailed { showRetrySearch() }\n}"
+        }
+      ]
     }
   ]
 }

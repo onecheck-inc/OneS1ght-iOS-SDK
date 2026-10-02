@@ -37,7 +37,7 @@ https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.1.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
