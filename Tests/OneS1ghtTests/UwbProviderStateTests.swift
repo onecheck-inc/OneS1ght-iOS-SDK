@@ -80,6 +80,59 @@ final class UwbProviderStateTests: XCTestCase {
         XCTAssertEqual(p.phase, .idle)
         XCTAssertEqual(engineErrors.first, 7)
     }
+
+    // MARK: - 배경 전환 직전 EXIT · 중복 IN (2026-10-03 안드 감사 SP-B15)
+
+    private func runningWithZone() -> (UwbPositioningProvider, () -> [String]) {
+        let p = UwbPositioningProvider()
+        var events: [String] = []
+        p.onZoneEvent = { e in
+            switch e {
+            case .enter(let z, _): events.append("IN:\(z.id)")
+            case .exit(let z, _):  events.append("OUT:\(z.id)")
+            case .dwell:           break
+            }
+        }
+        p.apply(config: PositioningConfig(zones: [
+            Zone(id: "zn_7", name: "정육", polygon: [Position(x: 0, y: 0), Position(x: 1, y: 0), Position(x: 1, y: 1)])
+        ]))
+        p.isRunning = true                   // 라이선스 서버 없이 「측위 중」
+        return (p, { events })
+    }
+
+    /// 배경으로 내려가기 직전에 안에 있던 구역의 EXIT 를 낸다 — 판정기의 정상 경로(onZoneEvent·delegate)로.
+    func testExitBeforeBackgroundEmitsExitForActiveZone() {
+        let (p, events) = runningWithZone()
+        p.areaEvent(14, "정육", "IN")
+        p.exitActiveZoneBeforeBackground()
+        XCTAssertEqual(events(), ["IN:zn_7", "OUT:zn_7"])
+    }
+
+    /// 일시정지 중이면 내지 않는다(안드로이드와 같다).
+    func testExitBeforeBackgroundIsSilentWhilePaused() {
+        let (p, events) = runningWithZone()
+        p.areaEvent(14, "정육", "IN")
+        p.isPaused = true
+        p.exitActiveZoneBeforeBackground()
+        XCTAssertEqual(events(), ["IN:zn_7"])
+    }
+
+    /// 측위 중이 아니면 낼 것이 없다.
+    func testExitBeforeBackgroundIsSilentWhenNotRunning() {
+        let (p, events) = runningWithZone()
+        p.areaEvent(14, "정육", "IN")
+        p.isRunning = false
+        p.exitActiveZoneBeforeBackground()
+        XCTAssertEqual(events(), ["IN:zn_7"])
+    }
+
+    /// 다시 뜬 엔진(구역 재적재)이 같은 구역의 IN 을 또 줘도 한 번만 나간다.
+    func testDuplicateEngineInIsDropped() {
+        let (p, events) = runningWithZone()
+        p.areaEvent(14, "정육", "IN")
+        p.areaEvent(14, "정육", "IN")
+        XCTAssertEqual(events(), ["IN:zn_7"])
+    }
 }
 
 /// S2 — 라이선스는 키를 다시 받은 **뒤에** 넣고, 그래도 비었으면 시작하지 않는다.

@@ -49,7 +49,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
 
     // MARK: - 관찰 상태 (데모/디버그 UI용)
 
-    @Published public private(set) var isRunning = false
+    /// setter 는 모듈 내부까지 — 테스트가 엔진(라이선스 서버) 없이 「측위 중」 의 동작을 밟는다(isPaused 와 같은 이유).
+    @Published public internal(set) var isRunning = false
     @Published public private(set) var measurementCount = 0        // 누적 좌표 수 (가동 중만)
     @Published public private(set) var latestPosition: Coordinates?
     @Published public private(set) var log: [String] = []
@@ -685,6 +686,23 @@ extension UwbPositioningProvider: PositioningProvider {
         floorWatchTask?.cancel(); floorWatchTask = nil
         addLog(.info, SdkLocalized.format("uwb.positioningOff", measurementCount))
         stopDetection()
+    }
+}
+
+// MARK: - 배경 전환 직전 EXIT (SDK 내부)
+
+@available(iOS 27.0, *)
+extension UwbPositioningProvider: ExitsZoneBeforeBackground {
+
+    /// 지금 안에 있는 구역에서 나간 것으로 친다(EXIT) — 코어가 앱이 배경으로 내려가 측위를 멈추기 **직전에** 부른다.
+    ///
+    /// 왜: 배경에서는 UWB 가 멈춰 엔진이 OUT 을 주지 않고(늦게 와도 `isRunning` 가드에 버려진다), 복귀하면
+    /// start() 가 판정기를 비워 같은 구역의 ENTER 가 EXIT 없이 두 번 서버로 갔다(쿠폰 중복 여지 —
+    /// 2026-10-03 안드 감사 SP-B15). 판정기의 정상 경로(onEvent → delegate)로 내보내 서버에는 status OUT 이 간다.
+    /// 일시정지 중이면 보내지 않는다(안드로이드와 같다 — 이벤트를 막는 중이다).
+    func exitActiveZoneBeforeBackground() {
+        guard isRunning, !isPaused else { return }
+        judge.exitActive(at: Date())
     }
 }
 

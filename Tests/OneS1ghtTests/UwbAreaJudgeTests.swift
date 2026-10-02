@@ -209,4 +209,117 @@ final class UwbAreaJudgeTests: XCTestCase {
 
         XCTAssertTrue(o.logs.isEmpty, "\(o.logs)")
     }
+
+    // MARK: - 배경 EXIT · 중복 IN (2026-10-03 안드 감사 SP-B15)
+
+    /// 이미 안에 있는 구역의 IN 은 다시 내보내지 않는다 — 엔진이 다시 뜨면(구역 재적재) 같은 IN 을 또 준다.
+    func testDuplicateInForActiveZoneIsDropped() {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너")])
+
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+
+        XCTAssertEqual(o.events.count, 1, "같은 방문에서 ENTER 가 두 번 나갔다: \(o.events)")
+        XCTAssertEqual(j.activeZoneId, "zn_7")
+    }
+
+    /// 나갔다 다시 들어온 것은 중복이 아니다 — OUT 뒤의 IN 은 그대로 나간다.
+    func testInAfterOutIsNotDuplicate() {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너")])
+
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+        j.handleAreaEvent(inOut: "OUT", areaName: "정육 코너")
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+
+        XCTAssertEqual(o.events.count, 3, "\(o.events)")
+    }
+
+    /// 다른 구역의 IN 은 중복이 아니다.
+    func testInForAnotherZoneIsNotDuplicate() {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너"), zone("zn_8", "수산 코너")])
+
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+        j.handleAreaEvent(inOut: "IN", areaName: "수산 코너")
+
+        XCTAssertEqual(o.events.count, 2, "\(o.events)")
+        XCTAssertEqual(j.activeZoneId, "zn_8")
+    }
+
+    /// 구역 재적재: 안에 있는 구역이 그대로 남은 목록이 들어오면 판정 상태를 유지한다 — 다시 뜬 엔진의 IN 이
+    /// 중복으로 걸러진다. 예전엔 apply 가 판정 상태를 버려 ENTER 가 EXIT 없이 두 번 서버로 갔다.
+    func testGeofenceReloadKeepingActiveZoneDoesNotReEnter() {
+        let (j, o) = makeJudge()
+        let meat = zone("zn_7", "정육 코너")
+        j.apply(zones: [meat])
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+
+        j.apply(zones: [meat, zone("zn_9", "새 구역")])        // 구역 추가 → 코어가 엔진을 다시 띄운다
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")   // 다시 뜬 엔진의 IN
+
+        XCTAssertEqual(o.events.count, 1, "\(o.events)")
+    }
+
+    /// 재적재 중에도 체류 타이머는 처음 IN 의 것이 그대로 간다 — 다시 걸면 체류가 늦게 나온다.
+    func testGeofenceReloadKeepsPendingDwell() async throws {
+        let (j, o) = makeJudge()
+        let meat = zone("zn_7", "정육 코너", dwell: 3)
+        j.apply(zones: [meat])
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+        j.apply(zones: [meat, zone("zn_9", "새 구역")])
+
+        await waitUntil { !self.dwells(o).isEmpty }
+        XCTAssertEqual(dwells(o), [3])
+    }
+
+    /// 안에 있던 구역의 정의가 바뀌면 판정 상태를 버린다 — 바뀐 구역을 옛 기준으로 다루면 안 된다.
+    func testChangedActiveZoneDefinitionResetsState() {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너")])
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+
+        j.apply(zones: [zone("zn_7", "정육 코너", dwell: 30)])  // 체류 초가 바뀌었다
+        XCTAssertNil(j.activeZoneId)
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+        XCTAssertEqual(o.events.count, 2, "\(o.events)")
+    }
+
+    /// 배경 전환 직전: 안에 있던 구역의 EXIT 를 한 번 내고 비운다 — 복귀 후의 IN 은 새 진입이다.
+    func testExitActiveEmitsExitOnceAndClears() {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너")])
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+
+        j.exitActive()
+        j.exitActive()                                          // 두 번째는 낼 것이 없다
+
+        XCTAssertEqual(o.events.count, 2, "\(o.events)")
+        guard case .exit(let z, _) = o.events[1] else { return XCTFail("EXIT 가 아님") }
+        XCTAssertEqual(z.id, "zn_7")
+        XCTAssertNil(j.activeZoneId)
+
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")   // 복귀 후 엔진의 IN
+        XCTAssertEqual(o.events.count, 3, "복귀 후 진입이 중복으로 걸러지면 안 된다")
+    }
+
+    /// 안에 있는 구역이 없으면 아무것도 안 낸다.
+    func testExitActiveWithoutActiveZoneEmitsNothing() {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너")])
+        j.exitActive()
+        XCTAssertTrue(o.events.isEmpty, "\(o.events)")
+    }
+
+    /// EXIT 를 내면 체류 타이머도 끝난다 — 배경에서 체류가 뒤늦게 튀어나오면 안 된다.
+    func testExitActiveCancelsPendingDwell() async throws {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너", dwell: 1)])
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+        j.exitActive()
+        await settle(0.1)
+        XCTAssertFalse(o.events.contains { if case .dwell = $0 { return true }; return false },
+                       "\(o.events)")
+    }
 }

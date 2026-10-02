@@ -204,6 +204,11 @@
     "ja": "⚠️ 測位エンジンのエリア \"%@\" がコンソールのエリア %d件 に見つかりません — イベントを送信しません (名称を一致させてください)",
     "en": "⚠️ Positioning engine area \"%@\" matches none of %d console zones — event dropped (align the names)"
   },
+  "uwb.areaDuplicateIn": {
+    "ko": "영역 \"%@\" 에 이미 들어와 있음 — 중복 IN 을 넘깁니다",
+    "ja": "エリア \"%@\" には既に入場済み — 重複 IN をスキップします",
+    "en": "Already inside area \"%@\" — skipping duplicate IN"
+  },
   "uwb.areaUnknown": {
     "ko": "⚠️ 알 수 없는 영역 상태 \"%@\" (영역 \"%@\") — 무시합니다",
     "ja": "⚠️ 不明なエリア状態 \"%@\" (エリア \"%@\") — 無視します",

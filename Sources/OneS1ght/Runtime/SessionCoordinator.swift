@@ -659,16 +659,7 @@ final class SessionCoordinator {
             // 백그라운드: UWB는 어차피 정지(포그라운드 전용) → 엔진 정지 + 잔여 flush (일시정지는 유지)
             nc.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                            object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    // 내려가면 다시 켜 보기를 멈춘다 — 백그라운드에선 UWB 가 안 돈다. 돌아오면 아래에서 켠다.
-                    self.supervisor.cancel()
-                    if self.isRunning {                 // 측위는 세션이 돌 때만
-                        self.provider?.stop()
-                        await self.uploads.flush()
-                    }
-                    self.liveStream.suspend()           // 스트림은 언제나 끊는다
-                }
+                Task { @MainActor in await self?.handleDidEnterBackground() }
             },
             // 포그라운드 복귀: 측위 재개 + 실시간 수신 재연결
             // 재연결 자체가 LiveConfigStream 쪽에서 .resyncNeeded 를 올린다 — 배경에 있던
@@ -689,6 +680,20 @@ final class SessionCoordinator {
             },
         ]
         #endif
+    }
+
+    /// 백그라운드 진입 — 엔진 정지 + 잔여 flush (일시정지는 유지). 내부 공개 — 테스트가 알림 없이 밟는다.
+    func handleDidEnterBackground() async {
+        // 내려가면 다시 켜 보기를 멈춘다 — 백그라운드에선 UWB 가 안 돈다. 돌아오면 복귀 쪽에서 켠다.
+        supervisor.cancel()
+        if isRunning {                          // 측위는 세션이 돌 때만
+            // 배경에서는 UWB 가 멈춰 OUT 이 안 온다 — 정지 **전에** 안에 있던 구역의 EXIT 를 낸다.
+            // 정지 뒤에는 provider 가 이벤트를 버린다(2026-10-03 안드 감사 SP-B15). 일시정지 중이면 provider 가 안 낸다.
+            (provider as? ExitsZoneBeforeBackground)?.exitActiveZoneBeforeBackground()
+            provider?.stop()
+            await uploads.flush()
+        }
+        liveStream.suspend()                    // 스트림은 언제나 끊는다
     }
 
     /// 앱이 화면에 떠 있는가 — 테스트가 바꿔 끼운다(EngineSupervisor 가 재시도 전에 본다).

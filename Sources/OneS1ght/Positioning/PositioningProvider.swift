@@ -130,6 +130,19 @@ public extension PositioningProvider {
     var isPaused: Bool { false }
 }
 
+/// 배경 전환 직전에 「안에 있던 구역에서 나갔다」(EXIT)를 낼 수 있는 provider — **SDK 내부 전용**.
+///
+/// 배경에서는 UWB 가 멈춰 엔진이 OUT 을 주지 않는다. 그대로 멈추면 서버에는 ENTER 만 남고, 복귀 후 판정기가
+/// 처음부터 시작해 같은 구역의 ENTER 가 EXIT 없이 한 번 더 간다(쿠폰 중복 여지 — 2026-10-03 안드 감사 SP-B15).
+/// 코어가 배경 정지 **직전에** 부른다(end() 에서는 부르지 않는다 — 세션이 끝나면 방문도 끝난다).
+///
+/// ⚠️ 공개 프로토콜(PositioningProvider)에 넣지 않는다 — 고객 provider 의 구현 의무가 늘어난다. 내장 provider 만 채택한다.
+/// ⚠️ 일시정지 중이면 아무것도 내지 않는다(안드로이드와 같다) — 일시정지는 구역 이벤트를 막겠다는 약속이다.
+@MainActor
+protocol ExitsZoneBeforeBackground: AnyObject {
+    func exitActiveZoneBeforeBackground()
+}
+
 @MainActor
 public protocol PositioningProviderDelegate: AnyObject {
     /// 좌표 갱신(측위 fix) — SDK가 다운샘플·버퍼링 → positioning/logs

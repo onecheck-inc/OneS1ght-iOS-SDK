@@ -39,7 +39,8 @@ final class UwbAreaJudge {
     private var warnedParamsIgnored = false
 
     private var nameToZone: [String: Zone] = [:]
-    private var activeZoneId: String?
+    /// 지금 안에 있는 구역 — 테스트가 판정 상태를 읽는다.
+    private(set) var activeZoneId: String?
     private var dwellTask: Task<Void, Never>?
     /// 매핑 실패는 이름당 1회만 경고한다 — IN/OUT 이 반복되면 로그가 덮인다.
     private var warnedNames: Set<String> = []
@@ -50,11 +51,22 @@ final class UwbAreaJudge {
 
     // MARK: - 존 주입
 
-    /// 콘솔 존 교체 (층 전환·폴링). 판정 상태는 버린다 —
-    /// 사라진 존의 IN 상태가 남으면 이탈 이벤트가 영영 안 나온다.
+    /// 콘솔 존 교체 (층 전환·폴링).
+    ///
+    /// · 지금 안에 있는 존이 새 목록에 **정의 그대로**(Zone 전체가 같음) 남아 있으면 그 판정 상태와
+    ///   체류 타이머를 유지한다.
+    /// · 그 존이 사라졌거나 바뀌었으면 판정 상태를 버린다 — 사라진 존의 IN 상태가 남으면 이탈 이벤트가
+    ///   영영 안 나오고, 바뀐 존을 옛 기준으로 발화하면 틀린 시책이 나간다.
+    ///
+    /// ⚠️ 2026-10-03 안드 감사 SP-B15(안드 SP-B2 와 같은 규칙): 예전엔 무조건 버렸다. 구역이 바뀌면 코어가
+    ///    apply 직후 엔진을 껐다 켜는데(reloadGeofences), 다시 뜬 엔진은 안에 있는 구역의 IN 을 다시 준다 —
+    ///    판정 상태를 버린 뒤라 같은 방문에서 ENTER 가 EXIT 없이 두 번 서버로 갔다(쿠폰 중복 여지).
+    ///    유지해야 아래 handleAreaEvent 의 중복 IN 거르기가 그 IN 을 걸러낸다.
     func apply(zones: [Zone]) {
+        let active = activeZoneId.flatMap { id in self.zones.first { $0.id == id } }
+        let keepActive = active.map { a in zones.contains { $0 == a } } ?? false
         self.zones = zones
-        reset()
+        if !keepActive { reset() }
         warnedNames = []
 
         nameToZone = [:]
@@ -102,6 +114,13 @@ final class UwbAreaJudge {
         }
         switch inOut {
         case "IN":
+            // 이미 안에 있는 구역의 IN 은 버린다 — 엔진이 다시 뜨면(구역 재적재) 같은 구역의 IN 을 또 준다.
+            // 그대로 보내면 같은 방문에서 ENTER 가 EXIT 없이 두 번 서버로 간다(2026-10-03 안드 감사 SP-B15).
+            // 체류 타이머도 처음 IN 의 것을 그대로 둔다 — 다시 걸면 체류가 늦게 나오거나 영영 안 나온다.
+            guard activeZoneId != zone.id else {
+                onLog?(.log, SdkLocalized.format("uwb.areaDuplicateIn", areaName))
+                return
+            }
             activeZoneId = zone.id
             onEvent?(.enter(zone: zone, at: at))
             startDwell(zone: zone)
@@ -111,6 +130,21 @@ final class UwbAreaJudge {
         default:
             onLog?(.warn, SdkLocalized.format("uwb.areaUnknown", inOut, areaName))
         }
+    }
+
+    /// 지금 안에 있는 구역에서 나간 것으로 친다 — EXIT 를 한 번 내고 판정 상태를 비운다. 안에 있는 구역이
+    /// 없으면 아무것도 안 낸다. 앱이 배경으로 내려가 측위를 멈추기 **직전에** 쓴다(2026-10-03 안드 감사 SP-B15).
+    ///
+    /// 왜: 배경에서는 UWB 가 멈춰 엔진이 OUT 을 주지 않고, 복귀하면 판정기가 처음부터 시작해 같은 구역의
+    /// ENTER 가 EXIT 없이 두 번 서버로 갔다. 판정 상태를 **먼저** 비운 뒤 내보낸다 — 이벤트를 받은 쪽이
+    /// 판정기를 다시 건드려도 꼬이지 않게.
+    func exitActive(at: Date = Date()) {
+        guard let id = activeZoneId, let zone = zones.first(where: { $0.id == id }) else {
+            reset()
+            return
+        }
+        reset()
+        onEvent?(.exit(zone: zone, at: at))
     }
 
     /// 판정 상태 초기화 (측위 시작·층 전환·정지). 존 목록은 유지한다.
