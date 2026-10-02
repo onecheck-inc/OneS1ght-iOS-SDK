@@ -18,15 +18,11 @@ import XCTest
 final class RestartAfterStopTests: XCTestCase {
 
     private var provider: MockPositioningProvider!
-    private var identity: IdentityStore!
 
     override func setUp() {
         super.setUp()
         StubURLProtocol.reset()
         provider = MockPositioningProvider()
-        let defaults = UserDefaults(suiteName: "RestartAfterStopTests")!
-        defaults.removePersistentDomain(forName: "RestartAfterStopTests")
-        identity = IdentityStore(defaults: defaults)
     }
 
     /// 좌표 전송만 느리게 만든다 — `stop()` 이 실기기처럼 flush 에서 실제로 매달리게.
@@ -34,9 +30,7 @@ final class RestartAfterStopTests: XCTestCase {
     private func routeWithSlowFlush(uploadDelay: TimeInterval = 0.15) {
         StubURLProtocol.handler = { req in
             let path = req.url?.path ?? ""
-            if path.hasSuffix("/auth/verify") {
-                return (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
-            }
+            if path.hasSuffix("/auth/verify") { return (200, Data(Fixture.verifyOK.utf8)) }
             if path.hasSuffix("/config") { return (200, Data("{}".utf8)) }
             if path.hasSuffix("/positioning/logs") {
                 Thread.sleep(forTimeInterval: uploadDelay)
@@ -47,15 +41,7 @@ final class RestartAfterStopTests: XCTestCase {
     }
 
     private func makeStarted() async throws -> SessionCoordinator {
-        let c = SessionCoordinator(api: ApiClient(apiKey: "test-key",
-                                                  baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
-                                                  session: makeStubSession()),
-                                   identity: identity,
-                                   flushThreshold: 1000)   // 자동 전송에 안 걸리게
-        try await c.prepare()
-        c.identify(profileId: "pf_8a3c")
-        try await c.start(provider: provider)
-        return c
+        try await Fixture.started(provider, flushThreshold: 1000)   // 자동 전송에 안 걸리게
     }
 
     /// ⚠️ 이 테스트가 핵심이다 — 실기기에서 났던 그 순서 그대로다.

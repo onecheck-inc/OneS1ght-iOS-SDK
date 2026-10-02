@@ -15,9 +15,7 @@ final class SdkConfigFetchTests: XCTestCase {
     }
 
     private func client() -> ApiClient {
-        ApiClient(apiKey: "ock_sdk_x",
-                  baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
-                  session: makeStubSession())
+        Fixture.api(key: "ock_sdk_x")
     }
 
     func testDecodesEveryKey() async throws {

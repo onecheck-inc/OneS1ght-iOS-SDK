@@ -10,32 +10,20 @@ import XCTest
 final class SessionCoordinatorTests: XCTestCase {
 
     var provider: MockPositioningProvider!
-    var identity: IdentityStore!
 
     override func setUp() {
         super.setUp()
         StubURLProtocol.reset()
         provider = MockPositioningProvider()
-        let defaults = UserDefaults(suiteName: "SessionCoordinatorTests")!
-        defaults.removePersistentDomain(forName: "SessionCoordinatorTests")
-        identity = IdentityStore(defaults: defaults)
     }
 
     private func makeCoordinator(flushThreshold: Int = 100) -> SessionCoordinator {
-        SessionCoordinator(api: ApiClient(apiKey: "test-key",
-                                          baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
-                                          session: makeStubSession()),
-                           identity: identity,
-                           flushThreshold: flushThreshold)
+        Fixture.coordinator(flushThreshold: flushThreshold)
     }
 
     /// prepare + start 한 번에 (개별 단계는 아래 전용 테스트에서)
     private func makeStarted(flushThreshold: Int = 100) async throws -> SessionCoordinator {
-        let c = makeCoordinator(flushThreshold: flushThreshold)
-        try await c.prepare()
-        c.identify(profileId: "pf_8a3c")
-        try await c.start(provider: provider)
-        return c
+        try await Fixture.started(provider, flushThreshold: flushThreshold)
     }
 
     /// 경로별 canned 응답 (기본 세트)
@@ -220,7 +208,7 @@ final class SessionCoordinatorTests: XCTestCase {
         provider.simulatePosition(Coordinates(x: 3, y: 4, z: 0), floorId: "F",
                                   at: t0.addingTimeInterval(1))
 
-        try await waitUntil { StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") } }
+        await waitUntil { StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") } }
 
         let logReq = StubURLProtocol.requests.first { $0.path.hasSuffix("/positioning/logs") }
         let body = try JSONDecoder().decode(ReqPositionBulk.self, from: XCTUnwrap(logReq?.body))
@@ -242,7 +230,7 @@ final class SessionCoordinatorTests: XCTestCase {
             provider.simulatePosition(Coordinates(x: 1, y: 1, z: 0), floorId: "F",
                                       at: t0.addingTimeInterval(Double(i)))
         }
-        try await waitUntil { StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") } }
+        await waitUntil { StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") } }
         XCTAssertFalse(StubURLProtocol.requests.contains { $0.path.contains("/positioning/floors/") })
         await c.stop()
     }
@@ -325,14 +313,5 @@ final class SessionCoordinatorTests: XCTestCase {
         let c = makeCoordinator()
         try await c.prepare()
         XCTAssertEqual(c.positionRateHz, SdkDefaults.maxRateHz)
-    }
-
-    /// 비동기 조건 폴링 (최대 2초)
-    private func waitUntil(_ cond: @escaping () -> Bool) async throws {
-        for _ in 0..<200 {
-            if cond() { return }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("조건 미충족 (2초)")
     }
 }

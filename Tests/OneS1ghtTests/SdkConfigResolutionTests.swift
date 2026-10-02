@@ -9,35 +9,18 @@ import XCTest
 @MainActor
 final class SdkConfigResolutionTests: XCTestCase {
 
-    private var identity: IdentityStore!
-
     override func setUp() {
         super.setUp()
         StubURLProtocol.reset()
-        let defaults = UserDefaults(suiteName: "SdkConfigResolutionTests")!
-        defaults.removePersistentDomain(forName: "SdkConfigResolutionTests")
-        identity = IdentityStore(defaults: defaults)
     }
 
     /// verify 는 늘 통과시키고, /config 응답만 테스트가 정한다.
     private func stub(configStatus: Int, configBody: String) {
-        StubURLProtocol.handler = { req in
-            let path = req.url?.path ?? ""
-            if path.hasSuffix("/auth/verify") {
-                return (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
-            }
-            if path.hasSuffix("/config") {
-                return (configStatus, Data(configBody.utf8))
-            }
-            return (200, Data("{}".utf8))
-        }
+        Fixture.route(["/config": (configStatus, configBody)])
     }
 
     private func prepared() async throws -> (SessionCoordinator, [String]) {
-        let api = ApiClient(apiKey: "ock_sdk_x",
-                            baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
-                            session: makeStubSession())
-        let c = SessionCoordinator(api: api, identity: identity, session: makeStubSession())
+        let c = Fixture.coordinator()
         var lines: [String] = []
         c.onLog = { _, line in lines.append(line) }
         try await c.prepare()
@@ -177,10 +160,7 @@ final class SdkConfigResolutionTests: XCTestCase {
             }
             return (200, Data("{}".utf8))
         }
-        let api = ApiClient(apiKey: "ock_sdk_x",
-                            baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
-                            session: makeStubSession())
-        let c = SessionCoordinator(api: api, identity: identity, session: makeStubSession())
+        let c = Fixture.coordinator()
         try await c.prepare()
 
         let buildings = try await c.buildings()
