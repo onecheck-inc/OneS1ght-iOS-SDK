@@ -349,6 +349,11 @@
     "ja": "非対応",
     "en": "unsupported"
   },
+  "uwb.plistMissing": {
+    "ko": "⚠️ Info.plist 에 %@ 문구가 없습니다 — iOS 가 위치 권한 요청을 무시해 측위를 시작할 수 없습니다",
+    "ja": "⚠️ Info.plist に %@ の説明文がありません — iOS が位置情報の許可リクエストを無視するため測位を開始できません",
+    "en": "⚠️ Info.plist has no %@ text — iOS ignores the location permission request, so positioning cannot start"
+  },
   "uwb.noLicense": {
     "ko": "⚠️ 측위 라이선스 키가 없습니다 — 콘솔의 측위 키 설정을 확인하세요",
     "ja": "⚠️ 測位ライセンスキーがありません — コンソールの測位キー設定を確認してください",

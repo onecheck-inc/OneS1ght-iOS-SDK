@@ -54,10 +54,32 @@
   관대하게 읽습니다. id 가 숫자로 오거나 항목 하나가 틀려도 나머지는 그대로 씁니다. 좌표가 2개 미만인
   폴리곤 점이 있어도 죽지 않습니다.
 
+- **`begin()` 이 성공했는데 엔진은 안 뜬 채로 남던 문제.** 초기화 때 `/config` 가 실패했다면 `begin()` 의
+  키 재시도가 성공해도 빈 라이선스로 시작했습니다. 이제 다시 받은 키를 넣고, 그래도 없으면
+  `SdkError.notInitialized` 를 던지며 `E1007` 을 남깁니다.
+- **위치 권한 창이 떠 있는 동안 측위를 멈추면 그 뒤로 영영 안 돌아오던 문제**(정밀 위치가 꺼진 기기에서
+  홈으로 나가거나 `end()` 할 때). 엔진이 「정지 중」에 굳었습니다.
+- **구역 재적재(약 1.5초) 중에 `end()`·백그라운드로 가면 엔진이 다시 켜지던 문제.**
+- **백그라운드에 다녀오면 일시정지가 풀리던 문제.** 앱은 「일시정지」인데 좌표·존 이벤트가 다시 나갔습니다.
+  이제 일시정지는 `resume()`·`end()`·`begin()` 에서만 풀립니다.
+- 늦게 온 엔진 알림이 「정지 중」 상태를 덮어 거짓 `E4001`·재시도가 나던 것을 막았습니다.
+- **`NSLocationWhenInUseUsageDescription` 이 없으면 시작이 영영 안 끝나던 문제.** iOS 는 문구가 없으면 권한
+  요청을 조용히 무시합니다. 이제 그 자리에서 `E2003`(문맥 `Info.plist missing …`)을 남기고 시작을 접습니다.
+- **`begin(provider:)` 로 시작하면 `onZoneEnter`·`onZoneExit`·`onZoneDwell` 이 오지 않던 문제**, 그리고
+  `pause()`·`resume()`·`isPaused` 가 내장 provider 가 아니면 조용히 무시되던 문제.
+
 ### 추가
 
+- **`FloorSession.onFloorDetected: ((String?) -> Void)?`** — 엔진이 층을 잡으면 그 층 ID(`Floor.id` 와 같은 값),
+  잃으면 `nil`. README 가 0.1.24 까지 안내했지만 실제로는 없던 콜백입니다.
+- **`FloorSession.onStopped: ((FloorSession.StopReason) -> Void)?`** — 세션이 닫히면 `.ended`(`end()`)
+  또는 `.engineFailed`(엔진이 다시 켜지지 않아 SDK 가 닫음). 이제 앱이 「찾는 중」 에 머물지 않고 알 수 있습니다.
+- `PositioningProvider` 에 `pause()`·`resume()`·`isPaused`, `PositioningProviderDelegate` 에
+  `provider(_:didDetectFloor:)`·`provider(_:didEmit:)` — 전부 선택 채택(기본 구현 있음)이라 커스텀 provider 는
+  고칠 것이 없습니다. `didEnter` 도 이제 기본 구현이 있습니다.
 - `PositioningProviderDelegate.provider(_:didStopUnexpectedly:context:)` — 커스텀 provider 가 엔진이
   스스로 꺼졌음을 코어에 알리는 자리(선택 채택, 기본 no-op).
+- `Zone` 이 `Equatable` 입니다.
 
 ## [0.1.24] — 2026-09-28
 

@@ -28,6 +28,29 @@ public final class FloorSession {
     /// 존 이벤트 서버 응답의 개인화 액션 — (zoneId, [Trigger])
     public var onTriggers: ((String, [Trigger]) -> Void)?
 
+    /// 엔진이 층을 잡았다(층 ID) / 잃었다(`nil`).
+    ///
+    /// 갱신된 로케이터는 BLE 로 자기 층을 알리므로, 엔진은 `begin()` 뒤 1~2초 안에 층을 스스로 찾는다.
+    /// 넘어오는 ID 는 `floors(buildingId:)` 가 주는 `Floor.id` 와 같은 값이다 — 그 층으로 `setFloorMap` 하면 된다.
+    /// (0.1.24 까지 README 가 이 콜백을 안내했지만 실제로는 없었다 — 2026-10-02 감사 S6.)
+    public var onFloorDetected: ((String?) -> Void)?
+
+    /// 측위 세션이 닫혔다 — `end()` 를 불렀거나(`.ended`), 엔진이 다시 켜지지 않아 SDK 가 닫았다(`.engineFailed`).
+    ///
+    /// `.engineFailed` 면 `isRunning` 이 false 다 — 원인(권한·Bluetooth 등)을 풀면 `begin()` 으로 다시 연다.
+    /// 이 콜백이 없던 동안 SDK 가 세션을 닫아도 앱 화면은 「찾는 중」 에 머물렀다(S6).
+    public var onStopped: ((StopReason) -> Void)?
+
+    /// 세션이 닫힌 이유.
+    ///
+    /// ⚠️ 새 이유가 늘 수 있다 — `switch` 에는 `@unknown default` 를 둘 것.
+    public enum StopReason: Equatable, Sendable {
+        /// 앱이 `end()` 를 불렀다(또는 `reset()`·키 교체).
+        case ended
+        /// 엔진이 스스로 꺼졌고 다시 켜지지 않아 SDK 가 세션을 닫았다. `E4001`·`E2003`·`E2004` 등이 함께 남는다.
+        case engineFailed
+    }
+
     /// 콘솔에서 무언가 바뀌었다 — 지도를 다시 그리거나 구역을 다시 받을 때 쓴다.
     ///
     /// **SDK 는 이 신호로 아무것도 하지 않는다.** 무엇을 다시 받을지는 앱이 정한다.
@@ -65,7 +88,7 @@ public final class FloorSession {
         builtInProvider = hub
         // 라이선스는 begin(provider:) 가 넣는다 — 주입 경로도 같은 대우를 받아야 하므로
         // 한 곳에 모았다. 여기서 또 넣으면 두 자리가 갈라진다.
-        hub.onZoneEvent = { [weak self] event in self?.dispatch(event) }
+        // 구역 이벤트도 delegate(didEmit)로 코어를 거쳐 온다 — 어느 provider 로 시작해도 같은 길이다(K14).
         hub.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }   // 엔진 로그 → 표준 디버그 훅
         try await begin(provider: hub)
         #else
@@ -83,11 +106,6 @@ public final class FloorSession {
     ///     onError(1) 로 떨어졌다.)
     public func begin(provider: PositioningProvider) async throws {
         guard let coordinator else { throw SdkError.notInitialized }
-        #if os(iOS)
-        if #available(iOS 27.0, *), let hub = provider as? UwbPositioningProvider {
-            hub.license = coordinator.positioningLicense ?? ""
-        }
-        #endif
         if !coordinator.isPrepared {
             try await coordinator.prepare()                         // 순단 회복
         } else {
@@ -95,6 +113,18 @@ public final class FloorSession {
             // 멱등 가드라 prepare() 재호출로는 다시 못 붙는다. 여기서 따로 재시도한다.
             await coordinator.retryKeyResolutionIfNeeded()
         }
+        #if os(iOS)
+        // ⚠️ 라이선스는 키를 **다시 받은 뒤에** 넣는다. 예전엔 재시도보다 먼저 복사해, 초기화 때 /config 가
+        //    실패했다면 재시도가 성공해도 빈 라이선스로 시작했다 — 세션은 「측위 중」, 엔진은 안 뜸(S2).
+        //    그래도 비었으면 시작하지 않고 던진다: 키가 없을 때 floor()·setFloorMap() 과 같은 notInitialized 다.
+        if #available(iOS 27.0, *), let hub = provider as? UwbPositioningProvider {
+            guard let license = coordinator.positioningLicense, !license.isEmpty else {
+                coordinator.reportKeyUnavailable(reason: "begin_no_license")
+                throw SdkError.notInitialized
+            }
+            hub.license = license
+        }
+        #endif
         try await coordinator.start(provider: provider)
     }
 
@@ -105,25 +135,19 @@ public final class FloorSession {
     /// 둔 채 좌표만 버리므로 `resume()` 이 즉시 이어진다.
     ///
     /// 쌓인 좌표는 그대로 둔다(버퍼는 살아 있다) — 재개하면 같은 세션이 이어진다.
+    /// 백그라운드에 다녀와도 일시정지는 유지된다 — 풀리는 것은 `resume()`·`end()`·`begin()` 뿐이다.
     public func pause() {
-        #if os(iOS)
-        if #available(iOS 27.0, *) { (coordinator?.activeProvider as? UwbPositioningProvider)?.pause() }
-        #endif
+        coordinator?.activeProvider?.pause()
     }
 
     /// 일시정지 해제.
     public func resume() {
-        #if os(iOS)
-        if #available(iOS 27.0, *) { (coordinator?.activeProvider as? UwbPositioningProvider)?.resume() }
-        #endif
+        coordinator?.activeProvider?.resume()
     }
 
     /// 일시정지 중인가.
     public var isPaused: Bool {
-        #if os(iOS)
-        if #available(iOS 27.0, *) { return (coordinator?.activeProvider as? UwbPositioningProvider)?.isPaused ?? false }
-        #endif
-        return false
+        coordinator?.activeProvider?.isPaused ?? false
     }
 
     /// 측위 종료 + 잔여 좌표 전송. 초기화·층 설정은 유지 → begin 재호출로 재개.
@@ -134,7 +158,7 @@ public final class FloorSession {
     // MARK: - 내부
 
     /// ZoneEvent → 분리된 콜백. 통짜 enum 을 받던 종전 onZoneEvent 의 후신.
-    private func dispatch(_ event: ZoneEvent) {
+    func dispatch(_ event: ZoneEvent) {
         switch event {
         case .enter(let zone, _):          onZoneEnter?(zone)
         case .exit(let zone, _):           onZoneExit?(zone)

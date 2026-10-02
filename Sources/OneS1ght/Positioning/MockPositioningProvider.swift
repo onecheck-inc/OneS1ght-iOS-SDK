@@ -35,6 +35,11 @@ public final class MockPositioningProvider: PositioningProvider {
     }
     public func stop() { isRunning = false }
 
+    /// 일시정지 — 실제 엔진처럼 start()/stop() 을 건너도 유지된다.
+    public private(set) var isPaused = false
+    public func pause() { isPaused = true }
+    public func resume() { isPaused = false }
+
     /// 엔진이 스스로 꺼졌다(시작이 접혔거나 엔진 오류) — 실제 엔진이 하는 것처럼 꺼진 뒤 코어에 알린다.
     public func simulateUnexpectedStop(retryable: Bool, context: String = "mock") {
         isRunning = false
@@ -68,6 +73,16 @@ public final class MockPositioningProvider: PositioningProvider {
     /// 좌표 fix 발생
     public func simulatePosition(_ c: Coordinates, floorId: String, at: Date = Date()) {
         delegate?.provider(self, didUpdate: c, floorId: floorId, at: at)
+    }
+
+    /// 엔진이 층을 잡음(nil = 잃음)
+    public func simulateFloorDetected(_ floorId: String?) {
+        delegate?.provider(self, didDetectFloor: floorId)
+    }
+
+    /// 앱에 보일 구역 이벤트 발생(진입·이탈·체류)
+    public func simulateZoneEvent(_ event: ZoneEvent) {
+        delegate?.provider(self, didEmit: event)
     }
 
     /// 존 판정 발생

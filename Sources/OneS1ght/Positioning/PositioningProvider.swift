@@ -108,6 +108,18 @@ public protocol PositioningProvider: AnyObject {
     ///    한다 — 다시 뜨는 동안(실측 1.5초 남짓) 좌표가 끊긴다. 영역이 **실제로 바뀌었을 때만**
     ///    부를 것.
     func reloadGeofences()
+
+    /// 좌표 **소비**만 멈춘다 — 엔진은 계속 돈다(선택 채택 — 기본 no-op).
+    ///
+    /// `FloorSession.pause()` 가 이걸 부른다. 예전엔 FloorSession 이 내장 provider 로 형변환해서만
+    /// 불러, 다른 provider 로 시작한 세션에서는 pause 가 조용히 무시됐다(2026-10-02 감사 K14).
+    /// 생명주기 정지·재시작(백그라운드)은 일시정지 상태를 **유지**해야 한다 — 풀리면 앱은 「일시정지」
+    /// 인데 좌표·존 이벤트가 다시 나간다(S20).
+    func pause()
+    /// 일시정지 해제 (선택 채택 — 기본 no-op).
+    func resume()
+    /// 일시정지 중인가 (선택 채택 — 기본 false).
+    var isPaused: Bool { get }
 }
 
 public extension PositioningProvider {
@@ -115,6 +127,9 @@ public extension PositioningProvider {
     func apply(config: PositioningConfig) {}              // 기본: 무시
     var positioningDiagnostic: PositioningDiagnostic? { nil }   // 기본: 진단 없음
     func reloadGeofences() {}                             // 기본: 무시 (엔진이 없는 구현)
+    func pause() {}                                       // 기본: 일시정지 없음
+    func resume() {}
+    var isPaused: Bool { false }
 }
 
 @MainActor
@@ -125,8 +140,21 @@ public protocol PositioningProviderDelegate: AnyObject {
     /// 존 진입/체류/이탈 판정 — SDK가 events/zone 전송
     func provider(_ p: PositioningProvider, didDetectZone zoneId: String,
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date)
-    /// 입장 트리거(빌딩 진입 감지) — SDK가 buildings/floors 로드 시작
+    /// 입장 트리거(빌딩 진입 감지) — 통지만. SDK 는 이걸로 아무것도 하지 않는다(건물·층 조회는 앱의 몫).
+    /// 선택 채택 — 기본 no-op.
     func provider(_ p: PositioningProvider, didEnter buildingId: String)
+
+    /// 엔진이 층을 잡았다(층 ID) / 잃었다(nil) — SDK 가 `FloorSession.onFloorDetected` 로 넘긴다.
+    /// 선택 채택 — 기본 no-op.
+    func provider(_ p: PositioningProvider, didDetectFloor floorId: String?)
+
+    /// 앱에 보일 구역 이벤트(진입·이탈·체류) — SDK 가 `FloorSession.onZoneEnter/Exit/Dwell` 로 넘긴다.
+    ///
+    /// 서버 전송(`didDetectZone`)과 따로 있는 이유: 체류(DWELL)는 기기 안에서만 쓰는 파생물이라 서버로
+    /// 보내지 않지만 앱에는 보여야 하고, 앱 콜백에는 존 ID 가 아니라 `Zone` 이 실려야 한다.
+    /// 예전엔 FloorSession 이 내장 provider 의 클로저에만 물려 있어, `begin(provider:)` 로 시작하면
+    /// 존 콜백이 하나도 안 왔다(K14). 선택 채택 — 기본 no-op.
+    func provider(_ p: PositioningProvider, didEmit event: ZoneEvent)
 
     /// 엔진이 진단 코드를 올린다 — SDK 가 onDebugLog + 서버 로그(E-코드)로 옮긴다.
     ///
@@ -149,6 +177,9 @@ public protocol PositioningProviderDelegate: AnyObject {
 }
 
 public extension PositioningProviderDelegate {
+    func provider(_ p: PositioningProvider, didEnter buildingId: String) {}
+    func provider(_ p: PositioningProvider, didDetectFloor floorId: String?) {}
+    func provider(_ p: PositioningProvider, didEmit event: ZoneEvent) {}
     func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String) {}
     func provider(_ p: PositioningProvider, didStopUnexpectedly retryable: Bool, context: String) {}
 }

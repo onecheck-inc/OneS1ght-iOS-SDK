@@ -165,6 +165,9 @@ public final class OneS1ght {
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
             c.onConfigChange = { change in FloorSession.shared.onConfigChanged?(change) }
+            c.onFloorDetected = { floorId in FloorSession.shared.onFloorDetected?(floorId) }
+            c.onZoneEvent = { event in FloorSession.shared.dispatch(event) }
+            c.onSessionClosed = { reason in FloorSession.shared.onStopped?(reason) }
             c.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }
             // identify 를 먼저 불렀거나(문서 순서와 반대), 키를 바꿔·reset 뒤에 다시 초기화한 경우에도
             // 프로필을 이어 준다. 예전엔 정적 값만 저장하고 새 코디네이터에 안 넘겨 begin() 이 E1004 로

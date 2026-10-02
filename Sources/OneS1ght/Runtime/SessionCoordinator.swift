@@ -102,6 +102,13 @@ final class SessionCoordinator {
     /// 실시간 좌표 → 호스트 전달 (지도에 내 위치 찍기용 — 도면 로컬 미터)
     var onPosition: ((Coordinates) -> Void)?
 
+    /// 엔진이 잡은 층(nil = 잃음) → FloorSession.onFloorDetected
+    var onFloorDetected: ((String?) -> Void)?
+    /// 구역 진입·이탈·체류 → FloorSession.onZoneEnter/Exit/Dwell
+    var onZoneEvent: ((ZoneEvent) -> Void)?
+    /// 측위 세션이 닫혔다(end() 또는 엔진 포기) → FloorSession.onStopped
+    var onSessionClosed: ((FloorSession.StopReason) -> Void)?
+
     /// SDK 내부 활동 로그 (디버그) — verify·flush·zone 전송의 성공/실패를 호스트에 노출
     var onLog: ((LogLevel, String) -> Void)?
     /// 등급은 부르는 쪽이 정한다. 등급을 안 적으면 `.log` — 흐름 기록이 대다수라 그것만 생략한다.
@@ -265,7 +272,7 @@ final class SessionCoordinator {
     }
 
     /// 측위 키를 못 구했다는 사실을 남긴다. reason 은 고정 토큰이라 키 값이 실리지 않는다.
-    private func reportKeyUnavailable(reason: String) {
+    func reportKeyUnavailable(reason: String) {
         log(.error, SdkLocalized.text("coord.keyUnavailable"))
         report(.keyUnavailable, "reason=\(reason)")
     }
@@ -455,6 +462,9 @@ final class SessionCoordinator {
         visitorId = identity.newVisitorId()
         lastRecordedAt = nil
         report(.positioningOn, "visitor=\(visitorId)")
+        // 새 세션은 일시정지 없이 시작한다 — provider 는 생명주기 재시작 때 일시정지를 유지하므로(S20)
+        // 지난 세션의 일시정지가 남아 있을 수 있다.
+        if provider.isPaused { provider.resume() }
         provider.delegate = self
         // ⚠️ isRunning 을 **먼저** 세운다. 엔진은 시작 안에서 동기로 접힐 수 있다(라이선스 없음·위치 권한이
         //    이미 거부됨) — 그 알림(didStopUnexpectedly)이 isRunning=false 일 때 오면 무시돼, 세션은
@@ -560,18 +570,20 @@ final class SessionCoordinator {
     /// 종료: 측위 정지 + 잔여 좌표 flush (도식 11)
     ///
     /// 이미 내려가는 중이면 그 정지에 합류한다 — 두 번 끄지 않는다.
-    func stop() async {
+    func stop(reason: FloorSession.StopReason = .ended) async {
         if let running = stopInFlight { await running.value; return }
         guard isRunning else { return }
-        let task = Task { @MainActor in await self.performStop() }
+        let task = Task { @MainActor in await self.performStop(reason: reason) }
         stopInFlight = task
         await task.value
         stopInFlight = nil
     }
 
-    private func performStop() async {
+    private func performStop(reason: FloorSession.StopReason) async {
         engineRestartTask?.cancel(); engineRestartTask = nil
         engineRestartAttempts = 0
+        // 끝낸 세션에 일시정지를 남기지 않는다 — 다음 begin() 은 항상 정상 상태로 시작한다.
+        if provider?.isPaused == true { provider?.resume() }
         provider?.stop()
         flushTimer?.invalidate(); flushTimer = nil
         receptionCheckTask?.cancel(); receptionCheckTask = nil
@@ -591,6 +603,8 @@ final class SessionCoordinator {
         //    채 end() 해도 실시간 연결·생명주기 관찰이 남았다(S18).
         ensureLiveStream()
         if !liveStreamWanted { removeLifecycleObservers() }
+        // 앱에 알린다 — 엔진이 포기해 닫힌 세션을 앱이 모르면 화면은 「찾는 중」 에 머문다(S6).
+        onSessionClosed?(reason)
     }
 
     // MARK: - 실시간 수신 (SSE)
@@ -812,8 +826,17 @@ final class SessionCoordinator {
 
 extension SessionCoordinator: PositioningProviderDelegate {
 
-    /// 입장 트리거 — 통지만 받는다. 건물·층 조회는 호스트 앱의 몫이라 SDK 는 움직이지 않는다.
-    func provider(_ p: PositioningProvider, didEnter buildingId: String) {}
+    /// 엔진이 층을 잡았다/잃었다 — 앱에 그대로 넘긴다(층 고르기는 앱의 몫).
+    func provider(_ p: PositioningProvider, didDetectFloor floorId: String?) {
+        guard provider === p else { return }
+        onFloorDetected?(floorId)
+    }
+
+    /// 앱에 보일 구역 이벤트 — 세션이 도는 동안만.
+    func provider(_ p: PositioningProvider, didEmit event: ZoneEvent) {
+        guard isLiveSession(p) else { return }
+        onZoneEvent?(event)
+    }
 
     /// 엔진 진단 → 표준 경로(onDebugLog + 서버 E-코드). 어댑터가 화면 로그로만 남기면
     /// 콘솔 로그 분석기에서 안 보인다 — 코드로 올려야 관리자가 현장 없이 원인을 짚는다.
@@ -834,7 +857,7 @@ extension SessionCoordinator: PositioningProviderDelegate {
             // 올렸다 — E4001(ERROR)을 덧붙이면 같은 일이 「고장」 으로 두 번 찍힌다. 재시도를 다 쓴 것만 올린다.
             if retryable { report(.uwbSessionFailed, "engine stopped, session closed — \(context)") }
             log(.warn, SdkLocalized.format("coord.engineGaveUp", context))
-            Task { await self.stop() }
+            Task { await self.stop(reason: .engineFailed) }
             return
         }
         engineRestartAttempts += 1
