@@ -33,8 +33,9 @@ public enum SdkError: Error, Equatable {
     case osVersionTooLow       // iOS 27 미만
     /// 층을 지정하려는데 건물을 알 수 없다 — `setFloorMap(floor)` 를 `buildingId` 없이, 직전에 지정한 건물도 없이 불렀다.
     /// 처음에는 `setFloorMap(floor, buildingId:)` 로 건물을 함께 넘긴다(그 뒤로는 생략 가능). 층 상태는 바뀌지 않는다.
-    /// 코드는 E3001(층 미지정). 2026-10-03 안드 감사 SF-A1 과 같은 값(안드로이드 `SdkError.BuildingNotSet`).
-    case buildingNotSet
+    /// 코드는 E3001(층 미지정). 2026-10-03 안드 감사 SF-A1 과 같은 값 — 안드로이드는 이름이 `SdkError.BuildingNotSet`
+    /// 이지만 iOS 는 코드 이름(`SdkErrorCode.floorNotSet`)과 맞췄다(2026-10-03 사용자 결정).
+    case floorNotSet
 }
 
 @MainActor
@@ -287,13 +288,13 @@ final class SessionCoordinator {
     /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
     /// 가동 중에 부르면 즉시 층 전환 — 세션은 그대로, 엔진 주입값만 갈린다.
     ///
-    /// - throws: `SdkError.buildingNotSet`(E3001) — `floor` 가 있는데 `buildingId` 가 없다. 층 상태는 그대로 둔다.
+    /// - throws: `SdkError.floorNotSet`(E3001) — `floor` 가 있는데 `buildingId` 가 없다. 층 상태는 그대로 둔다.
     ///   ⚠️ 2026-10-03 안드 감사(SF-A1): 예전엔 이 경우를 「층 해제」 로 처리해 호출은 성공하는데 층·구역이 조용히
     ///   비었다 — 구역 이벤트가 0건이 되고 이유가 어디에도 안 남았다. `setFloorMap(nil)`(명시적 해제)은 그대로 허용한다.
     func setFloorMap(_ floor: Floor?, buildingId: String?) async throws {
         if let floor, buildingId == nil {
             report(.floorNotSet, "setFloorMap floor=\(floor.id) without buildingId")
-            throw SdkError.buildingNotSet
+            throw SdkError.floorNotSet
         }
         let previousFloor = floorState
         guard let floor, let buildingId else {

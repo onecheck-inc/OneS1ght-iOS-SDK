@@ -3,7 +3,7 @@
 //  `setFloorMap(floor)` 를 건물 없이 부르면 조용히 층을 비우지 않고 던진다(2026-10-03 안드 감사 SF-A1 — 안드로이드와 같은 값).
 //
 //  예전엔 건물 인자도, 직전 건물도 없으면 「층 해제」 로 처리했다 — 호출은 성공하는데 층·구역이 비어 구역 이벤트가
-//  0건이 되고, 이유는 어디에도 안 남았다. 이제 `SdkError.buildingNotSet`(E3001)을 던지고 층 상태는 그대로 둔다.
+//  0건이 되고, 이유는 어디에도 안 남았다. 이제 `SdkError.floorNotSet`(E3001)을 던지고 층 상태는 그대로 둔다.
 //
 
 import XCTest
@@ -45,7 +45,7 @@ final class SetFloorMapBuildingTests: XCTestCase {
             try await c.setFloorMap(Floor(id: "B", name: "B"), buildingId: nil)
             XCTFail("건물 없이 층을 지정했는데 성공했다 — 층이 조용히 비워진다")
         } catch let e as SdkError {
-            XCTAssertEqual(e, .buildingNotSet)
+            XCTAssertEqual(e, .floorNotSet)
             XCTAssertEqual(e.code, .floorNotSet, "E3001")
         }
         XCTAssertEqual(c.floorState?.floorId, "A", "실패한 호출이 층을 지우면 안 된다")
@@ -75,7 +75,7 @@ final class SetFloorMapBuildingTests: XCTestCase {
             try await OneS1ght.setFloorMap(Floor(id: "A", name: "A"))
             XCTFail("건물 문맥 없이 성공했다")
         } catch let e as SdkError {
-            XCTAssertEqual(e, .buildingNotSet)
+            XCTAssertEqual(e, .floorNotSet)
         }
 
         try await OneS1ght.setFloorMap(Floor(id: "A", name: "A"), buildingId: "B1")
@@ -89,7 +89,7 @@ final class SetFloorMapBuildingTests: XCTestCase {
             try await OneS1ght.setFloorMap(Floor(id: "A", name: "A"))
             XCTFail("해제 뒤에는 건물을 다시 넘겨야 한다")
         } catch let e as SdkError {
-            XCTAssertEqual(e, .buildingNotSet)
+            XCTAssertEqual(e, .floorNotSet)
         }
         await OneS1ght.reset()
     }

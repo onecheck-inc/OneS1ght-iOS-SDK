@@ -261,7 +261,7 @@ public final class OneS1ght {
     /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
     /// 로케이터·sessionId·존을 받아 엔진에 주입한다 — 가동 중이면 즉시 층 전환.
     /// `buildingId` 를 생략하면 직전에 지정한 건물을 쓴다.
-    /// - throws: `SdkError.buildingNotSet`(E3001) — `floor` 가 있는데 건물 인자도, 직전에 지정한 건물도 없다.
+    /// - throws: `SdkError.floorNotSet`(E3001) — `floor` 가 있는데 건물 인자도, 직전에 지정한 건물도 없다.
     ///   층 상태는 그대로다. 처음 지정할 때는 `buildingId` 를 함께 넘긴다. `setFloorMap(nil)` 은 언제나 층을 비운다.
     public static func setFloorMap(_ floor: Floor?, buildingId: String? = nil) async throws {
         guard let coordinator else { throw SdkError.notInitialized }

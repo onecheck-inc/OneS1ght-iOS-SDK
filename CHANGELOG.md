@@ -22,11 +22,11 @@
 
 ### 동작 바뀜 — `setFloorMap`
 
-- **`setFloorMap(floor)` 를 건물 없이 부르면 `SdkError.buildingNotSet`(`E3001`)을 던집니다.** 건물 인자도, 직전에
+- **`setFloorMap(floor)` 를 건물 없이 부르면 `SdkError.floorNotSet`(`E3001`)을 던집니다.** 건물 인자도, 직전에
   지정한 건물도 없을 때입니다. 예전엔 호출이 성공하면서 층·구역을 조용히 비워 구역 이벤트가 하나도 나오지 않았습니다.
   지금 층은 그대로 남습니다. 처음 지정할 때 `buildingId` 를 함께 넘기면 됩니다(그 뒤로는 생략 가능).
   `setFloorMap(nil)`(층 해제)은 그대로입니다.
-- `SdkError` 에 케이스 `buildingNotSet` 이 늘었습니다. `SdkError` 를 `switch` 로 빠짐없이 다루는 앱은 이 케이스(또는
+- `SdkError` 에 케이스 `floorNotSet` 이 늘었습니다. `SdkError` 를 `switch` 로 빠짐없이 다루는 앱은 이 케이스(또는
   `default`)를 더해야 컴파일됩니다. `catch SdkError.xxx` 로 받는 앱은 고칠 것이 없습니다.
 
 ### 동작 바뀜 — 오류 코드

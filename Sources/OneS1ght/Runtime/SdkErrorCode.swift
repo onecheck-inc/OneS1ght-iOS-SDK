@@ -82,7 +82,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
 
     // MARK: 3xxx — 공간·설정
 
-    /// 층 미지정 — 지금은 `setFloorMap(floor)` 를 건물 문맥 없이 불렀을 때(`SdkError.buildingNotSet`)의 코드다
+    /// 층 미지정 — 지금은 `setFloorMap(floor)` 를 건물 문맥 없이 불렀을 때(`SdkError.floorNotSet`)의 코드다
     /// (2026-10-03~, 안드로이드와 같다).
     ///
     /// ⚠️ 층 없이 측위를 **시작**하는 것으로는 내보내지 않는다(0.2.0~) — 정상 경로라 시작할 때마다 콘솔 로그를
@@ -281,7 +281,7 @@ public extension SdkError {
         case .positioningDisabled: return .positioningDisabled
         case .deviceNotSupported:  return .deviceNotSupported
         case .osVersionTooLow:     return .osVersionTooLow
-        case .buildingNotSet:      return .floorNotSet
+        case .floorNotSet:         return .floorNotSet
         }
     }
 }
