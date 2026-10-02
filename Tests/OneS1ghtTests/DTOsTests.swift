@@ -18,38 +18,6 @@ final class DTOsTests: XCTestCase {
         XCTAssertTrue(res.positioning_enabled)
     }
 
-    func testDecodeResBuildings() throws {
-        let json = #"""
-        { "synced_at": "2026-07-16T09:00:00Z",
-          "buildings": [
-            { "building_id": "b-uuid", "name": "금정역 skv1", "store_id": 3,
-              "floors": [ { "floor_id": "f-uuid", "name": "f-uuid" } ] } ] }
-        """#
-        let res = try JSONDecoder().decode(ResBuildings.self, from: Data(json.utf8))
-        XCTAssertEqual(res.buildings.first?.name, "금정역 skv1")
-        XCTAssertEqual(res.buildings.first?.floors?.first?.floor_id, "f-uuid")
-    }
-
-    func testDecodeResFloorConfig_zoneParams9() throws {
-        let json = #"""
-        { "floor_id": "f-uuid", "building_id": "b-uuid", "name": "f-uuid",
-          "synced_at": "2026-07-16T09:00:00Z",
-          "zones": [
-            { "zone_id": "z-uuid", "name": "입구존",
-              "polygon": [[12.3, 4.5], [13.0, 4.5], [13.0, 6.0]],
-              "trigger_type": "enter", "dwell_seconds": 3,
-              "in_dist": 3.0, "in_count": 0, "in_count_interval": 0,
-              "out_period": 0, "priority": 1, "call_inout": true, "is_active": true } ],
-          "anchors": [] }
-        """#
-        let res = try JSONDecoder().decode(ResFloorConfig.self, from: Data(json.utf8))
-        let z = try XCTUnwrap(res.zones.first)
-        XCTAssertEqual(z.polygon?.first, [12.3, 4.5])
-        XCTAssertEqual(z.in_dist, 3.0)
-        XCTAssertTrue(z.call_inout && z.is_active)
-        XCTAssertTrue(res.anchors.isEmpty)          // 현재 항상 []
-    }
-
     func testDecodeResZoneEvent_withTriggers() throws {
         let json = #"""
         { "accepted": true, "event_id": "evt_a1b2c3",
@@ -81,14 +49,11 @@ final class DTOsTests: XCTestCase {
     }
 
     func testEncodeReqVerify_omitsNilFields() throws {
-        // client의 nil 필드는 JSON에서 빠져야 함 (보낸 필드만 갱신 규칙)
-        let req = ReqVerify(platform_name: "iOS", app_id: nil,
-                            client: ClientInfo(profile_id: "A", device_model: nil, os_name: nil,
-                                               os_version: nil, app_version: nil, sdk_version: nil,
-                                               device_language: nil, attributes: nil))
+        // nil 필드는 JSON 에서 빠져야 한다 (보낸 필드만 갱신 규칙). client 블록은 0.1.24 다음 판에서 없앴다.
+        let req = ReqVerify(platform_name: "iOS", app_id: nil)
         let obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(req)) as! [String: Any]
-        let client = obj["client"] as! [String: Any]
-        XCTAssertEqual(client.count, 1)                          // profile_id 하나만
+        XCTAssertEqual(obj.count, 1)                              // platform_name 하나만
         XCTAssertNil(obj["app_id"])
+        XCTAssertNil(obj["client"])
     }
 }

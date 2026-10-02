@@ -4,17 +4,18 @@
 //
 //  설계 규칙: "문은 static, 부품은 인스턴스".
 //  · 문(이 클래스) — 앱 전체에 하나뿐인 진입점. private init 이라 인스턴스화 불가, 전부 static.
-//  · 부품(coordinator·ApiClient·엔진) — 키 교체·reset 때 갈아끼우는 인스턴스. 밖에 안 보임.
+//  · 부품(coordinator·ApiClient·엔진) — 키 교체·reset 때 갈아끼우는 인스턴스. 밖에 안 보임
+//    (ApiClient 는 옛 defaultBaseURL 호환 때문에 타입 이름만 공개다).
 //  하나만 존재해야 하는 이유: UWB 라디오·존 엔진·Keychain ID·좌표 버퍼가 기기당 1개라
 //  세션이 여럿이면 서로 충돌한다.
 //
 //  사용 (호스트 앱):
 //    // ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신 (기기 게이트는 여기 없다 — ④ begin() 이 담당)
 //    try await OneS1ght.initialize(sdkKey: "ock_…")
-//    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
+//    // ② 공간 선택 — 선택. 안 하면 엔진이 BLE 로 층을 찾는다(session.onFloorDetected)
 //    let buildings = try await OneS1ght.buildings()
-//    let floors = try await OneS1ght.floors(buildings[0].id)
-//    try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
+//    let floors = try await OneS1ght.floors(buildingId: buildings[0].id)
+//    try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 //    // ③ 프로필 연결 — createProfile 로 발급받아 앱이 보관한 값
 //    OneS1ght.identify(profileId: "pf_8a3c")
 //    // ④ 매장 진입 시 — 측위 가동
@@ -31,14 +32,17 @@ public final class OneS1ght {
 
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
-    /// SDK 버전 (verify의 client.sdk_version에 실림)
-    public static let sdkVersion = "0.1.24"
+    /// SDK 버전 (서버 로그의 sdk_version 에 실림)
+    nonisolated public static let sdkVersion = "0.1.24"
+
+    /// 기본 서버 주소 — `initialize(sdkKey:baseURL:)` 의 기본값.
+    nonisolated public static let defaultBaseURL = URL(string: "https://console.ones1ght.com/api/sdk/v1")!
 
     // MARK: - 콜백
 
-    /// SDK 내부 활동 로그 (디버그용) — verify·좌표 flush·zone 전송의 성공/실패 통지.
-    /// 데모/개발 중 "전송이 실제로 되고 있나"를 눈으로 확인하는 용도. 운영에선 미등록 권장.
-    /// SDK 내부 로그 — 등급과 글자가 함께 온다.
+    /// SDK 내부 활동 로그 (디버그용) — 등급과 글자가 함께 온다. verify·좌표 flush·zone 전송의
+    /// 성공/실패, 그리고 E·I 코드 줄(`[E1007] …`)이 온다. 운영에선 미등록 권장.
+    /// ⚠️ 메인 스레드에서 불린다.
     ///
     /// ⚠️ v0.1.12 에서 `(String) -> Void` 에서 바뀌었다. 예전에는 글자만 왔고, 받는 쪽이
     /// 맨 앞 이모지를 보고 등급을 짐작해야 했다 — 문구가 바뀌면 조용히 오분류됐다.
@@ -93,7 +97,7 @@ public final class OneS1ght {
     /// 정하지 않고 이 문을 따로 열어 둔다 — 앱이 적절한 맥락에서 부르면 된다.
     ///
     ///     try await OneS1ght.initialize(sdkKey: "ock_…")
-    ///     switch await OneS1ght.permissions() {
+    ///     switch await OneS1ght.requestPermission() {
     ///     case .authorized:  break
     ///     case .denied:      showSettingsGuide()   // 앱에서 재요청 불가 — 설정 앱으로
     ///     case .unsupported: showUnsupportedNotice()
@@ -103,7 +107,9 @@ public final class OneS1ght {
     /// initialize 를 부르지 않았어도 호출할 수 있다 (기기 조건만 보는 검사라서).
     /// - Returns: `.authorized` · `.denied` · `.unsupported`
     ///   (30초 안에 응답이 없으면 보수적으로 `.denied`)
-    public static func permissions() async -> PermissionStatus {
+    ///
+    /// 위치 권한은 여기서 묻지 않는다 — `begin()` 이 측위를 켤 때 SDK 가 직접 요청한다.
+    public static func requestPermission() async -> PermissionStatus {
         #if os(iOS)
         guard deviceAvailability == .available else { return .unsupported }
         guard #available(iOS 27.0, *) else { return .unsupported }
@@ -111,6 +117,12 @@ public final class OneS1ght {
         #else
         return .unsupported
         #endif
+    }
+
+    /// 0.1.24 까지의 이름 — 확인만 하는 것처럼 읽히지만 시스템 권한 창을 띄운다(감사 K13).
+    @available(*, deprecated, renamed: "requestPermission()")
+    public static func permissions() async -> PermissionStatus {
+        await requestPermission()
     }
 
     /// SDK 가 로그·안내 문구에 쓸 언어를 지정한다 — `"ko"` · `"ja"` · `"en"`.
@@ -141,13 +153,15 @@ public final class OneS1ght {
     /// setFloorMap 없이 begin() 하면 엔진이 BLE 로 층을 찾을 때까지 좌표가 나오지 않는다(정상 경로 —
     /// 끝내 못 찾으면 E3007 로 통지).
     public static func initialize(sdkKey: String,
-                                  baseURL: URL = ApiClient.defaultBaseURL) async throws {
+                                  baseURL: URL = OneS1ght.defaultBaseURL) async throws {
         // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.
         // 여기서 막으면 세션이 안 만들어져 도면·존 조회까지 전부 닫힌다(coordinator != nil 가드).
 
         // ① 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
         if let stored = storedKey, stored != sdkKey {
             await coordinator?.stop()
+            // reset() 과 같은 정리 — 빠뜨리면 옛 키로 붙은 실시간 연결·관찰자가 남는다(S19).
+            coordinator?.teardown()
             coordinator = nil
         }
 
@@ -160,7 +174,14 @@ public final class OneS1ght {
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
             c.onConfigChange = { change in FloorSession.shared.onConfigChanged?(change) }
+            c.onFloorDetected = { floorId in FloorSession.shared.onFloorDetected?(floorId) }
+            c.onZoneEvent = { event in FloorSession.shared.dispatch(event) }
+            c.onSessionClosed = { reason in FloorSession.shared.onStopped?(reason) }
             c.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }
+            // identify 를 먼저 불렀거나(문서 순서와 반대), 키를 바꿔·reset 뒤에 다시 초기화한 경우에도
+            // 프로필을 이어 준다. 예전엔 정적 값만 저장하고 새 코디네이터에 안 넘겨 begin() 이 E1004 로
+            // 실패했다(2026-10-02 감사 S12).
+            if let profileId { c.identify(profileId: profileId) }
             coordinator = c
             storedKey = sdkKey
         }
@@ -179,8 +200,12 @@ public final class OneS1ght {
     }
 
     // MARK: - 공간 조회 (엔드포인트 하나당 메서드 하나 · 목록 ↔ 단건)
+    //
+    // ⚠️ 인자에 라벨을 붙인다. 0.1.24 까지는 `floor(_:_:)` 처럼 같은 타입(String) 인자를 라벨 없이 받아
+    //    건물·층 ID 를 바꿔 넣어도 컴파일됐고, 라벨도 `buildingID`·`buildingId` 로 갈렸다(감사 K13).
+    //    옛 이름은 deprecated 로 남아 경고만 낸다 — 아래 "옛 이름" 절.
 
-    /// 건물 목록. 층은 floors() 로 따로.
+    /// 건물 목록. 층은 floors(buildingId:) 로 따로.
     /// ⚠️ 빈 배열이 "이 테넌트에 건물이 없다"는 뜻만은 아니다 — 콘솔에서 측위 키를 받지
     ///    못했을 때도 똑같이 빈 배열이 온다. 구분하려면 onDebugLog 나 콘솔 로그
     ///    분석기에서 E1007 을 확인해야 한다.
@@ -190,60 +215,60 @@ public final class OneS1ght {
     }
 
     /// 건물 단건.
-    public static func building(_ buildingID: String) async throws -> Building {
-        guard let b = try await buildings().first(where: { $0.id == buildingID }) else {
-            throw ApiError.notFound(detail: buildingID)
+    public static func building(id buildingId: String) async throws -> Building {
+        guard let b = try await buildings().first(where: { $0.id == buildingId }) else {
+            throw ApiError.notFound(detail: buildingId)
         }
         return b
     }
 
-    /// 층 목록 — 이름·치수는 채워지고 **도면 이미지는 비어 있다**(목록 경량화).
-    /// 지도를 그릴 층만 floor() 단건으로 받으면 이미지가 채워져 온다.
-    public static func floors(_ buildingID: String) async throws -> [Floor] {
+    /// 층 목록 — 이름·도면 유무는 채워지고 **도면 이미지는 비어 있다**(목록 경량화).
+    /// 지도를 그릴 층만 floor(buildingId:floorId:) 단건으로 받으면 이미지가 채워져 온다.
+    public static func floors(buildingId: String) async throws -> [Floor] {
         guard let coordinator else { throw SdkError.notInitialized }
-        return try await coordinator.floors(buildingId: buildingID)
+        return try await coordinator.floors(buildingId: buildingId)
     }
 
-    /// 층 단건 — 도면 이미지 포함 (floors() 가 캐시를 데워 두면 추가 왕복 없음).
-    public static func floor(_ buildingID: String, _ floorID: String) async throws -> Floor {
+    /// 층 단건 — 도면 이미지 포함. 한 번 받은 도면은 캐시해 두었다가 콘솔이 도면을 바꾸면(.planChanged) 버린다.
+    public static func floor(buildingId: String, floorId: String) async throws -> Floor {
         guard let coordinator else { throw SdkError.notInitialized }
-        return try await coordinator.floor(buildingId: buildingID, floorId: floorID)
+        return try await coordinator.floor(buildingId: buildingId, floorId: floorId)
     }
 
-    /// 존 목록 (판정 파라미터 포함).
-    public static func zones(_ buildingID: String, _ floorID: String) async throws -> [Zone] {
+    /// 존 목록.
+    public static func zones(buildingId: String, floorId: String) async throws -> [Zone] {
         guard let coordinator else { throw SdkError.notInitialized }
-        return try await coordinator.zones(buildingId: buildingID, floorId: floorID)
+        return try await coordinator.zones(buildingId: buildingId, floorId: floorId)
     }
 
     /// 존 단건.
-    public static func zone(_ buildingID: String, _ floorID: String,
-                            _ zoneID: String) async throws -> Zone {
-        guard let z = try await zones(buildingID, floorID).first(where: { $0.id == zoneID }) else {
-            throw ApiError.notFound(detail: zoneID)
+    public static func zone(buildingId: String, floorId: String, zoneId: String) async throws -> Zone {
+        guard let z = try await zones(buildingId: buildingId, floorId: floorId)
+            .first(where: { $0.id == zoneId }) else {
+            throw ApiError.notFound(detail: zoneId)
         }
         return z
     }
 
     /// 로케이터 + 세션ID — sessionId 는 별도 API 가 아니라 이 응답에 함께 실려 온다.
-    public static func locators(_ buildingID: String,
-                                _ floorID: String) async throws -> FloorLocators {
+    public static func locators(buildingId: String, floorId: String) async throws -> FloorLocators {
         guard let coordinator else { throw SdkError.notInitialized }
-        return try await coordinator.locators(buildingId: buildingID, floorId: floorID)
+        return try await coordinator.locators(buildingId: buildingId, floorId: floorId)
     }
 
     // MARK: - 층 지정
 
     /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
     /// 로케이터·sessionId·존을 받아 엔진에 주입한다 — 가동 중이면 즉시 층 전환.
-    public static func setFloorMap(_ floor: Floor?, buildingID: String? = nil) async throws {
+    /// `buildingId` 를 생략하면 직전에 지정한 건물을 쓴다.
+    public static func setFloorMap(_ floor: Floor?, buildingId: String? = nil) async throws {
         guard let coordinator else { throw SdkError.notInitialized }
-        try await coordinator.setFloorMap(floor, buildingId: buildingID ?? currentBuildingID)
-        currentBuildingID = floor == nil ? nil : (buildingID ?? currentBuildingID)
+        try await coordinator.setFloorMap(floor, buildingId: buildingId ?? currentBuildingId)
+        currentBuildingId = floor == nil ? nil : (buildingId ?? currentBuildingId)
     }
 
     /// 현재 층의 존만 재조회 (경량 — 도면 재다운로드 없음). 콘솔에서 존을 바꿨을 때 폴링용.
-    /// 받은 존은 판정 엔진에도 즉시 반영된다.
+    /// 받은 존이 바뀌었으면 판정 엔진에도 즉시 반영된다.
     @discardableResult
     public static func refreshZones() async -> [Zone] {
         await coordinator?.refreshZones() ?? []
@@ -251,7 +276,7 @@ public final class OneS1ght {
 
     // MARK: - 측위 세션
 
-    /// 현재 설정된 층의 측위 세션. setFloorMap 이 선행되어야 한다.
+    /// 측위 세션. 층 지정(setFloorMap)은 선택이다 — 없으면 엔진이 BLE 로 층을 찾는다.
     /// 항상 같은 인스턴스를 돌려준다(싱글턴) — UWB 라디오·판정 엔진·좌표 버퍼가
     /// 기기당 하나뿐이라 세션이 여럿이면 물리적으로 충돌한다.
     public static func floorSession() throws -> FloorSession {
@@ -270,15 +295,15 @@ public final class OneS1ght {
         return try await coordinator.createProfile(attributes)
     }
 
-    /// 프로필 조회.
-    public static func getProfile(_ profileId: String) async throws -> [String: String] {
+    /// 프로필 속성 조회.
+    public static func fetchProfile(_ profileId: String) async throws -> [String: String] {
         guard let coordinator else { throw SdkError.notInitialized }
         return try await coordinator.getProfile(profileId)
     }
 
-    /// 프로필 속성 전체 교체.
-    public static func putProfile(_ profileId: String,
-                                  _ attributes: [String: String]) async throws {
+    /// 프로필 속성 **전체 교체** — 넘기지 않은 속성은 지워진다.
+    public static func replaceProfile(_ profileId: String,
+                                      attributes: [String: String]) async throws {
         guard let coordinator else { throw SdkError.notInitialized }
         try await coordinator.putProfile(profileId, attributes)
     }
@@ -289,17 +314,17 @@ public final class OneS1ght {
         try await coordinator.deleteProfile(profileId)
     }
 
-    // MARK: - 버퍼
+    // MARK: - 좌표 버퍼
 
-    /// 쌓인 좌표를 지금 서버로 전송 (300건/60초를 기다리지 않고 앞당김).
-    public static func send() async {
+    /// 쌓인 좌표를 지금 서버로 보낸다 (300건/60초를 기다리지 않고 앞당김).
+    public static func uploadPendingPositions() async {
         await coordinator?.sendNow()
     }
 
-    /// 쌓인 좌표를 **전송하지 않고 폐기**.
-    /// ⚠️ flush 가 아니라 empty 인 이유 — 통상 flush 는 "쌓인 것을 목적지로 밀어낸다"(전송)는
+    /// 쌓인 좌표를 **보내지 않고 버린다**.
+    /// ⚠️ flush 라고 부르지 않는 이유 — 통상 flush 는 "쌓인 것을 목적지로 밀어낸다"(전송)는
     ///    뜻이라, 폐기에 그 이름을 쓰면 전송으로 오해한 호출에 데이터가 조용히 사라진다.
-    public static func empty() {
+    public static func discardPendingPositions() {
         coordinator?.discardPending()
     }
 
@@ -319,8 +344,74 @@ public final class OneS1ght {
     private static let identity = IdentityStore()
     private static var coordinator: SessionCoordinator?
     private static var profileId: String?
-    private static var currentBuildingID: String?             // setFloorMap 의 건물 문맥
+    private static var currentBuildingId: String?             // setFloorMap 의 건물 문맥
     /// FloorSession 이 코디네이터에 닿는 통로 (같은 모듈 내부 전용)
     static var coordinatorRef: SessionCoordinator? { coordinator }
     private static var storedKey: String?          // 키 교체 감지용
+}
+
+// MARK: - 옛 이름 (0.1.24 까지)
+//
+// 0.1.24 다음 판에서 이름을 정리했다(감사 K13). 옛 이름은 새 이름으로 넘기기만 한다 — 고객 코드는 경고만 받고
+// 그대로 컴파일된다. Xcode 의 Fix-it 이 새 이름으로 바꿔 준다.
+
+extension OneS1ght {
+
+    @available(*, deprecated, renamed: "building(id:)")
+    public static func building(_ buildingID: String) async throws -> Building {
+        try await building(id: buildingID)
+    }
+
+    @available(*, deprecated, renamed: "floors(buildingId:)")
+    public static func floors(_ buildingID: String) async throws -> [Floor] {
+        try await floors(buildingId: buildingID)
+    }
+
+    @available(*, deprecated, renamed: "floor(buildingId:floorId:)")
+    public static func floor(_ buildingID: String, _ floorID: String) async throws -> Floor {
+        try await floor(buildingId: buildingID, floorId: floorID)
+    }
+
+    @available(*, deprecated, renamed: "zones(buildingId:floorId:)")
+    public static func zones(_ buildingID: String, _ floorID: String) async throws -> [Zone] {
+        try await zones(buildingId: buildingID, floorId: floorID)
+    }
+
+    @available(*, deprecated, renamed: "zone(buildingId:floorId:zoneId:)")
+    public static func zone(_ buildingID: String, _ floorID: String,
+                            _ zoneID: String) async throws -> Zone {
+        try await zone(buildingId: buildingID, floorId: floorID, zoneId: zoneID)
+    }
+
+    @available(*, deprecated, renamed: "locators(buildingId:floorId:)")
+    public static func locators(_ buildingID: String, _ floorID: String) async throws -> FloorLocators {
+        try await locators(buildingId: buildingID, floorId: floorID)
+    }
+
+    /// ⚠️ 라벨을 생략할 수 없게 기본값을 두지 않았다 — 두면 `setFloorMap(floor)` 가 새 이름과 겹쳐 모호해진다.
+    @available(*, deprecated, renamed: "setFloorMap(_:buildingId:)")
+    public static func setFloorMap(_ floor: Floor?, buildingID: String?) async throws {
+        try await setFloorMap(floor, buildingId: buildingID)
+    }
+
+    @available(*, deprecated, renamed: "fetchProfile(_:)")
+    public static func getProfile(_ profileId: String) async throws -> [String: String] {
+        try await fetchProfile(profileId)
+    }
+
+    @available(*, deprecated, renamed: "replaceProfile(_:attributes:)")
+    public static func putProfile(_ profileId: String,
+                                  _ attributes: [String: String]) async throws {
+        try await replaceProfile(profileId, attributes: attributes)
+    }
+
+    @available(*, deprecated, renamed: "uploadPendingPositions()")
+    public static func send() async {
+        await uploadPendingPositions()
+    }
+
+    @available(*, deprecated, renamed: "discardPendingPositions()")
+    public static func empty() {
+        discardPendingPositions()
+    }
 }

@@ -47,14 +47,14 @@ final class PositioningPauseTests: XCTestCase {
         XCTAssertFalse(p.isPaused)
     }
 
-    /// stop() 은 일시정지 상태를 남기지 않는다.
-    ///
-    /// 남기면 다음 begin() 이 "시작은 됐는데 좌표가 하나도 안 나오는" 상태로 뜬다 —
-    /// 화면상 증상이 측위 실패와 똑같아서 원인을 찾기 어렵다.
-    func testStopClearsPause() {
+    /// provider 의 stop() 은 일시정지를 **유지**한다 — 백그라운드 정지·복귀가 일시정지를 풀면 앱은
+    /// 「일시정지」 인데 좌표·존 이벤트가 다시 나갔다(2026-10-02 감사 S20).
+    /// 새 세션(begin)·종료(end)에서 푸는 것은 코어 몫이다 — PauseLifecycleTests 가 본다.
+    func testProviderStopKeepsPause() {
         let p = UwbPositioningProvider()
+        p.isPaused = true
         p.stop()
-        XCTAssertFalse(p.isPaused)
+        XCTAssertTrue(p.isPaused)
     }
     // MARK: - 일시정지는 영역 이벤트도 막아야 한다
 

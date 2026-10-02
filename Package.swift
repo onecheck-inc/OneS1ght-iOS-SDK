@@ -44,7 +44,7 @@ let package = Package(
             name: "OneS1ght",
             dependencies: [
                 .product(name: "gpi-ihub", package: "gpi-ihub",
-                         condition: .when(platforms: [.iOS])),   // 맥 테스트는 자체 ZoneEngine 경로
+                         condition: .when(platforms: [.iOS])),   // 맥 테스트는 엔진 없이 코어만
             ],
             path: "Sources/OneS1ght",
             resources: [

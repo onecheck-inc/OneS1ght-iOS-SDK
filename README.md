@@ -122,29 +122,28 @@ touching the network.
 
 ## Step 3: Permissions
 
-### Location — a prerequisite for UWB
+### Location — the SDK asks for you
 
-Ask for location permission first. The UWB session cannot start without it.
+The UWB session needs location permission (and full accuracy). **The SDK requests both
+itself when `begin()` starts the engine** — your app does not call `CLLocationManager`.
+What your app must do is ship the four Info.plist keys from Step 1.
 
-```swift
-import CoreLocation
+⚠️ If `NSLocationWhenInUseUsageDescription` is missing, iOS ignores the request without an
+answer. The SDK checks for the key, does not start, and emits `E2003`
+(`Info.plist missing …`) instead of waiting forever.
 
-let locationManager = CLLocationManager()
-locationManager.requestWhenInUseAuthorization()
-```
-
-⚠️ **Start positioning only after the user has answered.** Location permission is a
-prerequisite of the UWB session, so calling `begin()` before the user responds fails the
-session with `INVALID_CONFIGURATION`. Confirm the authorized state through
-`CLLocationManagerDelegate`'s `locationManagerDidChangeAuthorization`, then start.
+If the user denies location, positioning does not start: `E2003` is emitted, the session
+closes and `onStopped` fires with `.engineFailed` (Step 6). Guide the user to Settings, then
+call `begin()` again.
 
 ### Nearby Interaction
 
 ```swift
-switch await OneS1ght.permissions() {
+switch await OneS1ght.requestPermission() {
 case .authorized:  break
 case .denied:      showSettingsGuide()      // cannot re-prompt — send to Settings
 case .unsupported: showUnsupportedNotice()
+@unknown default:  break
 }
 ```
 
@@ -182,6 +181,7 @@ OneS1ght.identify(profileId: profileId)
 ```
 
 Your member ID never reaches OneS1ght — only `profileId` does. You keep the mapping.
+`identify` may be called before or after `initialize`.
 
 ⚠️ Use **age bands** rather than exact ages. Gender + exact age + interests + movement
 paths combined can become re-identifiable.
@@ -189,35 +189,36 @@ paths combined can become re-identifiable.
 | Function | Purpose |
 |---|---|
 | `createProfile(_:)` | Create, returns `profileId` |
-| `getProfile(_:)` | Read |
-| `putProfile(_:_:)` | Replace all attributes |
+| `fetchProfile(_:)` | Read attributes |
+| `replaceProfile(_:attributes:)` | Replace **all** attributes — omitted ones are removed |
 | `deleteProfile(_:)` | Delete |
 | `identify(profileId:)` | Attach — required before positioning |
 
 ---
 
-## Step 5: Select Space
+## Step 5: Select Space (optional)
+
+You can skip this step. Renewed locators advertise their floor over BLE, so the engine
+finds the floor by itself a second or two after `begin()`. Pick a floor yourself only when
+a person should choose it, or to draw the map before positioning starts.
 
 ```swift
 let buildings = try await OneS1ght.buildings()
-let floors    = try await OneS1ght.floors(buildings[0].id)
+let floors    = try await OneS1ght.floors(buildingId: buildings[0].id)
 
-try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
+try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 ```
 
 `setFloorMap` fetches locators, the UWB session ID and zones, then injects them into the
 engines. Calling it again while running switches floors — the session stays.
 
-### You may not need to pick a floor at all
-
-Renewed locators advertise their floor over BLE, so the engine finds the floor by itself
-a second or two after `begin()`. Watch `onFloorDetected` and follow it instead of asking
-the user to choose:
+### Following the floor the engine found
 
 ```swift
-session.onFloorDetected = { engineFloorId in
-    guard let engineFloorId else { return }        // nil = lost the floor
-    // Map the engine's floor number to your console floor, then setFloorMap that one.
+let session = try OneS1ght.floorSession()
+session.onFloorDetected = { floorId in
+    guard let floorId else { return }              // nil = lost the floor
+    // floorId is the same value as Floor.id — draw that floor, or setFloorMap it.
 }
 ```
 
@@ -227,13 +228,14 @@ keeps the session — stopping makes the engine hunt for locators from scratch.
 ### Drawing the map
 
 ```swift
-let floor = try await OneS1ght.floor(buildings[0].id, floors[0].id)
+let floor = try await OneS1ght.floor(buildingId: buildings[0].id, floorId: floors[0].id)
 mapView.setBackground(floor.image,
                       bounds: (floor.minX, floor.minY, floor.maxX, floor.maxY))
 ```
 
-⚠️ `floors(_:)` returns floors with `image == nil` to keep the list light. Fetch the
-single floor you are drawing — it comes from cache, so no extra round trip.
+⚠️ `floors(buildingId:)` returns floors with `image == nil` to keep the list light. Fetch
+the single floor you are drawing. The plan image is cached and dropped when Console changes
+the plan (`.planChanged`).
 
 **Expected logs**
 
@@ -259,6 +261,13 @@ session.onZoneExit  = { zone in hideCoupon(zone) }
 session.onZoneDwell = { zone, seconds in … }
 session.onPosition  = { coord in mapView.moveMarker(coord) }
 session.onTriggers  = { zoneId, triggers in handle(triggers) }
+session.onStopped   = { reason in
+    switch reason {
+    case .ended:        break
+    case .engineFailed: showRetry()   // fix the cause (permission, Bluetooth) and begin() again
+    @unknown default:   break
+    }
+}
 
 try await session.begin()
 …
@@ -267,6 +276,14 @@ await session.end()
 
 `floorSession()` always returns the same instance — the UWB radio, judgement engine and
 coordinate buffer are one per device, so multiple sessions would physically collide.
+
+If the engine stops by itself, the SDK restarts it (after 3, 10 and 30 seconds, only
+while the app is on screen). If that does not help, or the cause needs a person
+(location permission, Bluetooth, license), the SDK **closes the session**:
+`isRunning` becomes `false` and `onStopped(.engineFailed)` fires, so `begin()` works again.
+
+`onZoneDwell` fires once per visit, after the zone's `dwellSeconds`. Zones without
+`dwellSeconds` produce only enter and exit.
 
 ### Pausing is not stopping
 
@@ -285,9 +302,26 @@ session.isPaused
 | Cost of coming back | instant | locators found from scratch |
 
 Use `pause()` for "stop showing my position for a moment". `end()` is for leaving the
-space. Resuming clears the judgement state, so the first zone event after `resume()`
-re-establishes where you are — you will not get a stale exit for a zone you walked out
-of while paused.
+space. A pause survives going to the background and back; only `resume()`, `end()` and
+`begin()` clear it. Resuming clears the judgement state, so the first zone event after
+`resume()` re-establishes where you are — you will not get a stale exit for a zone you
+walked out of while paused.
+
+### Console changes
+
+```swift
+session.onConfigChanged = { change in
+    switch change {
+    case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }
+    case .planChanged:                 reloadPlan()
+    case .rulesChanged, .sdkConfigChanged: break
+    @unknown default:                  break
+    }
+}
+```
+
+The live connection is open **while a floor is set or positioning is running**. Coalesce
+bursts (about one second) before refreshing — every zone reload restarts the judgement.
 
 **Expected logs**
 
@@ -303,21 +337,43 @@ coordinates 240 sent → server accepted 240
 
 | Group | API |
 |---|---|
-| Setup | `initialize(sdkKey:)` · `permissions()` · `reset()` |
-| Profile | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
-| Space | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
-| Floor | `setFloorMap(_:buildingID:)` · `refreshZones()` |
-| Positioning | `floorSession()` → `begin()` · `end()` · `pause()` · `resume()` · `isPaused` |
-| Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` · `onFloorDetected` |
-| Buffer | `send()` (upload now) · `empty()` (discard) |
+| Setup | `initialize(sdkKey:baseURL:)` · `requestPermission()` · `reset()` · `defaultBaseURL` |
+| Profile | `createProfile(_:)` · `fetchProfile(_:)` · `replaceProfile(_:attributes:)` · `deleteProfile(_:)` · `identify(profileId:)` |
+| Space | `buildings()` · `building(id:)` · `floors(buildingId:)` · `floor(buildingId:floorId:)` · `zones(buildingId:floorId:)` · `zone(buildingId:floorId:zoneId:)` · `locators(buildingId:floorId:)` |
+| Floor | `setFloorMap(_:buildingId:)` · `refreshZones()` |
+| Positioning | `floorSession()` → `begin()` · `end()` · `pause()` · `resume()` · `isPaused` · `isRunning` |
+| Session callbacks | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` · `onFloorDetected` · `onStopped` · `onConfigChanged` |
+| Buffer | `uploadPendingPositions()` · `discardPendingPositions()` |
 | Status | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 | Console-provided values | `googleMapKey` |
 
-⚠️ `empty()` **discards** buffered coordinates without sending. Use `send()` to upload.
+⚠️ `discardPendingPositions()` **discards** buffered coordinates without sending. Use
+`uploadPendingPositions()` to upload.
 
 ⚠️ `googleMapKey` is the only console value your app touches. The positioning license and
 the space-service address are used inside the SDK only and are not exposed — your app
 neither needs them nor has to manage them.
+
+Names renamed after 0.1.24 (`floor(_:_:)`, `permissions()`, `send()`, `empty()`,
+`getProfile`, `putProfile`, `setFloorMap(_:buildingID:)`, `Trigger.trigger_id` …) still
+compile with a deprecation warning — see [CHANGELOG](CHANGELOG.md).
+
+### Switching over SDK enums
+
+SDK enums can gain cases in a minor release. Add `@unknown default` when you switch over
+`ConfigChange`, `SdkErrorCode`, `ZoneEvent`, `FloorSession.StopReason`, `PermissionStatus`,
+`OneS1ght.DeviceAvailability` or `LogLevel`, so a new case does not break your build:
+
+```swift
+switch change {                 // ConfigChange
+case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }
+case .planChanged:                 reloadPlan()
+case .rulesChanged, .sdkConfigChanged: break
+@unknown default:                  break    // a case added later lands here instead of breaking the build
+}
+```
+
+Without it, a new case is a compile error in your exhaustive `switch`.
 
 ---
 
@@ -338,8 +394,9 @@ server responds — if the network is down you get the former but not the latter
 ### Where zone judgement happens
 
 The positioning engine judges zone enter/exit against **its own geofences**, fetched from
-the space service when it starts. The zones you get from `zones(_:_:)` are for naming and
-mapping ids — changing their parameters in Console does not change the judgement.
+the space service when it starts. The zones you get from `zones(buildingId:floorId:)` are
+for naming and mapping ids — changing their parameters in Console does not change the
+judgement.
 
 The SDK watches for zone changes during `refreshZones()` and reloads the engine when the
 set actually changes (a zone added, removed or redrawn). That reload restarts the engine,
@@ -350,9 +407,9 @@ it a grace period longer than that.
 
 | Trigger | Value |
 |---|---|
-| Count | 300 points |
-| Interval | 60 seconds |
-| Background | pause + flush |
+| Count | 300 points (when the buffer reaches it) |
+| Interval | 60 seconds (also retries a failed upload) |
+| Background | stop positioning + flush |
 | `end()` | flush remainder |
 
 ⚠️ UWB is **foreground only** on iOS. Positioning stops in the background and resumes
@@ -369,12 +426,11 @@ Every failure carries a code. Include it when contacting support.
 | Symptom | Codes | First check |
 |---|---|---|
 | App runs but no coordinates | `E3007` · `E3003` · `E4002` | Floor detected (BLE)? → UWB session? → locator placement |
-| Zone events never fire | `E3004` | Are zones registered in Console? Were they there **when positioning started**? |
-| A zone drawn while running never fires | — | Fixed in 0.1.21 — the engine now reloads geofences when the zone set changes |
-| Paused but zone events keep coming | — | Fixed in 0.1.22 |
-| `begin()` right after `end()` does nothing | — | Fixed in 0.1.23 — `start` now waits for the in-flight stop instead of returning silently |
+| Spaces are empty / `floor()` throws `notInitialized` | `E1007` | Positioning key not set in Console, or `/config` unreachable |
+| Zone events never fire | `E3004` · `E3009` | Zones registered in Console? Zone names match the engine's areas? |
+| Data lands on an unknown floor | `E3008` | Engine floor and Console floor differ |
 | Fails on specific devices | `E2001` · `E2002` | iOS 27 / iPhone 12 or later? |
-| Permission prompt never returns | `E2003` | Denied once — guide to Settings |
+| Positioning closes right after `begin()` | `E2003` · `E2004` | Location / Bluetooth permission, Bluetooth on, Info.plist keys |
 | 401 right after integration | `E1002` | Key status and environment (production/development) |
 | Data missing in Console | `E5001` · `E5006` | Network → batching |
 
@@ -384,17 +440,23 @@ Every failure carries a code. Include it when contacting support.
 | `E1002` | Invalid or revoked SDK key |
 | `E1003` | Positioning disabled for tenant |
 | `E1004` | No profile attached |
+| `E1007` | Positioning key unavailable (not in Console, or lookup failed) |
 | `E2001` | iOS version too low |
 | `E2002` | Device does not support UWB |
-| `E2003` | Positioning permission denied |
+| `E2003` | Positioning permission denied (or Info.plist key missing) |
 | `E2004` | Bluetooth is off |
-| `E3001` | No floor set |
+| `E3001` | No floor set — shown in `onDebugLog` only; not uploaded (normal when the engine finds the floor) |
 | `E3002` | No locators on floor |
 | `E3003` | No UWB session on floor |
 | `E3004` | No zones on floor |
-| `E4001` | UWB session failed |
+| `E3006` | Locator lookup failed — the map still opens |
+| `E3007` | Floor not detected (BLE) |
+| `E3008` | Engine floor differs from Console floor |
+| `E3009` | No Console zone matches an engine area name |
+| `E4001` | UWB session failed / engine stopped |
 | `E4002` | No position fix |
 | `E4003` | Some locators not received — **WARN, positioning continues** |
+| `E4004` | Area judgement failed for one round |
 | `E5001` | Network failure |
 | `E5002` | Server error |
 | `E5003` | Payload mismatch |

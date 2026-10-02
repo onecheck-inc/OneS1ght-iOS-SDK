@@ -68,17 +68,30 @@ final class LiveConfigStreamIngestTests: XCTestCase {
     }
 
     /// 하트비트 주석만 오는 동안에는 호스트에 아무것도 올리지 않는다.
+    ///
+    /// 연결(.resyncNeeded)이 온 것을 조건으로 기다린 뒤, 본문을 다 읽을 틈만 짧게 준다. 예전엔 800ms 를
+    /// 고정으로 기다렸는데, 재연결 백오프(1초 ±20% = 최소 0.8초)와 겹쳐 느린 CI 에서는 두 번째 연결의
+    /// .resyncNeeded 가 끼어들 수 있었다(감사 K16).
     func testHeartbeatAloneDeliversNothingBeyondConnect() async throws {
         StubURLProtocol.handler = { _ in (200, Data(":ping\n\n:ping\n\n".utf8)) }
 
         let s = stream()
-        var got: [ConfigChange] = []
-        s.onChange = { got.append($0) }
+        let got = Collected<ConfigChange>()
+        s.onChange = { got.append($0) }       // 스트림 작업(메인 밖)에서 불린다
 
         s.start(buildingId: nil, floorId: nil)
-        try await Task.sleep(nanoseconds: 800_000_000)
+        await waitUntil { !got.items.isEmpty }
+        await settle(0.1)
         s.stop()
 
-        XCTAssertEqual(got, [.resyncNeeded])
+        XCTAssertEqual(got.items, [.resyncNeeded])
     }
+}
+
+/// 메인 밖에서 불리는 콜백을 모으는 상자.
+final class Collected<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [T] = []
+    func append(_ x: T) { lock.lock(); storage.append(x); lock.unlock() }
+    var items: [T] { lock.lock(); defer { lock.unlock() }; return storage }
 }

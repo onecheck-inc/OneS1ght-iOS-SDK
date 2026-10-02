@@ -82,8 +82,8 @@ final class SdkGateTests: XCTestCase {
         XCTAssertFalse(OneS1ght.isDeviceAvailable)
         OneS1ght.setLanguage("ko")
         OneS1ght.identify(profileId: nil)
-        OneS1ght.empty()
-        await OneS1ght.send()
+        OneS1ght.discardPendingPositions()
+        await OneS1ght.uploadPendingPositions()
 
         // 초기화 이후에도 마찬가지 — 막히는 것은 begin() 하나뿐이다.
         try? await OneS1ght.initialize(sdkKey: "ock_gate_probe_invalid")

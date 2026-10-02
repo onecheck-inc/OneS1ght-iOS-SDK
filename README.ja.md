@@ -119,29 +119,26 @@ throw せず `initialize` の前でも呼べるため、ネットワークにア
 
 ## Step 3: 権限
 
-### 位置情報の権限 — 測位の前提条件
+### 位置情報の権限 — SDK が要求します
 
-先に位置情報の権限を取得してください。これが無いと UWB セッションは開始できません。
+UWB セッションには位置情報の権限（と正確な位置情報）が必要です。**`begin()` がエンジンを起動するとき、
+SDK が両方を自ら要求します** — アプリ側で `CLLocationManager` を呼ぶ必要はありません。アプリが行うのは
+Step 1 の Info.plist キー 4 つを入れることだけです。
 
-```swift
-import CoreLocation
+⚠️ `NSLocationWhenInUseUsageDescription` が無いと、iOS は要求を応答なしで無視します。SDK はこのキーを
+先に確認し、無ければ待ち続けずに開始を取りやめ、`E2003`（`Info.plist missing …`）を出力します。
 
-let locationManager = CLLocationManager()
-locationManager.requestWhenInUseAuthorization()
-```
-
-⚠️ **ユーザーが応答してから測位を開始してください。** 位置情報の権限は UWB セッションの
-前提条件のため、応答前に `begin()` を呼ぶとセッションが `INVALID_CONFIGURATION` で
-失敗します。`CLLocationManagerDelegate` の `locationManagerDidChangeAuthorization` で
-許可状態を確認してから開始してください。
+ユーザーが位置情報を拒否すると測位は開始されません — `E2003` が出力され、セッションが閉じて `onStopped`
+が `.engineFailed` で呼ばれます（Step 6）。設定アプリへ誘導したあと、`begin()` を再度呼んでください。
 
 ### Nearby Interaction の権限
 
 ```swift
-switch await OneS1ght.permissions() {
+switch await OneS1ght.requestPermission() {
 case .authorized:  break
 case .denied:      showSettingsGuide()      // 再要求は不可 — 設定アプリへ誘導
 case .unsupported: showUnsupportedNotice()
+@unknown default:  break
 }
 ```
 
@@ -179,7 +176,7 @@ OneS1ght.identify(profileId: profileId)
 ```
 
 貴社の会員 ID が OneS1ght に送られることはありません。送られるのは `profileId` のみで、
-その対応関係は貴社のみが保持します。
+その対応関係は貴社のみが保持します。`identify` は `initialize` の前でも後でも呼べます。
 
 ⚠️ 年齢は**年代**で入力することを推奨します。性別・正確な年齢・関心事・動線が組み合わ
 さると再識別の可能性が生じます。
@@ -187,35 +184,51 @@ OneS1ght.identify(profileId: profileId)
 | 関数 | 用途 |
 |---|---|
 | `createProfile(_:)` | 作成 — `profileId` を返す |
-| `getProfile(_:)` | 取得 |
-| `putProfile(_:_:)` | 属性の全置換 |
+| `fetchProfile(_:)` | 属性の取得 |
+| `replaceProfile(_:attributes:)` | 属性の**全**置換 — 渡さなかった属性は削除されます |
 | `deleteProfile(_:)` | 削除 |
 | `identify(profileId:)` | 紐づけ — 測位前に必須 |
 
 ---
 
-## Step 5: 空間の選択
+## Step 5: 空間の選択（任意）
+
+省略できます。更新済みのロケーターは BLE で自分のフロアを知らせるため、エンジンは `begin()` の 1〜2 秒後に
+フロアを自ら見つけます。人がフロアを選ぶ必要がある場合や、測位前に地図を描きたい場合だけ指定してください。
 
 ```swift
 let buildings = try await OneS1ght.buildings()
-let floors    = try await OneS1ght.floors(buildings[0].id)
+let floors    = try await OneS1ght.floors(buildingId: buildings[0].id)
 
-try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
+try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 ```
 
 `setFloorMap` はロケーター・UWB セッション ID・ゾーンを取得してエンジンに注入します。
 実行中に再度呼び出すとフロアが切り替わり、セッションはそのまま維持されます。
 
+### エンジンが見つけたフロアに追従する
+
+```swift
+let session = try OneS1ght.floorSession()
+session.onFloorDetected = { floorId in
+    guard let floorId else { return }              // nil = フロアを見失った
+    // floorId は Floor.id と同じ値 — そのフロアを描画するか setFloorMap する。
+}
+```
+
+⚠️ フロアを切り替えるために測位を止め**ないでください。** 実行中の `setFloorMap` は安全でセッションを
+維持します — 止めるとエンジンがロケーターを最初から探し直します。
+
 ### 地図の描画
 
 ```swift
-let floor = try await OneS1ght.floor(buildings[0].id, floors[0].id)
+let floor = try await OneS1ght.floor(buildingId: buildings[0].id, floorId: floors[0].id)
 mapView.setBackground(floor.image,
                       bounds: (floor.minX, floor.minY, floor.maxX, floor.maxY))
 ```
 
-⚠️ `floors(_:)` は一覧を軽く保つため `image == nil` で返します。描画するフロアのみ単体で
-取得すればキャッシュから返るため、追加のリクエストは発生しません。
+⚠️ `floors(buildingId:)` は一覧を軽く保つため `image == nil` で返します。描画するフロアのみ単体で
+取得してください。図面はキャッシュされ、コンソールで図面が変わると（`.planChanged`）破棄されます。
 
 **想定されるログ**
 
@@ -241,6 +254,13 @@ session.onZoneExit  = { zone in hideCoupon(zone) }
 session.onZoneDwell = { zone, seconds in … }
 session.onPosition  = { coord in mapView.moveMarker(coord) }
 session.onTriggers  = { zoneId, triggers in handle(triggers) }
+session.onStopped   = { reason in
+    switch reason {
+    case .ended:        break
+    case .engineFailed: showRetry()   // 原因（権限・Bluetooth）を解消して begin() を再度呼ぶ
+    @unknown default:   break
+    }
+}
 
 try await session.begin()
 …
@@ -249,6 +269,50 @@ await session.end()
 
 `floorSession()` は常に同じインスタンスを返します — UWB 無線・判定エンジン・座標バッファ
 は端末ごとに 1 つのため、セッションが複数あると物理的に競合します。
+
+エンジンが自ら停止すると、SDK が再起動します（3・10・30 秒後、アプリが画面に表示されている間のみ）。
+それでも戻らない場合や、人が解消すべき原因（位置情報の権限・Bluetooth・ライセンス）の場合は、SDK が
+**セッションを閉じます** — `isRunning` が `false` になり `onStopped(.engineFailed)` が呼ばれるため、
+`begin()` を再度呼べます。
+
+`onZoneDwell` はゾーンの `dwellSeconds` が経過すると訪問ごとに 1 回届きます。`dwellSeconds` の無い
+ゾーンは入退出のみです。
+
+### 一時停止は終了ではありません
+
+```swift
+session.pause()      // 表示・収集だけを止める — エンジンは動き続ける
+session.resume()
+session.isPaused
+```
+
+| | `pause()` | `end()` |
+|---|---|---|
+| 座標コールバック | 停止 | 停止 |
+| ゾーン入退出 | 停止 | 停止 |
+| サーバー送信 | 停止 | 残りを送信して停止 |
+| エンジン・フロア・ロケーター | **維持** | 解放 |
+| 再開のコスト | 即時 | ロケーターを最初から探す |
+
+「少しの間、自分の位置を隠す」には `pause()` を使います。`end()` は空間を離れるときに使います。
+一時停止はバックグラウンドに行って戻っても維持され、`resume()`・`end()`・`begin()` でのみ解除されます。
+再開すると判定状態をクリアするため、停止中に出たゾーンの古い退出イベントは届きません。
+
+### コンソールの変更を受け取る
+
+```swift
+session.onConfigChanged = { change in
+    switch change {
+    case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }
+    case .planChanged:                 reloadPlan()
+    case .rulesChanged, .sdkConfigChanged: break
+    @unknown default:                  break
+    }
+}
+```
+
+リアルタイム接続は**フロアを指定しているか、測位中の間**つながっています。連続して届いたら 1 秒ほど
+まとめてから再取得してください — ゾーンを取り直すたびに判定が最初から始まります。
 
 **想定されるログ**
 
@@ -264,21 +328,43 @@ await session.end()
 
 | 区分 | API |
 |---|---|
-| 初期化 | `initialize(sdkKey:)` · `permissions()` · `reset()` |
-| プロフィール | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
-| 空間取得 | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
-| フロア指定 | `setFloorMap(_:buildingID:)` · `refreshZones()` |
-| 測位 | `floorSession()` → `begin()` · `end()` |
-| セッションコールバック | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
-| バッファ | `send()`（送信） · `empty()`（破棄） |
+| 初期化 | `initialize(sdkKey:baseURL:)` · `requestPermission()` · `reset()` · `defaultBaseURL` |
+| プロフィール | `createProfile(_:)` · `fetchProfile(_:)` · `replaceProfile(_:attributes:)` · `deleteProfile(_:)` · `identify(profileId:)` |
+| 空間取得 | `buildings()` · `building(id:)` · `floors(buildingId:)` · `floor(buildingId:floorId:)` · `zones(buildingId:floorId:)` · `zone(buildingId:floorId:zoneId:)` · `locators(buildingId:floorId:)` |
+| フロア指定 | `setFloorMap(_:buildingId:)` · `refreshZones()` |
+| 測位 | `floorSession()` → `begin()` · `end()` · `pause()` · `resume()` · `isPaused` · `isRunning` |
+| セッションコールバック | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` · `onFloorDetected` · `onStopped` · `onConfigChanged` |
+| バッファ | `uploadPendingPositions()` · `discardPendingPositions()` |
 | 状態 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 | コンソール提供値 | `googleMapKey` |
 
-⚠️ `empty()` はバッファ内の座標を**送信せずに破棄します。** 送信は `send()` です。
+⚠️ `discardPendingPositions()` はバッファ内の座標を**送信せずに破棄します。** 送信は
+`uploadPendingPositions()` です。
 
 ⚠️ アプリが直接扱うコンソール値は `googleMapKey` の一つだけです。測位ライセンスと空間
 サービスのアドレスは SDK 内部でのみ使用し、外部には公開しません — アプリが知る必要も、
 扱う理由もありません。
+
+0.1.24 以降に変わった旧名（`floor(_:_:)`・`permissions()`・`send()`・`empty()`・`getProfile`・`putProfile`・
+`setFloorMap(_:buildingID:)`・`Trigger.trigger_id` …）は deprecated 警告が出るだけで、そのままコンパイル
+できます — [CHANGELOG](CHANGELOG.md) を参照してください。
+
+### SDK の enum を switch するとき
+
+SDK の enum はマイナーリリースでケースが増えることがあります。`ConfigChange`・`SdkErrorCode`・`ZoneEvent`・
+`FloorSession.StopReason`・`PermissionStatus`・`OneS1ght.DeviceAvailability`・`LogLevel` を switch するときは
+`@unknown default` を置いてください — 新しいケースでビルドが壊れません。
+
+```swift
+switch change {                 // ConfigChange
+case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }
+case .planChanged:                 reloadPlan()
+case .rulesChanged, .sdkConfigChanged: break
+@unknown default:                  break    // 後から増えたケースはビルドを壊さずここに来る
+}
+```
+
+無い場合、網羅的な `switch` は新しいケースでコンパイルエラーになります。
 
 ---
 
@@ -296,12 +382,22 @@ initialize ─→ begin ─→ [UWB 座標] ─┬─→ onPosition            (
 `onZoneEnter` は端末上の判定直後に発火します。`onTriggers` はサーバー応答後に届くため、
 ネットワークが切断されている場合は前者のみ届きます。
 
+### ゾーン判定はどこで行われるか
+
+測位エンジンは、起動時に空間サービスから取得した**自身のジオフェンス**で入退出を判定します。
+`zones(buildingId:floorId:)` で取得するゾーンは名前・ID の対応付け用で、コンソールで判定パラメータを
+変えても判定は変わりません。
+
+SDK は `refreshZones()` のたびにゾーンの集合が実際に変わったか（追加・削除・描き直し）を確認し、変わった
+ときだけエンジンに読み直させます。エンジンが再起動するため、**座標が 1 秒ほど途切れます。** その間隔を
+「信号断」として扱う UI がある場合は、猶予をそれより長くしてください。
+
 ### バッチ送信
 
 | トリガー | 値 |
 |---|---|
-| 件数 | 300 件 |
-| 間隔 | 60 秒 |
+| 件数 | 300 件（バッファが達した時点） |
+| 間隔 | 60 秒（失敗した送信もこのとき再送） |
 | バックグラウンド移行 | 測位停止 + 残りを送信 |
 | `end()` | 残りを送信 |
 
@@ -319,9 +415,11 @@ initialize ─→ begin ─→ [UWB 座標] ─┬─→ onPosition            (
 | 症状 | コード | 最初に確認すること |
 |---|---|---|
 | アプリは動くが座標が出ない | `E3007` · `E3003` · `E4002` | フロア検出(BLE) → UWB セッション → ロケーター配置 |
-| ゾーンイベントが発火しない | `E3004` | コンソールにゾーンが登録されているか |
+| 空間一覧が空で `floor()` が `notInitialized` | `E1007` | コンソールの測位キー設定、`/config` への到達 |
+| ゾーンイベントが発火しない | `E3004` · `E3009` | コンソールにゾーンがあるか、ゾーン名がエンジンのエリアと一致するか |
+| データが別のフロアに蓄積される | `E3008` | エンジンのフロアとコンソールのフロアが異なる |
 | 特定の端末でのみ動作しない | `E2001` · `E2002` | iOS 27 / iPhone 12 以降か |
-| 権限ダイアログが再表示されない | `E2003` | 既に拒否済み — 設定アプリへ誘導 |
+| `begin()` 直後に測位が閉じる | `E2003` · `E2004` | 位置情報・Bluetooth の権限、Bluetooth のオン、Info.plist キー |
 | 連携直後に 401 | `E1002` | キーの状態・環境（production/development） |
 | コンソールにデータが表示されない | `E5001` · `E5006` | ネットワーク → バッチ間隔 |
 
@@ -331,17 +429,23 @@ initialize ─→ begin ─→ [UWB 座標] ─┬─→ onPosition            (
 | `E1002` | SDK キーが無効または失効 |
 | `E1003` | テナントで測位が無効 |
 | `E1004` | プロフィール未連携 |
+| `E1007` | 測位キーを取得できない（コンソールに無い、または取得失敗） |
 | `E2001` | iOS バージョン不足 |
 | `E2002` | UWB 非対応端末 |
-| `E2003` | 測位権限が拒否された |
+| `E2003` | 測位権限が拒否された（または Info.plist キーが無い） |
 | `E2004` | Bluetooth がオフ |
-| `E3001` | フロア未指定 |
+| `E3001` | フロア未指定 — `onDebugLog` のみ。サーバーには送らない（エンジンがフロアを探す通常経路） |
 | `E3002` | フロアにロケーターがない |
 | `E3003` | フロアに UWB セッションがない |
 | `E3004` | フロアにゾーンがない |
-| `E4001` | UWB セッション失敗 |
+| `E3006` | ロケーターの取得に失敗 — 地図はそのまま開く |
+| `E3007` | フロア未検出（BLE） |
+| `E3008` | エンジンのフロアとコンソールのフロアが不一致 |
+| `E3009` | エンジンのエリア名に合うコンソールのゾーンがない |
+| `E4001` | UWB セッション失敗 / エンジン停止 |
 | `E4002` | 座標が算出されない |
 | `E4003` | 一部のロケーターが受信できない — **WARN、測位は継続します** |
+| `E4004` | エリア判定に失敗（その回のみ） |
 | `E5001` | ネットワーク失敗 |
 | `E5002` | サーバーエラー |
 | `E5003` | リクエスト形式の不一致 |

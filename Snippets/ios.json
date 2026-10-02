@@ -15,12 +15,14 @@
     }
   },
   "notes": [
-    "measured: 위치 권한이 없으면 UWB 세션이 INVALID_CONFIGURATION 으로 실패한다 — DL-TDoA 의 시스템 전제 조건이다.",
+    "measured: 위치 권한이 없으면 UWB 세션이 INVALID_CONFIGURATION 으로 실패한다 — DL-TDoA 의 시스템 전제 조건이다. 위치·정밀 위치 권한은 begin() 이 엔진을 켤 때 SDK 가 직접 요청한다(앱이 CLLocationManager 를 부르지 않는다). Info.plist 문구가 없으면 시작을 접고 E2003 을 남긴다.",
     "층은 엔진이 BLE 로 스스로 찾는다. 층을 지정하지 않은 채 begin() 하는 것이 정상 경로이며, 그때 E3001(층 미지정)은 서버로 올라가지 않는다. 층을 끝내 못 찾으면 E3007(층 미탐지)이 남는다. 사람이 층을 고르게 하려면 setFloorMap 을 쓴다.",
     "identify 없이 측위를 시작하면 데이터가 어디에도 귀속되지 않는다 (E1004).",
     "iOS 의 UWB 는 포그라운드 전용이다. 백그라운드에서는 측위가 멈춘다.",
     "좌표 버퍼는 메모리에 있어 앱이 강제 종료되면 미전송분이 사라진다 (E5006).",
-    "pause() 는 엔진을 끄지 않는다. 잠깐 멈추는 데 end() 를 쓰면 로케이터를 처음부터 다시 찾는다."
+    "pause() 는 엔진을 끄지 않는다. 잠깐 멈추는 데 end() 를 쓰면 로케이터를 처음부터 다시 찾는다.",
+    "SDK enum(ConfigChange·SdkErrorCode·ZoneEvent·FloorSession.StopReason·PermissionStatus 등)은 마이너 판에서 케이스가 늘 수 있다. switch 에는 @unknown default 를 둔다.",
+    "엔진이 다시 켜지지 않으면 SDK 가 세션을 닫고 onStopped(.engineFailed) 를 부른다 — isRunning 이 false 가 되어 begin() 이 다시 먹는다."
   ],
   "steps": [
     {
@@ -44,11 +46,11 @@
     },
     {
       "id": "permission",
-      "title": "위치 권한 — 측위의 전제 조건",
+      "title": "권한 — 위치는 SDK 가, Nearby Interaction 은 앱이 시점을 정한다",
       "order": 2,
       "language": "swift",
-      "code": "import CoreLocation\n\nlet locationManager = CLLocationManager()\nlocationManager.requestWhenInUseAuthorization()\n\n// 사용자가 '허용'을 누른 뒤에 측위를 시작해야 한다.\n// locationManagerDidChangeAuthorization 으로 허용 상태를 확인하고 진행할 것.",
-      "warning": "권한 응답 전에 시작하면 세션이 INVALID_CONFIGURATION 으로 실패한다."
+      "code": "// 위치·정밀 위치 권한은 begin() 이 엔진을 켤 때 SDK 가 직접 요청한다 — 앱은 Info.plist 문구만 넣는다.\n// Nearby Interaction 권한은 확인과 요청이 분리되지 않는다 — 부르는 순간 시스템 창이 뜬다.\nswitch await OneS1ght.requestPermission() {\ncase .authorized:  break\ncase .denied:      showSettingsGuide()      // 앱에서 재요청 불가 — 설정 앱으로\ncase .unsupported: showUnsupportedNotice()\n@unknown default:  break\n}",
+      "warning": "위치 권한을 거부하면 측위가 시작되지 않고 E2003 이 남으며 세션이 닫힌다(onStopped(.engineFailed)). NSLocationWhenInUseUsageDescription 이 없으면 iOS 가 요청을 조용히 무시하므로 SDK 가 시작을 접고 E2003(Info.plist missing …)을 남긴다."
     },
     {
       "id": "initialize",
@@ -81,7 +83,7 @@
       "title": "공간 선택 (선택) — 층을 사람이 고르게 할 때만",
       "order": 5,
       "language": "swift",
-      "code": "let buildings = try await OneS1ght.buildings()\nlet floors    = try await OneS1ght.floors(buildings[0].id)\n\ntry await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)",
+      "code": "let buildings = try await OneS1ght.buildings()\nlet floors    = try await OneS1ght.floors(buildingId: buildings[0].id)\n\ntry await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)\n\n// 엔진이 BLE 로 찾은 층을 따라가려면 — floorId 는 Floor.id 와 같은 값이다\nlet session = try OneS1ght.floorSession()\nsession.onFloorDetected = { floorId in\n    guard let floorId else { return }        // nil = 층을 잃음\n    showFloor(floorId)\n}",
       "throws": [
         "E1001",
         "E3002",
@@ -95,14 +97,14 @@
       "title": "도면 그리기 (선택)",
       "order": 6,
       "language": "swift",
-      "code": "// floors(_:) 는 목록을 가볍게 유지하려고 image 가 비어 있다.\n// 그릴 층 하나만 다시 조회한다 — 캐시에서 나오므로 왕복이 늘지 않는다.\nlet floor = try await OneS1ght.floor(buildingID, floorID)\n\nmapView.setBackground(floor.image,\n                      bounds: (floor.minX, floor.minY, floor.maxX, floor.maxY))"
+      "code": "// floors(buildingId:) 는 목록을 가볍게 유지하려고 image 가 비어 있다.\n// 그릴 층 하나만 다시 조회한다 — 도면은 캐시되고 콘솔이 도면을 바꾸면(.planChanged) 버려진다.\nlet floor = try await OneS1ght.floor(buildingId: buildingID, floorId: floorID)\n\nmapView.setBackground(floor.image,\n                      bounds: (floor.minX, floor.minY, floor.maxX, floor.maxY))"
     },
     {
       "id": "begin",
       "title": "측위 시작과 콜백",
       "order": 7,
       "language": "swift",
-      "code": "let session = try OneS1ght.floorSession()\n\nsession.onPosition  = { coord in mapView.moveMarker(coord) }\nsession.onZoneEnter = { zone in showCoupon(zone) }\nsession.onZoneExit  = { zone in hideCoupon(zone) }\nsession.onZoneDwell = { zone, seconds in logDwell(zone, seconds) }\nsession.onTriggers  = { zoneId, triggers in handle(triggers) }\n\ntry await session.begin()",
+      "code": "let session = try OneS1ght.floorSession()\n\nsession.onPosition  = { coord in mapView.moveMarker(coord) }\nsession.onZoneEnter = { zone in showCoupon(zone) }\nsession.onZoneExit  = { zone in hideCoupon(zone) }\nsession.onZoneDwell = { zone, seconds in logDwell(zone, seconds) }   // dwellSeconds 가 있는 존만, 방문당 1회\nsession.onTriggers  = { zoneId, triggers in handle(triggers) }\nsession.onStopped   = { reason in\n    switch reason {\n    case .ended:        break\n    case .engineFailed: showRetry()          // 권한·Bluetooth 를 풀고 begin() 을 다시 부른다\n    @unknown default:   break\n    }\n}\n\ntry await session.begin()",
       "throws": [
         "E1001",
         "E1004",
@@ -118,7 +120,7 @@
       "title": "측위 종료",
       "order": 8,
       "language": "swift",
-      "code": "await OneS1ght.floorSession().end()   // 잔여 좌표 flush + 타이머 정리",
+      "code": "try await OneS1ght.floorSession().end()   // 잔여 좌표 flush + 타이머 정리 → onStopped(.ended)",
       "expectedLog": "[I4002] 측위 종료 — visitor=… points=N",
       "warning": "end() 는 엔진까지 끈다 — 층과 로케이터를 잃고, 다음 begin() 은 로케이터를 처음부터 찾는다. 잠깐 멈추는 것이라면 pause() 를 쓴다."
     },
@@ -128,7 +130,7 @@
       "order": 9,
       "language": "swift",
       "code": "let session = try OneS1ght.floorSession()\n\nsession.pause()      // 좌표 표시·전송·구역 판정만 멈춘다 (엔진은 계속 돈다)\nsession.resume()     // 즉시 이어진다 — 로케이터를 다시 찾지 않는다\n\nif session.isPaused { showPausedBadge() }",
-      "warning": "일시정지 중에도 엔진은 좌표를 내고 SDK 가 버린다. begin()·end() 는 일시정지 상태를 남기지 않으므로 껐다 켜면 항상 정상 상태로 시작한다. 0.1.20~",
+      "warning": "일시정지 중에도 엔진은 좌표를 내고 SDK 가 버린다. 백그라운드에 다녀와도 일시정지는 유지되고, resume()·end()·begin() 에서만 풀린다. begin()·end() 는 일시정지 상태를 남기지 않으므로 껐다 켜면 항상 정상 상태로 시작한다.",
       "expectedLog": "일시정지 중 — 영역 IN … 을 넘깁니다"
     },
     {
@@ -136,8 +138,8 @@
       "title": "콘솔 변경 수신 (선택)",
       "order": 10,
       "language": "swift",
-      "code": "let session = try OneS1ght.floorSession()\n\nsession.onConfigChanged = { change in\n    // 콘솔에서 구역·도면·시책이 바뀌면 온다 — 측위 중에만 붙어 있다\n    reloadOverlay(for: change)\n}",
-      "warning": "구역 집합이 바뀌면 판정 엔진이 재시작되어 1.5초 남짓 좌표가 끊긴다. 그 간극을 「신호 끊김」으로 처리하는 UI 가 있다면 유예를 그보다 길게 둘 것."
+      "code": "let session = try OneS1ght.floorSession()\n\nsession.onConfigChanged = { change in\n    // 층을 정했거나 측위가 도는 동안 붙어 있는 실시간 연결로 온다\n    switch change {\n    case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }\n    case .planChanged:                 reloadOverlay()\n    case .rulesChanged, .sdkConfigChanged: break\n    @unknown default:                  break\n    }\n}",
+      "warning": "연달아 오면 1초쯤 접은 뒤 새로고침할 것 — 구역을 다시 받을 때마다 판정이 처음부터 시작된다. 구역 집합이 바뀌면 판정 엔진이 재시작되어 1.5초 남짓 좌표가 끊긴다. 그 간극을 「신호 끊김」으로 처리하는 UI 가 있다면 유예를 그보다 길게 둘 것."
     },
     {
       "id": "deviceCheck",

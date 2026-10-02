@@ -42,6 +42,8 @@ public enum SdkLogLevel: String, Sendable {
 }
 
 /// SDK 가 남기는 에러의 식별 코드.
+///
+/// ⚠️ 코드는 늘어난다 — `switch` 에는 `@unknown default` 를 둘 것.
 public enum SdkErrorCode: String, Sendable, CaseIterable {
 
     // MARK: 1xxx — 초기화·인증
@@ -75,9 +77,12 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
 
     // MARK: 3xxx — 공간·설정
 
-    /// 층이 정해지지 않은 채로 측위를 시작했다. 파이프라인은 돌지만 좌표가 나오지 않는다.
+    /// 층이 정해지지 않은 채로 측위를 시작했다.
     ///
-    /// ⚠️ **WARN 이다(0.1.19~).** 예전에는 ERROR 였다 — 앱이 층을 고르던 시절에는 층 없이
+    /// ⚠️ **SDK 는 이 코드를 더 이상 내보내지 않는다**(0.1.24 다음 판) — 층 없이 시작하는 것이 정상 경로라
+    /// 시작할 때마다 콘솔 로그를 덮었다. 화면 로그에만 INFO 문구로 남는다. 옛 로그 해석을 위해 케이스는 둔다.
+    ///
+    /// **WARN 이다(0.1.19~).** 예전에는 ERROR 였다 — 앱이 층을 고르던 시절에는 층 없이
     /// begin 하는 것이 곧 실수였기 때문이다. 지금은 엔진이 BLE 로 층을 스스로 찾으므로
     /// **층 없이 시작하는 것이 정상 경로**다(엔진은 begin 해야 돌고, 돌아야 층을 찾는다).
     /// 정상 경로에서 매번 울리는 ERROR 는 그 코드의 의미를 잃게 만든다.
@@ -227,6 +232,35 @@ public enum SdkInfoCode: String, Sendable, CaseIterable {
         case .positioningOn:  return "측위 시작"
         case .positioningOff: return "측위 종료"
         case .rateApplied:    return "전송 주기 적용"
+        }
+    }
+}
+
+// MARK: - 로그 코드 공통 (SDK 내부)
+
+/// 오류 코드·정보 코드를 한 report() 로 남기기 위한 공통 모양(감사 K9).
+protocol LogCode {
+    var rawValue: String { get }
+    /// 서버(콘솔 로그 분석기)에 실을 등급
+    var serverLevel: SdkLogLevel { get }
+    var summary: String { get }
+}
+
+extension SdkErrorCode: LogCode {
+    var serverLevel: SdkLogLevel { level }
+}
+
+extension SdkInfoCode: LogCode {
+    var serverLevel: SdkLogLevel { .info }
+}
+
+extension SdkLogLevel {
+    /// 화면 로그(onDebugLog) 등급 — 서버 등급과 같은 세기로 맞춘다.
+    var logLevel: LogLevel {
+        switch self {
+        case .error: return .error
+        case .warn:  return .warn
+        case .info:  return .info
         }
     }
 }

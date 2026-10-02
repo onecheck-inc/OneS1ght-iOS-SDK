@@ -21,7 +21,7 @@
 
 import Foundation
 
-/// 엔진 영역 이벤트 → ZoneEvent. 좌표를 받지 않으므로 ZoneJudging 을 채택하지 않는다.
+/// 엔진 영역 이벤트 → ZoneEvent. 좌표를 받지 않는다.
 @MainActor
 final class UwbAreaJudge {
 
@@ -43,6 +43,10 @@ final class UwbAreaJudge {
     private var dwellTask: Task<Void, Never>?
     /// 매핑 실패는 이름당 1회만 경고한다 — IN/OUT 이 반복되면 로그가 덮인다.
     private var warnedNames: Set<String> = []
+
+    /// 체류 대기 — 테스트가 시간을 줄여 끼운다. 예전엔 Task.sleep 이 박혀 있어 체류(초 단위)가 실제로
+    /// **나오는지** 보는 테스트가 없었고, 취소 테스트도 150ms 만 기다려 취소가 고장 나도 통과했다(감사 K6).
+    var sleep: (TimeInterval) async throws -> Void = { try await Task.sleep(seconds: $0) }
 
     // MARK: - 존 주입
 
@@ -123,8 +127,9 @@ final class UwbAreaJudge {
     private func startDwell(zone: Zone) {
         dwellTask?.cancel()
         guard let seconds = zone.dwellSeconds, seconds > 0 else { return }
+        let sleep = self.sleep
         dwellTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            try? await sleep(TimeInterval(seconds))
             guard let self, self.activeZoneId == zone.id, !Task.isCancelled else { return }
             self.onEvent?(.dwell(zone: zone, seconds: TimeInterval(seconds), at: Date()))
         }

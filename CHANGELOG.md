@@ -11,7 +11,54 @@
 
 ## [Unreleased]
 
-**엔진이 스스로 꺼져도 세션이 「측위 중」에 굳지 않습니다.**
+**엔진이 스스로 꺼져도 세션이 「측위 중」에 굳지 않습니다.** 공개 표면을 정리했습니다 — 이름이 바뀐 API 는
+옛 이름이 경고만 내고 그대로 동작하지만, 고객이 쓸 일이 없던 내부 타입은 공개에서 내렸습니다(**Breaking**).
+
+### Breaking
+
+> 마이그레이션 지침(`Migrations/ios.json`)은 이 판을 릴리스할 때 함께 싣는다 — 릴리스 검사가 마지막 칸을
+> 현재 버전에 묶어 두므로 [Unreleased] 동안에는 넣지 않는다. **릴리스 때 넣을 것:** 아래 표 그대로.
+
+**공개에서 내린 것(internal)** — README·스니펫이 안내한 적 없는 내부 부품입니다. 쓰고 있었다면 오른쪽으로 옮기세요.
+
+| 0.1.24 공개 심볼 | 옮길 곳 |
+|---|---|
+| `ApiClient` 의 생성자·`verify`·`buildings`·`floorConfig`·`sendZoneEvent`·`sendPositionLogs`·`createProfile`·`getProfile`·`putProfile`·`deleteProfile`·`sendLogs` | `OneS1ght` 의 같은 기능(`createProfile`·`fetchProfile`·`replaceProfile`·`deleteProfile`). 존 이벤트·좌표 전송은 SDK 가 한다 — 직접 보내면 방문 ID·다운샘플·재시도를 우회한다. 타입 `ApiClient` 와 `ApiClient.defaultBaseURL`(deprecated) 만 남았다. |
+| 요청·응답 봉투 `ClientInfo` `ReqVerify` `ReqZoneEvent` `PositionPoint` `ReqPositionBulk` `ReqProfile` `ResProfileCreate` `ResProfile` `ResProfileDelete` `SdkLogEntry` `ReqSdkLogs` `ResSdkLogs` `ResVerify` `FloorRef` `BuildingRef` `ResBuildings` `ZoneMeta` `ResFloorConfig` `ResZoneEvent` `ResPositionBulk` | 없음 — 서버 계약은 SDK 안의 일이다. 트리거는 `Trigger`(공개 유지)로 온다. `ClientInfo`·`FloorRef`·`BuildingRef`·`ResBuildings`·`ZoneMeta`·`ResFloorConfig` 는 아예 지웠다. |
+| `SdkDefaults` | 없음 — 서버가 값을 안 줄 때의 내부 기본값이다. |
+| `ZoneEngine` `ZoneJudging` `ZoneJudge` | 없음 — 측위 엔진이 판정한다. 구역 이벤트는 `FloorSession.onZoneEnter/Exit/Dwell`. 지웠다. |
+| `IdentityStore` `SecureStore` `KeychainSecureStore` | 없음 — 방문 ID 는 SDK 가 발급한다. Keychain 저장소는 아무것도 저장하지 않아 지웠다. |
+| `MockPositioningProvider` | 직접 `PositioningProvider` 를 채택한다(요구사항은 `delegate`·`start()`·`stop()` 셋, 나머지는 기본 구현). |
+| `UwbPositioningProvider.license` | 없음 — 엔진 라이선스는 콘솔이 내려주고 SDK 가 넣는다. |
+
+**이름 바꿈(옛 이름은 deprecated — 경고만, Xcode Fix-it 이 바꿔 줌)**
+
+| 0.1.24 | 이번 판 |
+|---|---|
+| `OneS1ght.building(_:)` | `OneS1ght.building(id:)` |
+| `OneS1ght.floors(_:)` | `OneS1ght.floors(buildingId:)` |
+| `OneS1ght.floor(_:_:)` | `OneS1ght.floor(buildingId:floorId:)` |
+| `OneS1ght.zones(_:_:)` | `OneS1ght.zones(buildingId:floorId:)` |
+| `OneS1ght.zone(_:_:_:)` | `OneS1ght.zone(buildingId:floorId:zoneId:)` |
+| `OneS1ght.locators(_:_:)` | `OneS1ght.locators(buildingId:floorId:)` |
+| `OneS1ght.setFloorMap(_:buildingID:)` | `OneS1ght.setFloorMap(_:buildingId:)` |
+| `OneS1ght.permissions()` | `OneS1ght.requestPermission()` — 확인이 아니라 **시스템 창을 띄운다** |
+| `OneS1ght.getProfile(_:)` | `OneS1ght.fetchProfile(_:)` |
+| `OneS1ght.putProfile(_:_:)` | `OneS1ght.replaceProfile(_:attributes:)` — 넘기지 않은 속성은 지워진다 |
+| `OneS1ght.send()` | `OneS1ght.uploadPendingPositions()` |
+| `OneS1ght.empty()` | `OneS1ght.discardPendingPositions()` |
+| `ApiClient.defaultBaseURL` | `OneS1ght.defaultBaseURL` |
+| `Trigger.trigger_id` · `Trigger(trigger_id:type:payload:)` | `Trigger.triggerId` · `Trigger(triggerId:type:payload:)` (JSON 키는 그대로 `trigger_id`) |
+
+**동작 바뀜**
+
+- `Trigger.trigger_id`(→`triggerId`)는 서버가 빼면 빈 문자열, `type` 은 서버가 빼면 `"generic"` 입니다(예전엔
+  그 존 이벤트의 트리거 전체가 사라졌습니다).
+- `onDebugLog` 의 코드 줄(`[E1007] …`·`[I1001] …`)이 이제 코드의 세기대로 `.error`·`.warn`·`.info` 로 옵니다
+  (예전엔 전부 `.log`). 같은 사건이 코드 줄과 문구 줄로 두 번 찍히던 것을 한 줄(`[코드] 문구 — 문맥`)로
+  합쳤습니다 — 문구로 줄을 거르던 앱은 확인하세요.
+- `UwbPositioningProvider.stop()`·`start()` 가 일시정지를 풀지 않습니다. `FloorSession` 의 `begin()`·`end()` 는
+  예전처럼 일시정지 없이 시작·종료합니다.
 
 ### 고침
 
@@ -28,11 +75,70 @@
   화면 로그(`onDebugLog`)에는 INFO 로 남습니다.
 - 층 전환·백그라운드처럼 SDK 가 일부러 끊은 실시간 연결을 「live: 끊김 … cancelled」 WARN 으로
   남기지 않습니다.
+- **좌표 전송 중에 `empty()` 를 부르면 앱이 죽던 문제.** 60초 전송·종료·백그라운드 전송이 도는 사이
+  버퍼를 비우면 크래시가 났습니다.
+- **오프라인에서 좌표·로그 전송이 초당 수 회로 폭주하던 문제.** 버퍼가 300건을 넘은 채 전송이 실패하면
+  좌표마다 새 전송을 시도했습니다. 이제 임계를 넘는 순간에만 보내고, 실패분은 60초 타이머가 다시 보냅니다.
+  로그 전송도 실패하면 잠시(5초부터 최대 60초) 쉽니다.
+- **좌표마다 층 설정(`/positioning/floors/{id}`)을 서버에 다시 묻던 것을 없앴습니다.** 받은 값은 쓰이지
+  않았고, 서버가 오류를 주면 기기마다 초당 몇 번씩 요청했습니다.
+- **`identify(profileId:)` 를 `initialize` 보다 먼저 부르면 `begin()` 이 `E1004` 로 실패하던 문제.**
+  키를 바꿔 다시 초기화하거나 `reset()` 뒤 다시 초기화해도 프로필이 이어집니다.
+- **초기화 중의 `E1007`(측위 키 못 구함)이 콘솔에 안 올라가던 문제.** 프로필이 연결되기 전 로그를 버렸습니다 —
+  이제 붙들고 있다가 `identify` 때 보냅니다.
+- **`initialize(sdkKey:baseURL:)` 의 `baseURL` 을 건물·층·구역 조회도 따릅니다.** 예전엔 공간 조회만
+  prod 로 갔습니다.
+- **콘솔에서 도면을 바꾸면 `floor(...)` 가 새 도면을 줍니다.** 도면 캐시를 `.planChanged`·`.resyncNeeded`
+  때 지웁니다.
+- **구역 새로고침 결과가 다른 층에 들어가던 문제**(새로고침과 `setFloorMap` 이 겹칠 때), **구역이 안 바뀌어도
+  새로고침마다 판정기를 다시 물려 체류(`onZoneDwell`)가 안 나오던 문제**를 고쳤습니다.
+- 앱이 잠깐 비활성(제어 센터·전화 배너)일 때 엔진 재시도가 버려지던 것을 고쳤습니다 — 다시 활성이 되면 켭니다.
+- `end()` 가 잔여 좌표를 보내는 동안 포그라운드로 돌아오면 엔진이 다시 켜지거나, 늦게 온 존 판정이 끝난
+  세션으로 전송되던 것을 막았습니다. 층을 안 정한 채 `end()` 하면 실시간 연결도 끊습니다.
+- 키를 바꿔 다시 초기화하면 옛 키의 실시간 연결을 끊습니다.
+- 실시간 연결 로그가 메인 스레드 밖에서 `onDebugLog` 를 부르던 것을 메인으로 옮겼습니다.
+- 서버가 늘리거나 바꿀 수 있는 응답(존 이벤트·트리거·좌표 전송·구역·건물·층 목록)을 **원소 단위로**
+  관대하게 읽습니다. id 가 숫자로 오거나 항목 하나가 틀려도 나머지는 그대로 씁니다. 좌표가 2개 미만인
+  폴리곤 점이 있어도 죽지 않습니다.
+
+- **`begin()` 이 성공했는데 엔진은 안 뜬 채로 남던 문제.** 초기화 때 `/config` 가 실패했다면 `begin()` 의
+  키 재시도가 성공해도 빈 라이선스로 시작했습니다. 이제 다시 받은 키를 넣고, 그래도 없으면
+  `SdkError.notInitialized` 를 던지며 `E1007` 을 남깁니다.
+- **위치 권한 창이 떠 있는 동안 측위를 멈추면 그 뒤로 영영 안 돌아오던 문제**(정밀 위치가 꺼진 기기에서
+  홈으로 나가거나 `end()` 할 때). 엔진이 「정지 중」에 굳었습니다.
+- **구역 재적재(약 1.5초) 중에 `end()`·백그라운드로 가면 엔진이 다시 켜지던 문제.**
+- **백그라운드에 다녀오면 일시정지가 풀리던 문제.** 앱은 「일시정지」인데 좌표·존 이벤트가 다시 나갔습니다.
+  이제 일시정지는 `resume()`·`end()`·`begin()` 에서만 풀립니다.
+- 늦게 온 엔진 알림이 「정지 중」 상태를 덮어 거짓 `E4001`·재시도가 나던 것을 막았습니다.
+- **`NSLocationWhenInUseUsageDescription` 이 없으면 시작이 영영 안 끝나던 문제.** iOS 는 문구가 없으면 권한
+  요청을 조용히 무시합니다. 이제 그 자리에서 `E2003`(문맥 `Info.plist missing …`)을 남기고 시작을 접습니다.
+- **`begin(provider:)` 로 시작하면 `onZoneEnter`·`onZoneExit`·`onZoneDwell` 이 오지 않던 문제**, 그리고
+  `pause()`·`resume()`·`isPaused` 가 내장 provider 가 아니면 조용히 무시되던 문제.
 
 ### 추가
 
+- **`FloorSession.onFloorDetected: ((String?) -> Void)?`** — 엔진이 층을 잡으면 그 층 ID(`Floor.id` 와 같은 값),
+  잃으면 `nil`. README 가 0.1.24 까지 안내했지만 실제로는 없던 콜백입니다.
+- **`FloorSession.onStopped: ((FloorSession.StopReason) -> Void)?`** — 세션이 닫히면 `.ended`(`end()`)
+  또는 `.engineFailed`(엔진이 다시 켜지지 않아 SDK 가 닫음). 이제 앱이 「찾는 중」 에 머물지 않고 알 수 있습니다.
+- `PositioningProvider` 에 `pause()`·`resume()`·`isPaused`, `PositioningProviderDelegate` 에
+  `provider(_:didDetectFloor:)`·`provider(_:didEmit:)` — 전부 선택 채택(기본 구현 있음)이라 커스텀 provider 는
+  고칠 것이 없습니다. `didEnter` 도 이제 기본 구현이 있습니다.
 - `PositioningProviderDelegate.provider(_:didStopUnexpectedly:context:)` — 커스텀 provider 가 엔진이
   스스로 꺼졌음을 코어에 알리는 자리(선택 채택, 기본 no-op).
+- `Zone` 이 `Equatable` 입니다.
+
+### 문서
+
+- **SDK enum 을 `switch` 할 때 `@unknown default` 를 두라고 명시했습니다**(README 3개 언어 · 스니펫).
+  `ConfigChange`·`SdkErrorCode`·`ZoneEvent`·`FloorSession.StopReason`·`PermissionStatus`·
+  `OneS1ght.DeviceAvailability`·`LogLevel` 은 마이너 판에서 케이스가 늘 수 있습니다 — 없으면 빠짐없는 `switch`
+  가 그때 컴파일 오류가 됩니다. (enum 을 `@frozen` 으로 묶지는 않습니다.)
+- README·스니펫의 틀린 안내를 고쳤습니다: 종료 예제의 `try` 누락(컴파일 안 됨), 앱이 위치 권한을 직접
+  요청하라던 Step 3(SDK 가 `begin()` 에서 요청합니다), 코드표에 없던 `E1007`·`E3006`~`E3009`·`E4004`,
+  "`dwellSeconds` 가 nil 이면 5초"(nil 이면 체류 이벤트가 없습니다), "실시간 신호는 측위 중에만"(층을
+  정했거나 측위 중일 때 붙어 있습니다). README 영문판의 `onFloorDetected` 가 이제 실제로 컴파일됩니다.
+- 한국어·일본어 README 에 일시정지·층 따라가기·구역 판정 위치 절을 영문판과 맞췄습니다.
 
 ## [0.1.24] — 2026-09-28
 

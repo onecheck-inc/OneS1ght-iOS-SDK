@@ -1,21 +1,21 @@
 //
 //  PositioningProvider.swift
-//  측위 엔진 주입 계약 — SDK는 UWB를 모른다 (프롬프트 결정사항 2, 시그니처 그대로)
+//  측위 엔진 주입 계약 — 코어(SessionCoordinator)는 UWB 를 모른다 (결정사항 2)
 //
-//  실제 구현(호스트 쪽): 직접 레인징 + ZoneEngine을 감싼 어댑터가
-//  이 프로토콜을 채택해 콜백 3종을 쏜다. 패키지는 그 결과를 서버 계약에 맞춰 전송만.
+//  내장 구현은 UwbPositioningProvider(외부 측위 엔진 어댑터)다. 커스텀 provider 는 delegate·start()·
+//  stop() 만 채우면 되고, 나머지는 전부 기본 구현이 있다(선택 채택).
+//  provider 는 delegate 로 좌표·존 판정·층·고장을 올리고, 코어가 서버 계약에 맞춰 전송한다.
 //
 //  ⚠️ iOS의 UWB(Nearby Interaction)는 포그라운드 전용 — 백그라운드 전환 시
-//     SessionCoordinator가 pause+flush, 복귀 시 재개한다 (결정사항 6).
+//     SessionCoordinator가 stop+flush, 복귀 시 start 한다 (결정사항 6). 일시정지는 그 사이 유지된다.
 //
 
 import Foundation
 
 /// 측위 설정 — 측위 엔진에 주입하는 "콘센트".
 ///
-/// ★ 소스 갈아끼우는 자리: **지금은 앱이 공간 서비스에서 받아 채워 넣고**,
-///   나중에 console 이 도면·앵커·존을 프록시하면 **그쪽에서 받아 같은 자리에 꽂는다.**
-///   소스(앱 공간 서비스 ↔ 서버 프록시)가 바뀌어도 이 구조체와 apply(config:)는 고정.
+/// 코어가 setFloorMap 으로 받은 층(로케이터·세션·존)을 여기 담아 apply(config:) 로 꽂는다.
+/// 앱이 직접 만들어 넣을 수도 있다(온보딩 앱이 미리보기 층을 그렇게 한다).
 public struct PositioningConfig {
     /// 앵커: 짧은주소(UWB MAC 뒤 2바이트, 예: 0xABCD) → 도면 로컬 미터 좌표
     public let anchors: [Int: SIMD3<Double>]
@@ -88,12 +88,10 @@ public protocol PositioningProvider: AnyObject {
     /// 진단을 낼 수 없는 provider(Mock 등)는 구현하지 않으면 된다.
     var positioningDiagnostic: PositioningDiagnostic? { get }
 
-    /// 서버 config 반영 (선택 채택 — 기본 no-op).
-    /// SDK 코어가 GET /positioning/buildings 응답에서 건물·층을 뽑아 넣어준다.
+    /// 콘솔 건물·층 ID 반영 (선택 채택 — 기본 no-op). 코어가 setFloorMap 으로 정한 층을 넣는다.
     func apply(buildingId: String, floorId: String)
 
-    /// 측위 설정(앵커·세션) 주입 (선택 채택 — 기본 no-op).
-    /// ★ 소스 무관 통로 — 앱이 공간 서비스/서버에서 받은 값을 여기로 꽂는다. start 전에 호출.
+    /// 측위 설정(앵커·세션·존) 주입 (선택 채택 — 기본 no-op). 가동 중에 불러도 된다(층 전환·구역 갱신).
     func apply(config: PositioningConfig)
 
     /// **판정 영역이 바뀌었다 — 엔진이 지오펜스를 다시 읽게 하라** (선택 채택 — 기본 no-op).
@@ -108,6 +106,18 @@ public protocol PositioningProvider: AnyObject {
     ///    한다 — 다시 뜨는 동안(실측 1.5초 남짓) 좌표가 끊긴다. 영역이 **실제로 바뀌었을 때만**
     ///    부를 것.
     func reloadGeofences()
+
+    /// 좌표 **소비**만 멈춘다 — 엔진은 계속 돈다(선택 채택 — 기본 no-op).
+    ///
+    /// `FloorSession.pause()` 가 이걸 부른다. 예전엔 FloorSession 이 내장 provider 로 형변환해서만
+    /// 불러, 다른 provider 로 시작한 세션에서는 pause 가 조용히 무시됐다(2026-10-02 감사 K14).
+    /// 생명주기 정지·재시작(백그라운드)은 일시정지 상태를 **유지**해야 한다 — 풀리면 앱은 「일시정지」
+    /// 인데 좌표·존 이벤트가 다시 나간다(S20).
+    func pause()
+    /// 일시정지 해제 (선택 채택 — 기본 no-op).
+    func resume()
+    /// 일시정지 중인가 (선택 채택 — 기본 false).
+    var isPaused: Bool { get }
 }
 
 public extension PositioningProvider {
@@ -115,18 +125,34 @@ public extension PositioningProvider {
     func apply(config: PositioningConfig) {}              // 기본: 무시
     var positioningDiagnostic: PositioningDiagnostic? { nil }   // 기본: 진단 없음
     func reloadGeofences() {}                             // 기본: 무시 (엔진이 없는 구현)
+    func pause() {}                                       // 기본: 일시정지 없음
+    func resume() {}
+    var isPaused: Bool { false }
 }
 
 @MainActor
 public protocol PositioningProviderDelegate: AnyObject {
-    /// 좌표 갱신(측위 fix) — SDK가 버퍼링 → positioning/logs
+    /// 좌표 갱신(측위 fix) — SDK가 다운샘플·버퍼링 → positioning/logs
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,
                   floorId: String, at capturedAt: Date)
-    /// 존 진입/체류/이탈 판정 — SDK가 events/zone 전송
+    /// 존 진입/이탈 판정 — SDK가 events/zone 전송 (체류는 기기 안에서만 쓰므로 보내지 않는다)
     func provider(_ p: PositioningProvider, didDetectZone zoneId: String,
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date)
-    /// 입장 트리거(빌딩 진입 감지) — SDK가 buildings/floors 로드 시작
+    /// 입장 트리거(빌딩 진입 감지) — 통지만. SDK 는 이걸로 아무것도 하지 않는다(건물·층 조회는 앱의 몫).
+    /// 선택 채택 — 기본 no-op.
     func provider(_ p: PositioningProvider, didEnter buildingId: String)
+
+    /// 엔진이 층을 잡았다(층 ID) / 잃었다(nil) — SDK 가 `FloorSession.onFloorDetected` 로 넘긴다.
+    /// 선택 채택 — 기본 no-op.
+    func provider(_ p: PositioningProvider, didDetectFloor floorId: String?)
+
+    /// 앱에 보일 구역 이벤트(진입·이탈·체류) — SDK 가 `FloorSession.onZoneEnter/Exit/Dwell` 로 넘긴다.
+    ///
+    /// 서버 전송(`didDetectZone`)과 따로 있는 이유: 체류(DWELL)는 기기 안에서만 쓰는 파생물이라 서버로
+    /// 보내지 않지만 앱에는 보여야 하고, 앱 콜백에는 존 ID 가 아니라 `Zone` 이 실려야 한다.
+    /// 예전엔 FloorSession 이 내장 provider 의 클로저에만 물려 있어, `begin(provider:)` 로 시작하면
+    /// 존 콜백이 하나도 안 왔다(K14). 선택 채택 — 기본 no-op.
+    func provider(_ p: PositioningProvider, didEmit event: ZoneEvent)
 
     /// 엔진이 진단 코드를 올린다 — SDK 가 onDebugLog + 서버 로그(E-코드)로 옮긴다.
     ///
@@ -149,6 +175,9 @@ public protocol PositioningProviderDelegate: AnyObject {
 }
 
 public extension PositioningProviderDelegate {
+    func provider(_ p: PositioningProvider, didEnter buildingId: String) {}
+    func provider(_ p: PositioningProvider, didDetectFloor floorId: String?) {}
+    func provider(_ p: PositioningProvider, didEmit event: ZoneEvent) {}
     func provider(_ p: PositioningProvider, didReport code: SdkErrorCode, context: String) {}
     func provider(_ p: PositioningProvider, didStopUnexpectedly retryable: Bool, context: String) {}
 }

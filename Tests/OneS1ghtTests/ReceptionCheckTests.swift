@@ -16,10 +16,12 @@ import XCTest
 final class DiagnosticProvider: PositioningProvider {
     weak var delegate: PositioningProviderDelegate?
     var diagnostic: PositioningDiagnostic?
+    /// 코어가 진단을 읽은 횟수 — 수신 점검이 돌았는지 테스트가 이걸로 기다린다(고정 대기 대신).
+    private(set) var reads = 0
 
     init(diagnostic: PositioningDiagnostic?) { self.diagnostic = diagnostic }
 
-    var positioningDiagnostic: PositioningDiagnostic? { diagnostic }
+    var positioningDiagnostic: PositioningDiagnostic? { reads += 1; return diagnostic }
     func start() {}
     func stop() {}
 }
@@ -27,38 +29,27 @@ final class DiagnosticProvider: PositioningProvider {
 @MainActor
 final class ReceptionCheckTests: XCTestCase {
 
-    private var identity: IdentityStore!
-
     override func setUp() {
         super.setUp()
         StubURLProtocol.reset()
         // 이 테스트가 보는 것은 진단 판정뿐이라, 서버는 무엇을 물어도 통과시킨다.
-        StubURLProtocol.handler = { req in
-            if (req.url?.path ?? "").hasSuffix("/auth/verify") {
-                return (200, Data(#"{ "valid": true, "tenant_code": "t", "positioning_enabled": true }"#.utf8))
-            }
-            return (200, Data(#"{ "accepted_count": 0 }"#.utf8))
-        }
-        let defaults = UserDefaults(suiteName: "ReceptionCheckTests")!
-        defaults.removePersistentDomain(forName: "ReceptionCheckTests")
-        identity = IdentityStore(secure: InMemorySecureStore(), defaults: defaults)
+        Fixture.route(fallback: (200, #"{ "accepted_count": 0 }"#))
     }
 
-    /// 진단을 붙인 채 측위를 켜고, 확인이 돌 때까지 기다린 뒤 남은 로그를 돌려준다.
+    /// 진단을 붙인 채 측위를 켜고, 점검이 진단을 읽을 때까지 기다린 뒤 남은 로그를 돌려준다.
+    /// (점검은 진단을 읽은 직후 같은 자리에서 동기로 남기므로, 읽힌 뒤면 로그가 다 와 있다.)
     private func runCheck(_ diagnostic: PositioningDiagnostic?) async throws -> [String] {
-        let c = SessionCoordinator(api: ApiClient(apiKey: "test-key",
-                                                  baseURL: URL(string: "https://stub.test/api/sdk/v1")!,
-                                                  session: makeStubSession()),
-                                   identity: identity,
-                                   receptionCheckDelay: 0.05)
+        let c = Fixture.coordinator(receptionCheckDelay: 0.01)
         var lines: [String] = []
         c.onLog = { _, line in lines.append(line) }
 
         try await c.prepare()
         c.identify(profileId: "pf_8a3c")
-        try await c.start(provider: DiagnosticProvider(diagnostic: diagnostic))
+        let provider = DiagnosticProvider(diagnostic: diagnostic)
+        try await c.start(provider: provider)
 
-        try await Task.sleep(nanoseconds: 250_000_000)
+        await waitUntil("수신 점검이 돌지 않았다") { provider.reads > 0 }
+        await c.stop()
         return lines
     }
 

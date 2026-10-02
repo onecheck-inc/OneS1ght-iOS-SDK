@@ -4,15 +4,14 @@
 //
 //  ⚠️ SDK 내부 전용 — 호스트 앱은 이 타입을 모른다.
 //     고객사는 initialize(sdkKey:) 로 SDK 키 하나만 넘긴다 — 공간 서비스 모바일 키는 콘솔이
-//     정본이라 SDK 가 /config 로 받아 온다(geoSdkKey 인자는 콘솔이 답하지 못할 때의 폴백으로만
-//     남은 deprecated 인자). 앵커·세션·도면·존이 어디서 오는지는 SDK 사정으로 감춘다.
+//     정본이라 SDK 가 /config 로 받아 온다(앱이 넘기는 인자는 없다). 앵커·세션·도면·존이 어디서
+//     오는지는 SDK 사정으로 감춘다.
 //
-//  공간 서비스 연동 — 한 호스트, 두 키.
-//  · /api/m/floors/{id}/plan       (gsk_, X-SDK-Key)    → 도면 이미지(base64) + widthM + origin
-//  · /api/m/floors/{id}/anchors    (gsk_, X-SDK-Key)    → 앵커(도면 로컬 미터 0~13)
-//  · 존은 콘솔(ock_)에서 — 파트너 키(gpk_)는 존 쓰기 권한이 있어 클라이언트 배포 금지
-//  모든 좌표가 0~13 프레임(origin 0,0)이라 변환(÷57.7·Y플립) 불필요.
-//  (console /positioning/floors 는 HTML 회귀로 사용 불가 → 파트너 zones 로 대체.)
+//  두 곳에서 받는다.
+//  · 콘솔(ock_, initialize 의 baseURL) — 건물·층 목록, 도면 프록시(§6.4b), 존(§6.4)
+//  · 공간 서비스(gsk_)                  — 앵커(콘솔 미제공), 그리고 콘솔이 실패했을 때의 건물·도면 폴백
+//  · 파트너 키(gpk_)는 존 쓰기 권한이 있어 클라이언트에 두지 않는다 — 존은 콘솔에서만 받는다.
+//  존 폴리곤이 픽셀로 오면 도면 치수로 미터로 바꾼다(normalizeZones).
 //
 
 import Foundation
@@ -24,23 +23,24 @@ final class SpaceServiceClient {
     /// 호스트가 initialize 로 넘긴 키 묶음
     struct Keys { let sdk: String; let space: String }
     private let keys: Keys
+    /// 콘솔 SDK API 주소 — initialize(baseURL:) 로 받은 값(ApiClient.baseURL)을 그대로 쓴다.
+    private let consoleBase: String
     /// session 은 테스트에서 URLProtocol 스텁을 물리기 위한 주입점이다(ApiClient 와 같은 방식).
-    init(keys: Keys, session: URLSession = .shared) {
+    init(keys: Keys, consoleBaseURL: URL = OneS1ght.defaultBaseURL, session: URLSession = .shared) {
         self.keys = keys
+        self.consoleBase = consoleBaseURL.absoluteString
         self.session = session
     }
 
     private let host = "geospace.geoplan.io"
 
-    // 공개 타입(SpaceBuilding/SpaceFloor/AnchorPoint/FloorInfra)은 Models/SpaceModels.swift.
-    // 존은 SDK 공통 타입(Zone/Position)을 그대로 쓴다 — ZoneEngine 에 변환 없이 주입된다.
-
-    private(set) var status: String = SdkLocalized.text("gs.idle")
+    // 공개 타입(Building·Floor·Locator·FloorLocators)은 Models/SpaceModels.swift.
+    // 존은 SDK 공통 타입(Zone/Position)을 그대로 쓴다.
 
     // TLS 검증은 표준 그대로 — SDK 는 인증서 우회를 하지 않는다 (ApiClient 와 동일 원칙)
     private let session: URLSession
 
-    enum GsError: Error { case badResponse(Int), noImage, decode }
+    enum GsError: Error { case badResponse(Int), decode }
 
     // MARK: - 공개 진입점
 
@@ -48,8 +48,7 @@ final class SpaceServiceClient {
     /// floorCount 는 서버가 응답에 실어줄 때까지 nil (floor_count TBD).
     func loadBuildings() async throws -> [Building] {
         do {
-            let base = ApiClient.defaultBaseURL.absoluteString
-            let list: ConsoleBuildingsResponse = try await consoleGet("\(base)/positioning/buildings")
+            let list: ConsoleBuildingsResponse = try await consoleGet("\(consoleBase)/positioning/buildings")
             let out = list.buildings
                 .filter { !$0.buildingId.hasPrefix("sim-") }   // 공간 서비스 미연동 sim 매장 제외
                 .map { Building(id: $0.buildingId, name: $0.name, floorCount: $0.floorCount) }
@@ -71,9 +70,8 @@ final class SpaceServiceClient {
     ///
     /// 콘솔 층이 비면(존 0개 등) 공간 서비스 건물 트리로 우회한다 — 그쪽도 이름·도면 유무를 준다.
     func loadFloors(buildingId: String) async throws -> [Floor] {
-        let base = ApiClient.defaultBaseURL.absoluteString
         if let fl: ConsoleFloorsResponse =
-            try? await consoleGet("\(base)/positioning/buildings/\(buildingId)/floors"),
+            try? await consoleGet("\(consoleBase)/positioning/buildings/\(buildingId)/floors"),
            !fl.floors.isEmpty {
             return fl.floors.map {
                 Floor(id: $0.floorId,
@@ -87,14 +85,15 @@ final class SpaceServiceClient {
         return floors.map { Floor(id: $0.floorId, name: $0.floorName, hasPlan: $0.hasPlan) }
     }
 
-    /// 층 단건 — 도면 이미지까지 채워 반환. loadFloors 가 캐시를 데워 두면 왕복 없음.
+    /// 층 단건 — 도면 이미지까지 채워 반환. 도면은 층별로 캐시한다(콘솔이 도면을 바꾸면 invalidatePlan).
+    /// (예전 주석의 "loadFloors 가 캐시를 데운다" 는 틀렸다 — 목록은 도면을 받지 않는다.)
     func loadFloor(buildingId: String, floorId: String) async throws -> Floor {
         let plan = try? await consolePlan(buildingId, floorId)
-        return makeFloor(id: floorId, from: plan, withImage: true)
+        return makeFloor(id: floorId, from: plan)
     }
 
-    /// ConsolePlanResponse → Floor. withImage=false 면 치수·이름만 채우고 PNG 는 뺀다.
-    private func makeFloor(id: String, from plan: ConsolePlanResponse?, withImage: Bool) -> Floor {
+    /// ConsolePlanResponse → Floor (도면 PNG 포함).
+    private func makeFloor(id: String, from plan: ConsolePlanResponse?) -> Floor {
         guard let plan, let img = plan.plan?.image else {
             return Floor(id: id, name: plan?.floorName ?? String(id.prefix(8)),
                          hasPlan: plan?.hasPlan ?? false)
@@ -102,7 +101,7 @@ final class SpaceServiceClient {
         let heightM = img.widthM * Double(img.imgH) / Double(img.imgW)
         return Floor(id: id,
                      name: plan.floorName ?? String(id.prefix(8)),
-                     image: withImage ? img.pngData() : nil,
+                     image: img.pngData(),
                      hasPlan: plan.hasPlan,
                      originX: img.originX, originY: img.originY,
                      widthM: img.widthM, heightM: heightM)
@@ -140,7 +139,6 @@ final class SpaceServiceClient {
     ///    못 받아 그런 층은 측위 자체가 불가능했다(앱에는 "지도 조회 실패"로만 보였다).
     ///    좌표는 도면이 아니라 로케이터 배치에서 나오므로, 도면이 없어도 측위는 정상이다.
     func loadFloorState(buildingId: String, floorId: String) async throws -> FloorState {
-        status = SdkLocalized.text("gs.loading")
         async let planTask = planImageIfAny(buildingId: buildingId, floorId)
         async let anchorTask = anchorsOrEmpty(floorId)
         async let zoneTask = getZones(buildingId: buildingId, floorId)
@@ -157,13 +155,13 @@ final class SpaceServiceClient {
             hasPlan: planImage != nil,
             locatorsFetchFailed: anchors == nil
         )
-        status = SdkLocalized.format("gs.done", state.locators.count, zones.count)
         return state
     }
 
     // MARK: - 엔드포인트
 
-    // 세션 캐시 — plan 은 정적(층이름 겸 선로딩), 앵커는 전원상태(clusterStatus)가 변할 수 있어 TTL
+    // 세션 캐시 — plan 은 콘솔이 바꾸기 전까지 그대로라 .planChanged·재동기화 때만 지운다(invalidatePlan).
+    // 앵커는 전원상태(clusterStatus)가 변할 수 있어 TTL.
     private var planCache: [String: ConsolePlanResponse] = [:]                 // floorId → plan
     private var anchorCache: [String: (at: Date, res: AnchorResponse)] = [:]   // floorId → 앵커 (TTL 3분)
 
@@ -188,17 +186,22 @@ final class SpaceServiceClient {
     /// console 도면 프록시 (snake_case → convertFromSnakeCase 로 PlanImage 재사용). 층별 캐시.
     private func consolePlan(_ buildingId: String, _ floorId: String) async throws -> ConsolePlanResponse {
         if let cached = planCache[floorId] { return cached }
-        let base = ApiClient.defaultBaseURL.absoluteString
         let res: ConsolePlanResponse =
-            try await consoleGet("\(base)/positioning/buildings/\(buildingId)/floor/\(floorId)/plan")
+            try await consoleGet("\(consoleBase)/positioning/buildings/\(buildingId)/floor/\(floorId)/plan")
         planCache[floorId] = res
         return res
+    }
+
+    /// 도면 캐시 무효화 — 콘솔이 도면을 바꿨다(.planChanged) 또는 그 사이를 놓쳤다(.resyncNeeded).
+    /// floorId 가 nil 이면 전부 지운다. 예전엔 지우는 길이 없어 재초기화 전까지 옛 도면을 줬다(S16).
+    func invalidatePlan(floorId: String?) {
+        if let floorId { planCache[floorId] = nil } else { planCache.removeAll() }
     }
 
     /// console 공통 GET (X-SDK-Key + snake_case 디코딩)
     private func consoleGet<R: Decodable>(_ urlString: String) async throws -> R {
         guard let url = URL(string: urlString) else { throw GsError.decode }
-        var req = URLRequest(url: url, timeoutInterval: 20)
+        var req = URLRequest(url: url, timeoutInterval: SdkTimeouts.space)
         req.setValue(keys.sdk, forHTTPHeaderField: "X-SDK-Key")
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode)
@@ -269,9 +272,11 @@ final class SpaceServiceClient {
     /// 존 원시 데이터 (폴리곤 단위 미정 — normalizeZones 로 미터 정규화)
     struct RawZone {
         let id: String; let name: String; let polygon: [[Double]]
-        // 판정 파라미터 — 콘솔 존 메타에서 보존 (기본값 = 서버 기본)
-        var inDist: Double = 3.0; var inCount: Int = 0; var inCountInterval: Int = 0
-        var outPeriod: Int = 0; var priority: Int = 1; var callInout: Bool = true
+        // 판정 파라미터 — 콘솔 존 메타에서 보존 (기본값 = 서버 기본, ZoneDefaults)
+        var inDist = ZoneDefaults.inDist; var inCount = ZoneDefaults.inCount
+        var inCountInterval = ZoneDefaults.inCountInterval
+        var outPeriod = ZoneDefaults.outPeriod; var priority = ZoneDefaults.priority
+        var callInout = ZoneDefaults.callInout
         var dwellSeconds: Int? = nil
     }
 
@@ -283,17 +288,22 @@ final class SpaceServiceClient {
     }
 
     private func consoleZones(_ buildingId: String, _ floorId: String) async throws -> [RawZone] {
-        let base = ApiClient.defaultBaseURL.absoluteString
         let res: ConsoleZonesResponse =
-            try await consoleGet("\(base)/positioning/buildings/\(buildingId)/floor/\(floorId)/zones")
+            try await consoleGet("\(consoleBase)/positioning/buildings/\(buildingId)/floor/\(floorId)/zones")
         var seen = Set<String>()
         return res.zones.compactMap { z in
-            guard z.isActive, let poly = z.polygon, poly.count >= 3,
+            // ⚠️ 값이 2개 미만인 점은 버린다. 예전엔 `$0[0]`·`$0[1]` 을 길이 확인 없이 읽어, 잘못된
+            //    폴리곤 하나로 앱이 죽었다(2026-10-02 감사 S23). 버리고 나서 3점이 안 되면 그 구역만 뺀다.
+            let poly = (z.polygon ?? []).filter { $0.count >= 2 }
+            guard z.isActive, poly.count >= 3,
                   seen.insert(z.name).inserted else { return nil }
             return RawZone(id: z.zoneId, name: z.name, polygon: poly,
-                           inDist: z.inDist ?? 3.0, inCount: z.inCount ?? 0,
-                           inCountInterval: z.inCountInterval ?? 0, outPeriod: z.outPeriod ?? 0,
-                           priority: z.priority ?? 1, callInout: z.callInout ?? true,
+                           inDist: z.inDist ?? ZoneDefaults.inDist,
+                           inCount: z.inCount ?? ZoneDefaults.inCount,
+                           inCountInterval: z.inCountInterval ?? ZoneDefaults.inCountInterval,
+                           outPeriod: z.outPeriod ?? ZoneDefaults.outPeriod,
+                           priority: z.priority ?? ZoneDefaults.priority,
+                           callInout: z.callInout ?? ZoneDefaults.callInout,
                            dwellSeconds: z.dwellSeconds)
         }
     }
@@ -305,7 +315,7 @@ final class SpaceServiceClient {
         try await request(path, header: "X-SDK-Key", value: keys.space)
     }
     private func request<R: Decodable>(_ path: String, header: String, value: String) async throws -> R {
-        var req = URLRequest(url: URL(string: "https://\(host)/\(path)")!, timeoutInterval: 20)
+        var req = URLRequest(url: URL(string: "https://\(host)/\(path)")!, timeoutInterval: SdkTimeouts.space)
         req.setValue(value, forHTTPHeaderField: header)
         req.setValue("close", forHTTPHeaderField: "Connection")
         let (data, resp) = try await session.data(for: req)
@@ -335,15 +345,27 @@ final class SpaceServiceClient {
         struct Body: Decodable { let image: PlanImage }
     }
 
+    // ⚠️ 콘솔 목록 응답은 전부 **원소 단위로** 관대하게 읽는다(S17). 예전엔 구역 하나의 id 가 숫자로
+    //    오거나 is_active 가 빠지면 응답 전체가 디코드 실패 → 그 층 구역이 **전부** 비었다.
+    //    id 는 숫자로 와도 문자열로 받고, 못 읽는 원소는 그것만 버린다. 목록 자체가 없거나 배열이
+    //    아니면 여전히 던진다 — 그걸 "0개" 로 읽으면 새로고침이 지도의 구역을 지운다(08-12).
+
     /// console §6.4 zones 응답 (snake_case)
     private struct ConsoleZonesResponse: Decodable {
         let zones: [Zone]
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            zones = try c.decode(LossyArray<Zone>.self, forKey: .zones).elements
+        }
+        private enum CodingKeys: String, CodingKey { case zones }
+
         struct Zone: Decodable {
             let zoneId: String
             let name: String
             let polygon: [[Double]]?
+            /// 빠지면 활성으로 본다 — 콘솔은 비활성 구역을 명시할 때만 false 를 준다.
             let isActive: Bool
-            // 판정 파라미터 (§6.4 존 메타) — 옛 존 엔진이 소비. 구서버 호환 위해 옵셔널
+            // 판정 파라미터 (§6.4 존 메타) — 엔진이 쓰지 않는다(UwbAreaJudge 헤더). 구서버 호환 위해 옵셔널
             let inDist: Double?
             let inCount: Int?
             let inCountInterval: Int?
@@ -351,25 +373,84 @@ final class SpaceServiceClient {
             let priority: Int?
             let callInout: Bool?
             let dwellSeconds: Int?
+
+            private enum CodingKeys: String, CodingKey {
+                case zoneId, name, polygon, isActive, inDist, inCount, inCountInterval,
+                     outPeriod, priority, callInout, dwellSeconds
+            }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                guard let id = c.lenientID(.zoneId) else {
+                    throw DecodingError.keyNotFound(CodingKeys.zoneId, .init(
+                        codingPath: c.codingPath, debugDescription: "zone_id 없음"))
+                }
+                zoneId = id
+                name = try c.decode(String.self, forKey: .name)
+                polygon = c.lenient([[Double]].self, .polygon)
+                isActive = c.lenient(Bool.self, .isActive) ?? true
+                inDist = c.lenient(Double.self, .inDist)
+                inCount = c.lenient(Int.self, .inCount)
+                inCountInterval = c.lenient(Int.self, .inCountInterval)
+                outPeriod = c.lenient(Int.self, .outPeriod)
+                priority = c.lenient(Int.self, .priority)
+                callInout = c.lenient(Bool.self, .callInout)
+                dwellSeconds = c.lenient(Int.self, .dwellSeconds)
+            }
         }
     }
 
     /// console §6.2 buildings / §6.3 floors 응답 (snake_case)
     private struct ConsoleBuildingsResponse: Decodable {
         let buildings: [B]
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            buildings = try c.decode(LossyArray<B>.self, forKey: .buildings).elements
+        }
+        private enum CodingKeys: String, CodingKey { case buildings }
+
         struct B: Decodable {
             let buildingId: String
             let name: String
             let floorCount: Int?     // 서버 floor_count (TBD — 실릴 때까지 nil)
+
+            private enum CodingKeys: String, CodingKey { case buildingId, name, floorCount }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                guard let id = c.lenientID(.buildingId) else {
+                    throw DecodingError.keyNotFound(CodingKeys.buildingId, .init(
+                        codingPath: c.codingPath, debugDescription: "building_id 없음"))
+                }
+                buildingId = id
+                name = c.lenient(String.self, .name) ?? id
+                floorCount = c.lenient(Int.self, .floorCount)
+            }
         }
     }
     private struct ConsoleFloorsResponse: Decodable {
         let floors: [F]
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            floors = try c.decode(LossyArray<F>.self, forKey: .floors).elements
+        }
+        private enum CodingKeys: String, CodingKey { case floors }
+
         /// name·hasPlan 은 콘솔 배포 시차를 고려해 옵셔널로 둔다 — 없던 시절 응답에도 깨지지 않는다.
         struct F: Decodable {
             let floorId: String
             let name: String?
             let hasPlan: Bool?
+
+            private enum CodingKeys: String, CodingKey { case floorId, name, hasPlan }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                guard let id = c.lenientID(.floorId) else {
+                    throw DecodingError.keyNotFound(CodingKeys.floorId, .init(
+                        codingPath: c.codingPath, debugDescription: "floor_id 없음"))
+                }
+                floorId = id
+                name = c.lenient(String.self, .name)
+                hasPlan = c.lenient(Bool.self, .hasPlan)
+            }
         }
     }
     private struct PlanImage: Decodable {
@@ -402,14 +483,6 @@ final class SpaceServiceClient {
             return Locator(address: addr & 0xFFFF, x: x, y: y, z: 0,
                            isPlaced: clusterStatus.map { $0 == "auto_done" } ?? true)
         }
-    }
-
-    /// 파트너 zones 응답 = 최상위 배열. 폴리곤은 미터(0~13). (판정 파라미터 다수 있으나 지도엔 name/폴리곤만)
-    private struct ZoneDTO: Decodable {
-        let id: String          // zone_id (console 다운링크 큐와 동일 UUID)
-        let name: String
-        let isActive: Bool
-        let polygon: [[Double]]?
     }
 }
 

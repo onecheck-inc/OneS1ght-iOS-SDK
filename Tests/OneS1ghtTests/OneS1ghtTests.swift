@@ -91,7 +91,7 @@ final class OneS1ghtConsoleProvidedValuesTests: XCTestCase {
         stubDistinctConfigValues()
 
         try await OneS1ght.initialize(sdkKey: "ock_facade_probe",
-                                      baseURL: URL(string: "https://stub.test/api/sdk/v1")!)
+                                      baseURL: Fixture.baseURL)
 
         XCTAssertEqual(OneS1ght.googleMapKey, "AIza_facade")
         // 세션 정리는 tearDown 이 맡는다 — 여기서 또 부르면 assert 가 던졌을 때 건너뛴다.
@@ -103,7 +103,7 @@ final class OneS1ghtConsoleProvidedValuesTests: XCTestCase {
         await OneS1ght.reset()
         stubDistinctConfigValues()
         try await OneS1ght.initialize(sdkKey: "ock_facade_probe2",
-                                      baseURL: URL(string: "https://stub.test/api/sdk/v1")!)
+                                      baseURL: Fixture.baseURL)
         XCTAssertNotNil(OneS1ght.googleMapKey, "sanity: 초기화가 실제로 값을 채웠는지")
 
         await OneS1ght.reset()
@@ -119,7 +119,7 @@ final class OneS1ghtConsoleProvidedValuesTests: XCTestCase {
         stubDistinctConfigValues()
 
         try await OneS1ght.initialize(sdkKey: "ock_facade_probe3",
-                                      baseURL: URL(string: "https://stub.test/api/sdk/v1")!)
+                                      baseURL: Fixture.baseURL)
 
         // 파사드로 나오는 단 하나의 값이 내부 전용 값을 집어 오면 안 된다.
         XCTAssertNotEqual(OneS1ght.googleMapKey, "gpk_facade")

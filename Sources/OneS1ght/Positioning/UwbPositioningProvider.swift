@@ -54,7 +54,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     @Published public private(set) var latestPosition: Coordinates?
     @Published public private(set) var log: [String] = []
     /// 엔진 상태 — `.idle` 이 아니면 엔진이 돌고 있다.
-    @Published public private(set) var phase: PositioningPhase = .idle
+    /// setter 는 모듈 내부까지 — 테스트가 엔진 없이 상태 전이(늦은 알림·정지 중 시작)를 밟는다.
+    @Published public internal(set) var phase: PositioningPhase = .idle
     /// 사람이 일시정지를 눌렀는가. **엔진은 계속 돈다** — 층·앵커를 그대로 붙들고 있어야
     /// 재개가 즉시 되고, 재개할 때마다 앵커를 처음부터 찾게 만들면 걷기 검증이 못 쓰게 된다.
     /// 멈추는 것은 좌표의 **소비**(표시·수집·판정)뿐이다.
@@ -92,9 +93,10 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     public var onRawAreaEvent: ((_ floorId: Int64, _ areaName: String,
                                  _ inOut: String, _ at: Date) -> Void)?
 
-    /// 엔진 라이선스 키. `initialize(geoSdkKey:)` 값을 FloorSession 이 넣어 준다.
+    /// 엔진 라이선스 키 — 콘솔(/config)이 내려준 값을 `FloorSession.begin(provider:)` 이 넣는다.
     /// 비어 있으면 start 하지 않고 오류로 통지한다 (조용한 실패 금지).
-    public var license = ""
+    /// ⚠️ internal — 앱이 엔진 키를 보거나 넣을 일이 없다(0.1.24 까지 public 이었다 — 감사 K4).
+    var license = ""
 
     // MARK: - 내부
 
@@ -128,6 +130,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
             guard let self else { return }
             self.addLog("🎯 \(event.label)")
             self.onZoneEvent?(event)
+            self.delegate?.provider(self, didEmit: event)     // → FloorSession.onZoneEnter/Exit/Dwell
             self.forwardToSDK(event)
         }
         judge.onLog = { [weak self] level, msg in self?.addLog(level, msg) }
@@ -222,41 +225,24 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         delegate?.provider(self, didReport: code, context: context)
     }
 
-    /// 측위 엔진 오류 코드 → SDK E-코드.
-    /// `nil` 은 "로그로만 남길 것" — 2(중복 start)·8(정지 중 start)은 호출 순서 문제라
-    /// 현장 진단 가치가 없고, 코드로 올리면 재시도마다 쌓여 진짜 오류를 덮는다.
-    /// 상태를 읽지 않는 순수 변환이라 `nonisolated` 다 — 클래스가 `@MainActor` 라는 이유로
-    /// 격리에 묶이면 어느 큐에서 온 오류든 메인으로 건너와야 코드를 매길 수 있게 된다.
-    ///
-    /// `message` 는 엔진이 같이 준 문장이다. 오류 3 하나로 Bluetooth "꺼짐·권한·미지원" 이 다 오는데,
-    /// 꺼짐(`powered off`)은 켜면 풀리고 권한은 설정 앱에서 풀어야 해 할 일이 다르다 — 그래서 그것만
-    /// 따로 E2004 로 올린다. 예전엔 꺼짐도 E2003 「측위 권한 거부」로 찍혔다(2026-09-28 실기기).
+    /// 측위 엔진 오류 코드 → SDK E-코드. 번호의 뜻은 HubError 한 곳에서 정한다(K15).
+    /// 상태를 읽지 않는 순수 변환이라 `nonisolated` 다 — 어느 큐에서 온 오류든 메인을 거치지 않고 매긴다.
     nonisolated static func sdkCode(forHubError code: Int, message: String = "") -> SdkErrorCode? {
-        switch code {
-        case 1:  return .invalidKey           // 라이선스 미등록
-        case 3 where message.localizedCaseInsensitiveContains("powered off"):
-                 return .bluetoothOff         // Bluetooth 꺼짐 — 켜면 풀린다
-        case 3:  return .permissionDenied     // Bluetooth 불가(권한·미지원)
-        case 4:  return .locatorsMissing      // 그 층의 앵커 정보 없음
-        case 5:  return .uwbSessionFailed     // DL-TDoA 세션 오류
-        case 6:  return .areaJudgeFailed      // 영역 판정 오류
-        case 7:  return .permissionDenied     // 위치 불가(권한·정밀도·서비스 꺼짐)
-        case 9:  return .permissionDenied     // Info.plist BT 키 누락
-        case 10: return .invalidKey           // 서버가 라이선스 거부
-        case 11: return .network              // 라이선스 서버 미도달
-        case 12: return .deviceNotSupported   // DL-TDoA 미지원 기기
-        default: return nil                   // 2 · 8 · 미지의 코드
-        }
+        HubError(rawValue: code)?.sdkCode(message: message)
     }
 
     // MARK: - HubListener 이벤트 (브리지가 메인으로 넘긴 뒤)
+    // fileprivate 이 아니라 내부 공개 — 테스트가 엔진 없이 늦은 알림을 직접 밟는다.
 
-    fileprivate func hubStarted() {
+    func hubStarted() {
+        // ⚠️ 시작 중일 때만 받는다. 늦게 온 시작 알림이 「정지 중」을 덮으면 다음 start() 가 대기열을
+        //    건너뛰고, 뒤따른 정지 완료가 「스스로 멈춤」 으로 읽혀 거짓 E4001·재시도가 났다(S22).
+        guard phase == .starting else { return }
         phase = .searching
         addLog(.info, SdkLocalized.text("uwb.started"))
     }
 
-    fileprivate func hubStopped() {
+    func hubStopped() {
         // 구역 재적재로 우리가 끈 것이면 여기서 조용히 다시 켠다.
         //
         // ⚠️ **아래 정리 코드를 타면 안 된다.** isRunning=false·detectedFloorId=nil·
@@ -266,12 +252,14 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         if reloadingGeofences {
             reloadingGeofences = false
             phase = .idle
+            hubLaunched = false
             hub.setListener(nil)
             startDetection()          // 다시 뜨면서 서버에서 지오펜스를 새로 읽는다
             return
         }
         let selfStopped = phase != .stopping     // stopDetection() 을 부르지 않았는데 멈춤
         phase = .idle
+        hubLaunched = false
         floorWatchTask?.cancel(); floorWatchTask = nil
         hub.setListener(nil)                        // README: stop() 직후가 아니라 여기서 해제
         if isRunning {
@@ -288,6 +276,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         if detectedFloorId != nil {
             detectedFloorId = nil
             onFloorDetected?(nil)
+            delegate?.provider(self, didDetectFloor: nil)
         }
         // 내려가는 동안 들어와 있던 start 를 이제 이어받는다 — phase 가 .idle 이 됐으니
         // 정상 경로를 그대로 탄다.
@@ -297,13 +286,16 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         }
     }
 
-    fileprivate func trackingStarted(_ fid: Int64) {
+    func trackingStarted(_ fid: Int64) {
+        // 내려가는 중·꺼진 뒤에 늦게 온 알림은 버린다 — 「정지 중」을 「추적 중」으로 덮으면 안 된다(S22).
+        guard phase == .searching || phase == .starting || phase == .tracking else { return }
         phase = .tracking
         detectedFloorId = fid
         floorWatchTask?.cancel(); floorWatchTask = nil      // 층을 찾았다 — 미탐지 감시 해제
         addLog(.info, SdkLocalized.format("uwb.trackingStart", fid))
         checkFloorAgreement(fid)
         onFloorDetected?(fid)
+        delegate?.provider(self, didDetectFloor: String(fid))
     }
 
     /// 엔진이 잡은 층 ↔ 콘솔이 지정한 층 대조.
@@ -324,6 +316,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         latestPosition = nil
         addLog(.info, SdkLocalized.format("uwb.trackingStop", fid))
         onFloorDetected?(nil)
+        delegate?.provider(self, didDetectFloor: nil)
     }
 
     fileprivate func positioned(_ fid: Int64, _ x: Double, _ y: Double, _ z: Double) {
@@ -377,6 +370,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         // onStopped 가 뒤따른다(hubStopped 에서 처리).
         if phase == .starting, Self.abortsStart(hubError: code) {
             phase = .idle
+            hubLaunched = false
             if isRunning { isRunning = false; latestPosition = nil }
             hub.setListener(nil)
             notifyUnexpectedStop("engine=\(code) at start", retryable: Self.isRetryable(hubError: code))
@@ -386,21 +380,16 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 시작 단계(`.starting` — 아직 onStarted 가 안 옴)에서 이 오류가 나면 엔진이 뜨지 못한 것인가.
     ///
     /// ⚠️ 3(Bluetooth)·7(위치)·10(라이선스 거부)을 예전엔 "구동 중에만 나고 onStopped 가 뒤따른다" 고
-    ///    보고 여기서 뺐다. 그런데 **Bluetooth 가 꺼진 채 시작하면 3 이 시작 단계에서 나고 onStopped 는
-    ///    오지 않는다.** phase 가 .starting 에 남은 채 stopDetection() 이 .stopping 으로 바꾸면 정지 완료가
-    ///    영영 안 와 거기서 굳고, 이후 start() 는 전부 startAfterStop 으로 미뤄져 **Bluetooth 를 켜도 앱을
-    ///    다시 켜기 전엔 측위가 안 돌아왔다**(2026-09-28 실기기: `uwb.startQueued` 반복, "정지됨" 없음).
-    ///    시작 단계에서 나는 치명 오류는 번호와 무관하게 전부 "뜨지 못함" 이다.
-    /// 2(이미 측위 중)·8(정지 중 start)은 호출 순서 문제라 엔진 상태를 바꾸지 않는다. 4·5·6 은 층·세션·
-    /// 판정 오류로 엔진이 뜬 뒤에 난다.
+    ///    보고 뺐다. 그런데 **Bluetooth 가 꺼진 채 시작하면 3 이 시작 단계에서 나고 onStopped 는 오지 않는다**
+    ///    — 정지 요청이 「정지 중」 에서 굳고 이후 start() 가 전부 미뤄졌다(2026-09-28 실기기). 목록은 HubError.
     nonisolated static func abortsStart(hubError code: Int) -> Bool {
-        [1, 3, 7, 9, 10, 11, 12].contains(code)
+        HubError(rawValue: code)?.abortsStart ?? false
     }
 
     /// 측위 엔진 오류 코드표 (1~12)
     private static func describe(_ code: Int) -> String {
-        (1...12).contains(code) ? SdkLocalized.text("uwb.err\(code)")
-                                : SdkLocalized.text("uwb.errUnknown")
+        HubError(rawValue: code) != nil ? SdkLocalized.text("uwb.err\(code)")
+                                        : SdkLocalized.text("uwb.errUnknown")
     }
 
     // MARK: - 엔진 기동 (측위 시작과 분리)
@@ -412,21 +401,30 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         let key = license.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             addLog(.error, SdkLocalized.text("uwb.noLicense"))
-            onEngineError?(1, "license not set")
+            onEngineError?(HubError.licenseMissing.rawValue, "license not set")
             return
         }
         IntelligenceHub.setLicense(key)
         detectedFloorId = nil
         lastHubError = nil
         phase = .starting
+        hubLaunched = false
+        startGeneration += 1
+        let generation = startGeneration
         addLog(.info, SdkLocalized.format("uwb.starting", String(key.prefix(8))))
 
         ensureLocationAuthorization { [weak self] ok in
-            guard let self else { return }
+            // 권한 창을 기다리는 사이 멈췄다가 다시 시작했으면 이 답은 옛 시작의 것이다 — 버린다.
+            guard let self, generation == self.startGeneration else { return }
             guard ok else { self.abortStart(); return }
             self.launchHub()
         }
     }
+
+    /// 시작 회차 — 권한 창의 늦은 답이 새 시작을 건드리지 않게 가른다.
+    private var startGeneration = 0
+    /// 엔진(hub.start)을 실제로 띄웠는가 — 아직이면 정지 완료 신호가 오지 않는다.
+    private var hubLaunched = false
 
     /// 위치 권한을 **순서대로** 확보한다: 기본 권한 → 정밀 위치.
     ///
@@ -440,6 +438,16 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     private func ensureLocationAuthorization(_ done: @escaping (Bool) -> Void) {
         switch locationGate.status {
         case .notDetermined:
+            // ⚠️ 권한 설명 문구가 Info.plist 에 없으면 iOS 는 요청을 **조용히 무시**하고 답도 주지 않는다.
+            //    그러면 시작이 「권한 창 대기」에서 영영 안 끝나고, 20초 뒤 엉뚱한 E3007 만 남았다(S24).
+            //    물어보기 전에 확인해 연동 실수를 그 자리에서 코드로 알린다.
+            guard Self.hasUsageDescription(Self.locationUsageKey, in: infoBundle) else {
+                addLog(.error, SdkLocalized.format("uwb.plistMissing", Self.locationUsageKey))
+                reportToSDK(.permissionDenied, "Info.plist missing \(Self.locationUsageKey)")
+                onEngineError?(HubError.locationUnavailable.rawValue, "Info.plist missing \(Self.locationUsageKey)")
+                done(false)
+                return
+            }
             addLog(.info, SdkLocalized.text("uwb.locationAsk"))
             locationGate.requestWhenInUse { [weak self] status in
                 guard let self else { return }
@@ -467,14 +475,25 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         locationGate.requestFullAccuracy(purposeKey: Self.accuracyPurposeKey) { _ in done(true) }
     }
 
+    static let locationUsageKey = "NSLocationWhenInUseUsageDescription"
+    /// 권한 문구를 찾을 Info.plist — 앱 번들. 테스트가 문구 없는 번들로 바꿔 끼운다.
+    var infoBundle: Bundle = .main
+
+    /// 앱 Info.plist 에 그 권한 설명 문구가 있는가.
+    static func hasUsageDescription(_ key: String, in bundle: Bundle = .main) -> Bool {
+        guard let text = bundle.object(forInfoDictionaryKey: key) as? String else { return false }
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func locationDenied(_ status: CLAuthorizationStatus) {
         addLog(.error, SdkLocalized.text("uwb.locationDenied"))
         reportToSDK(.permissionDenied, "location status=\(status.rawValue)")
-        onEngineError?(7, "location authorization denied")
+        onEngineError?(HubError.locationUnavailable.rawValue, "location authorization denied")
     }
 
     /// 구역 재적재 때문에 우리가 껐는가 — `hubStopped()` 가 세션 정리를 건너뛰게 한다.
-    private var reloadingGeofences = false
+    /// (내부 공개 — 테스트가 재적재 중 정지를 밟는다.)
+    var reloadingGeofences = false
 
     /// 정지가 끝나는 대로 다시 띄워야 하는가 — 내려가는 중에 start 가 온 경우.
     private var startAfterStop = false
@@ -492,24 +511,26 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         delegate?.provider(self, didStopUnexpectedly: retryable, context: context)
     }
 
-    /// 다시 켜 볼 만한가 — 1(라이선스 없음)·3(Bluetooth)·7(위치)·10(라이선스 거부)은 사람이 풀어야
-    /// 한다. 다시 켜 봐야 같은 자리에서 접힌다. 나머지(11 라이선스 서버 연결 등)는 잠시 뒤 풀릴 수 있다.
+    /// 다시 켜 볼 만한가 — 사람이 풀어야 하는 것(HubError.needsPerson)은 아니다. 나머지(11 라이선스 서버
+    /// 연결·원인 모름 등)는 잠시 뒤 풀릴 수 있다.
     nonisolated static func isRetryable(hubError code: Int?) -> Bool {
-        guard let code else { return true }
-        return ![1, 3, 7, 10].contains(code)
+        guard let code, let e = HubError(rawValue: code) else { return true }
+        return !e.needsPerson
     }
 
     /// 시작 전 단계에서 되돌린다 — phase 를 .starting 에 남기면 이후 start 가 전부 막힌다.
     private func abortStart() {
         guard phase == .starting else { return }
         phase = .idle
+        hubLaunched = false
         if isRunning { isRunning = false; latestPosition = nil }
         floorWatchTask?.cancel(); floorWatchTask = nil
         notifyUnexpectedStop("location denied at start", retryable: false)
     }
 
     private func launchHub() {
-        guard phase == .starting else { return }   // 그 사이 정지됐으면 무시
+        guard phase == .starting, !hubLaunched else { return }   // 그 사이 정지됐으면 무시
+        hubLaunched = true
         hub.setListener(bridge)
         hub.start()
     }
@@ -517,11 +538,24 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 엔진을 완전히 멈춘다. 측위 중이었으면 그것도 끝난다.
     public func stopDetection() {
         guard phase != .idle, phase != .stopping else { return }
-        phase = .stopping
+        // 끄겠다는 것이 최신 의사다 — 구역 재적재 중이었어도 정지 완료 뒤 다시 켜지 않는다.
+        // 예전엔 이 표식을 안 지워, 재적재 1.5초 안에 end()/백그라운드로 가면 hubStopped 가 「재적재」 로
+        // 읽고 엔진을 다시 띄웠다 — 끝냈는데 엔진이 돌았다(S8).
+        reloadingGeofences = false
         if isRunning {
             isRunning = false
             latestPosition = nil
         }
+        // ⚠️ 위치 권한 창을 기다리는 중(엔진을 아직 안 띄움)이면 곧장 대기 상태로 돌린다. 띄운 적 없는
+        //    엔진에서는 정지 완료 신호가 영영 안 와, 「정지 중」 에 굳은 채 이후 start() 가 전부 미뤄졌다 —
+        //    정밀 위치 창이 뜬 사이 홈으로 나가면 앱을 죽이기 전까지 측위가 안 됐다(S3).
+        if phase == .starting, !hubLaunched {
+            phase = .idle
+            floorWatchTask?.cancel(); floorWatchTask = nil
+            addLog(.info, SdkLocalized.format("uwb.stopRequested", measurementCount))
+            return
+        }
+        phase = .stopping
         hub.stop()                                   // 정리가 끝나면 onStopped 가 온다
         addLog(.info, SdkLocalized.format("uwb.stopRequested", measurementCount))
     }
@@ -594,7 +628,8 @@ extension UwbPositioningProvider: PositioningProvider {
         latestPosition = nil
         judge.reset()
         isRunning = true
-        isPaused = false
+        // isPaused 는 건드리지 않는다 — 백그라운드에서 돌아와 다시 켤 때 일시정지가 풀리면 앱은 「일시정지」
+        // 인데 좌표·존 이벤트가 다시 나갔다(S20). 새 세션(begin)·종료(end)에서는 코어가 resume() 으로 푼다.
         warnedFloorMismatch = nil
         addLog(.info, SdkLocalized.format("uwb.positioningOn",
                                           detectedFloorId.map(String.init) ?? "-"))
@@ -608,7 +643,7 @@ extension UwbPositioningProvider: PositioningProvider {
         floorWatchTask?.cancel()
         guard detectedFloorId == nil else { return }
         floorWatchTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.floorDetectDelay * 1_000_000_000))
+            try? await Task.sleep(seconds: Self.floorDetectDelay)
             guard let self, !Task.isCancelled, self.isRunning, self.detectedFloorId == nil else { return }
             self.reportToSDK(.floorNotDetected,
                              "phase=\(self.phase.rawValue) after=\(Int(Self.floorDetectDelay))s")
@@ -621,7 +656,7 @@ extension UwbPositioningProvider: PositioningProvider {
     /// 다시 찾는다. 걷기 검증 중에 잠깐 끄고 싶을 때 그건 과하다. 여기서는 화면의 내 위치,
     /// 서버 전송, 존 판정만 멈추고 층 추적은 그대로 둔다.
     public func pause() {
-        guard isRunning, !isPaused else { return }
+        guard isRunning || startAfterStop, !isPaused else { return }
         isPaused = true
         latestPosition = nil            // 마지막 점을 살아 있는 것처럼 두지 않는다
         addLog(.info, SdkLocalized.text("uwb.paused"))
@@ -646,7 +681,6 @@ extension UwbPositioningProvider: PositioningProvider {
         wantsRunning = false
         guard isRunning else { return }
         isRunning = false
-        isPaused = false
         latestPosition = nil
         floorWatchTask?.cancel(); floorWatchTask = nil
         addLog(.info, SdkLocalized.format("uwb.positioningOff", measurementCount))
