@@ -205,6 +205,8 @@ try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 
 `setFloorMap` はロケーター・UWB セッション ID・ゾーンを取得してエンジンに注入します。
 実行中に再度呼び出すとフロアが切り替わり、セッションはそのまま維持されます。
+初回は `buildingId` を一緒に渡してください — 以降は省略すると直前の建物を使います。どちらも無い場合は
+`SdkError.buildingNotSet`（`E3001`）を投げ、現在のフロアはそのまま残ります。`setFloorMap(nil)` はフロアを解除します。
 
 ### エンジンが見つけたフロアに追従する
 
@@ -434,7 +436,7 @@ SDK は `refreshZones()` のたびにゾーンの集合が実際に変わった�
 | `E2002` | 測位非対応端末（UWB 無し、または Bluetooth 非対応） |
 | `E2003` | 測位権限が拒否された（または Info.plist キーが無い） |
 | `E2004` | Bluetooth がオフ |
-| `E3001` | フロア未指定 — `onDebugLog` のみ。サーバーには送らない（エンジンがフロアを探す通常経路） |
+| `E3001` | 建物なしで `setFloorMap(floor)` を呼んだ（`SdkError.buildingNotSet`）。フロアなしでの開始は通常経路のため送らない |
 | `E3002` | フロアにロケーターがない |
 | `E3003` | フロアに UWB セッションがない |
 | `E3004` | フロアにゾーンがない |

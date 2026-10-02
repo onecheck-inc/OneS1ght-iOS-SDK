@@ -207,6 +207,8 @@ try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 
 `setFloorMap` 은 로케이터·UWB 세션 ID·존을 받아 엔진에 주입합니다. 실행 중에 다시 호출하면
 층이 전환되고 세션은 유지됩니다.
+처음에는 `buildingId` 를 함께 넘기세요 — 그 뒤로는 생략하면 직전 건물을 씁니다. 둘 다 없으면
+`SdkError.buildingNotSet`(`E3001`)을 던지고 지금 층은 그대로 둡니다. `setFloorMap(nil)` 은 층을 비웁니다.
 
 ### 엔진이 찾은 층 따라가기
 
@@ -433,7 +435,7 @@ UI 가 있다면 유예를 그보다 길게 두세요.
 | `E2002` | 측위 미지원 기기 (UWB 없음 또는 Bluetooth 미지원) |
 | `E2003` | 측위 권한 거부 (또는 Info.plist 키 누락) |
 | `E2004` | Bluetooth 꺼짐 |
-| `E3001` | 층 미지정 — `onDebugLog` 에만 남고 서버로는 안 올라감 (엔진이 층을 찾는 정상 경로) |
+| `E3001` | 건물 없이 `setFloorMap(floor)` 호출 (`SdkError.buildingNotSet`). 층 없이 시작하는 것은 정상 경로라 올라가지 않음 |
 | `E3002` | 층에 로케이터 없음 |
 | `E3003` | 층에 UWB 세션 없음 |
 | `E3004` | 층에 존 없음 |

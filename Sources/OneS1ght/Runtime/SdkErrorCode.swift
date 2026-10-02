@@ -19,7 +19,7 @@
 //  ## 등급 기준 (0.1.19 재정의)
 //
 //  **글자(E/I)는 계열이고, 등급(level)은 알람 세기다. 둘은 별개 축이다.**
-//  `SdkError` 로 던져지는 다섯(E1001·E1003·E1004·E2001·E2002)은 앱 입장에서 "호출이
+//  `SdkError` 로 던져지는 여섯(E1001·E1003·E1004·E2001·E2002·E3001)은 앱 입장에서 "호출이
 //  진행되지 않았다"라 E 번호를 유지해야 한다 — 그렇다고 관리자에게 전부 ERROR 로
 //  보일 이유는 없다.
 //
@@ -82,10 +82,11 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
 
     // MARK: 3xxx — 공간·설정
 
-    /// 층이 정해지지 않은 채로 측위를 시작했다.
+    /// 층 미지정 — 지금은 `setFloorMap(floor)` 를 건물 문맥 없이 불렀을 때(`SdkError.buildingNotSet`)의 코드다
+    /// (2026-10-03~, 안드로이드와 같다).
     ///
-    /// ⚠️ **SDK 는 이 코드를 더 이상 내보내지 않는다**(0.1.24 다음 판) — 층 없이 시작하는 것이 정상 경로라
-    /// 시작할 때마다 콘솔 로그를 덮었다. 화면 로그에만 INFO 문구로 남는다. 옛 로그 해석을 위해 케이스는 둔다.
+    /// ⚠️ 층 없이 측위를 **시작**하는 것으로는 내보내지 않는다(0.2.0~) — 정상 경로라 시작할 때마다 콘솔 로그를
+    /// 덮었다. 그때는 화면 로그에만 INFO 문구로 남는다. 층을 끝내 못 찾으면 E3007.
     ///
     /// **WARN 이다(0.1.19~).** 예전에는 ERROR 였다 — 앱이 층을 고르던 시절에는 층 없이
     /// begin 하는 것이 곧 실수였기 때문이다. 지금은 엔진이 BLE 로 층을 스스로 찾으므로
@@ -280,6 +281,7 @@ public extension SdkError {
         case .positioningDisabled: return .positioningDisabled
         case .deviceNotSupported:  return .deviceNotSupported
         case .osVersionTooLow:     return .osVersionTooLow
+        case .buildingNotSet:      return .floorNotSet
         }
     }
 }
