@@ -101,6 +101,17 @@ final class EngineUnexpectedStopTests: XCTestCase {
         XCTAssertTrue(c.isRunning)
     }
 
+    /// 시작 **안에서** 동기로 접힌 엔진(라이선스 없음·위치 이미 거부)도 놓치지 않는다 — 세션을 닫는다.
+    func testSynchronousFailureDuringStartClosesSession() async throws {
+        provider.failNextStartSynchronously = false
+        let c = try await makeStarted()
+        await wait(0.2)
+
+        XCTAssertFalse(c.isRunning, "시작하자마자 접힌 엔진 위에 세션을 「측위 중」 으로 남기면 안 된다")
+        try await c.start(provider: provider)
+        XCTAssertTrue(c.isRunning, "닫은 뒤의 begin() 은 다시 떠야 한다")
+    }
+
     /// 코어가 끈 뒤에 온 알림은 무시한다 — 닫힌 세션을 다시 켜면 안 된다.
     func testStopNoticeAfterEndIsIgnored() async throws {
         let c = try await makeStarted()

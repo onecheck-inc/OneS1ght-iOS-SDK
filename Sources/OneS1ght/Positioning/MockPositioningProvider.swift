@@ -22,7 +22,17 @@ public final class MockPositioningProvider: PositioningProvider {
 
     /// start() 가 불린 횟수 — 코어가 엔진을 다시 켰는지 테스트가 본다.
     public private(set) var startCount = 0
-    public func start() { isRunning = true; startCount += 1 }
+    /// 다음 start() 를 그 자리에서 접는다 — 실제 엔진의 「라이선스 없음·위치 권한 이미 거부」 처럼 동기로.
+    public var failNextStartSynchronously: Bool? = nil   // nil = 정상, true/false = retryable 값으로 접힘
+    public func start() {
+        startCount += 1
+        if let retryable = failNextStartSynchronously {
+            failNextStartSynchronously = nil
+            delegate?.provider(self, didStopUnexpectedly: retryable, context: "mock sync")
+            return
+        }
+        isRunning = true
+    }
     public func stop() { isRunning = false }
 
     /// 엔진이 스스로 꺼졌다(시작이 접혔거나 엔진 오류) — 실제 엔진이 하는 것처럼 꺼진 뒤 코어에 알린다.

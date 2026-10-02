@@ -444,8 +444,12 @@ final class SessionCoordinator {
         lastRecordedAt = nil
         report(.positioningOn, "visitor=\(visitorId)")
         provider.delegate = self
-        provider.start()
+        // ⚠️ isRunning 을 **먼저** 세운다. 엔진은 시작 안에서 동기로 접힐 수 있다(라이선스 없음·위치 권한이
+        //    이미 거부됨) — 그 알림(didStopUnexpectedly)이 isRunning=false 일 때 오면 무시돼, 세션은
+        //    「측위 중」 인 채 엔진만 죽은 상태로 남았다.
         isRunning = true
+        provider.start()
+        guard isRunning else { return }   // 시작 안에서 이미 닫혔다(재시도 불가) — 타이머를 걸지 않는다
         startFlushTimer()
         startReceptionCheck()
         ensureLiveStream()
@@ -809,7 +813,9 @@ extension SessionCoordinator: PositioningProviderDelegate {
         engineRestartTask?.cancel(); engineRestartTask = nil
         let attempt = engineRestartAttempts
         guard retryable, attempt < engineRestartDelays.count else {
-            report(.uwbSessionFailed, "engine stopped, session closed — \(context)")
+            // 사람이 풀어야 하는 원인(권한·Bluetooth·라이선스)은 엔진이 이미 제 코드(E2003·E2004 등)로
+            // 올렸다 — E4001(ERROR)을 덧붙이면 같은 일이 「고장」 으로 두 번 찍힌다. 재시도를 다 쓴 것만 올린다.
+            if retryable { report(.uwbSessionFailed, "engine stopped, session closed — \(context)") }
             log(.warn, SdkLocalized.format("coord.engineGaveUp", context))
             Task { await self.stop() }
             return
