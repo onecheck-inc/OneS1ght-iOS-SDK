@@ -49,7 +49,7 @@ final class DTOsTests: XCTestCase {
     }
 
     func testEncodeReqVerify_omitsNilFields() throws {
-        // nil 필드는 JSON 에서 빠져야 한다 (보낸 필드만 갱신 규칙). client 블록은 0.1.25 에서 없앴다.
+        // nil 필드는 JSON 에서 빠져야 한다 (보낸 필드만 갱신 규칙). client 블록은 0.1.24 다음 판에서 없앴다.
         let req = ReqVerify(platform_name: "iOS", app_id: nil)
         let obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(req)) as! [String: Any]
         XCTAssertEqual(obj.count, 1)                              // platform_name 하나만

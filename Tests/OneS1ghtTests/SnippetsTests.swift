@@ -86,7 +86,12 @@ final class SnippetsTests: XCTestCase {
                         "positioningAvailability", "anonUserId", "onZoneEvent",
                         "onesight-sdk",
                         // 고객은 SDK 키 하나만 넣는다 — 나머지는 콘솔이 정본이라 인자가 없다.
-                        "geoSdkKey", "geoPartnerKey", "geoBaseUrl"] {
+                        "geoSdkKey", "geoPartnerKey", "geoBaseUrl",
+                        // 이름을 정리한 옛 API — deprecated 로 남았지만 스니펫이 새로 안내할 이름은 아니다(감사 K13).
+                        "permissions()", "getProfile(", "putProfile(", "OneS1ght.send()",
+                        "OneS1ght.empty()", "buildingID:", "trigger_id",
+                        // 앱이 위치 권한을 직접 요청하라던 옛 안내 — SDK 가 begin() 에서 요청한다(감사 S25).
+                        "requestWhenInUseAuthorization"] {
             XCTAssertFalse(code.contains(retired), "스니펫에 사라진 이름이 남아 있다: \(retired)")
         }
     }
@@ -132,6 +137,15 @@ final class SnippetsTests: XCTestCase {
         for (pattern, why) in patterns {
             XCTAssertFalse(code.contains(pattern),
                            "스니펫에 컴파일되지 않는 패턴이 있다: \(pattern) — \(why)")
+        }
+    }
+
+    /// `floorSession()` 은 던진다 — 그 줄에 try 가 없으면 컴파일되지 않는다.
+    /// 종료 단계가 `await OneS1ght.floorSession().end()` 로 실려 있었다(2026-10-02 감사 S25).
+    func testFloorSessionCallsCarryTry() throws {
+        for line in try allCode.split(separator: "\n") where line.contains("OneS1ght.floorSession()") {
+            let code = line.components(separatedBy: "//")[0]
+            XCTAssertTrue(code.contains("try"), "try 가 빠진 floorSession() 호출: \(line)")
         }
     }
 

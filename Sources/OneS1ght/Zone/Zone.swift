@@ -4,7 +4,7 @@
 //
 //  판정은 측위 엔진이 자기 지오펜스로 한다(UwbAreaJudge 헤더). 여기 타입은 지도 표시·zone_id 매핑·
 //  앱 콜백용이다. 예전의 자체 판정기(ZoneEngine·ZoneJudging·ZoneJudge)는 엔진 도입 뒤 아무도 쓰지
-//  않아 0.1.25 에서 지웠다(2026-10-02 감사 K4·K8).
+//  않아 0.1.24 다음 판에서 지웠다(2026-10-02 감사 K4·K8).
 //
 
 import Foundation

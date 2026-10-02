@@ -33,7 +33,7 @@
 
 **이름 바꿈(옛 이름은 deprecated — 경고만, Xcode Fix-it 이 바꿔 줌)**
 
-| 0.1.24 | 0.1.25 |
+| 0.1.24 | 이번 판 |
 |---|---|
 | `OneS1ght.building(_:)` | `OneS1ght.building(id:)` |
 | `OneS1ght.floors(_:)` | `OneS1ght.floors(buildingId:)` |
@@ -124,6 +124,18 @@
 - `PositioningProviderDelegate.provider(_:didStopUnexpectedly:context:)` — 커스텀 provider 가 엔진이
   스스로 꺼졌음을 코어에 알리는 자리(선택 채택, 기본 no-op).
 - `Zone` 이 `Equatable` 입니다.
+
+### 문서
+
+- **SDK enum 을 `switch` 할 때 `@unknown default` 를 두라고 명시했습니다**(README 3개 언어 · 스니펫).
+  `ConfigChange`·`SdkErrorCode`·`ZoneEvent`·`FloorSession.StopReason`·`PermissionStatus`·
+  `OneS1ght.DeviceAvailability`·`LogLevel` 은 마이너 판에서 케이스가 늘 수 있습니다 — 없으면 빠짐없는 `switch`
+  가 그때 컴파일 오류가 됩니다. (enum 을 `@frozen` 으로 묶지는 않습니다.)
+- README·스니펫의 틀린 안내를 고쳤습니다: 종료 예제의 `try` 누락(컴파일 안 됨), 앱이 위치 권한을 직접
+  요청하라던 Step 3(SDK 가 `begin()` 에서 요청합니다), 코드표에 없던 `E1007`·`E3006`~`E3009`·`E4004`,
+  "`dwellSeconds` 가 nil 이면 5초"(nil 이면 체류 이벤트가 없습니다), "실시간 신호는 측위 중에만"(층을
+  정했거나 측위 중일 때 붙어 있습니다). README 영문판의 `onFloorDetected` 가 이제 실제로 컴파일됩니다.
+- 한국어·일본어 README 에 일시정지·층 따라가기·구역 판정 위치 절을 영문판과 맞췄습니다.
 
 ## [0.1.24] — 2026-09-28
 

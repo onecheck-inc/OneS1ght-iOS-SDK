@@ -121,29 +121,26 @@ throw 하지 않고 `initialize` 전에도 호출할 수 있어, 네트워크를
 
 ## Step 3: 권한
 
-### 위치 권한 — 측위의 전제 조건
+### 위치 권한 — SDK 가 묻습니다
 
-위치 권한을 먼저 받으세요. 이것이 없으면 UWB 세션이 시작되지 않습니다.
+UWB 세션에는 위치 권한(그리고 정밀 위치)이 필요합니다. **`begin()` 이 엔진을 켤 때 SDK 가 둘 다 직접
+요청합니다** — 앱에서 `CLLocationManager` 를 부를 필요가 없습니다. 앱이 할 일은 Step 1 의 Info.plist 키 네 개를
+넣는 것뿐입니다.
 
-```swift
-import CoreLocation
+⚠️ `NSLocationWhenInUseUsageDescription` 이 없으면 iOS 는 요청을 답 없이 무시합니다. SDK 는 그 키를 먼저 확인해,
+없으면 영영 기다리지 않고 시작을 접으며 `E2003`(`Info.plist missing …`)을 남깁니다.
 
-let locationManager = CLLocationManager()
-locationManager.requestWhenInUseAuthorization()
-```
-
-⚠️ **사용자가 응답한 뒤에 측위를 시작하세요.** 위치 권한은 UWB 세션의 전제 조건이라,
-응답 전에 `begin()` 을 부르면 세션이 `INVALID_CONFIGURATION` 으로 실패합니다.
-`CLLocationManagerDelegate` 의 `locationManagerDidChangeAuthorization` 으로 허용 상태를
-확인한 뒤 시작하세요.
+사용자가 위치를 거부하면 측위가 시작되지 않습니다 — `E2003` 이 남고, 세션이 닫히며 `onStopped` 가
+`.engineFailed` 로 옵니다(Step 6). 설정 앱으로 안내한 뒤 `begin()` 을 다시 부르세요.
 
 ### Nearby Interaction 권한
 
 ```swift
-switch await OneS1ght.permissions() {
+switch await OneS1ght.requestPermission() {
 case .authorized:  break
 case .denied:      showSettingsGuide()      // 재요청 불가 — 설정 앱으로 안내
 case .unsupported: showUnsupportedNotice()
+@unknown default:  break
 }
 ```
 
@@ -181,7 +178,7 @@ OneS1ght.identify(profileId: profileId)
 ```
 
 고객사 회원 ID는 OneS1ght에 오지 않습니다. `profileId` 만 오고, 그 매핑은 고객사만
-보관합니다.
+보관합니다. `identify` 는 `initialize` 앞에 불러도, 뒤에 불러도 됩니다.
 
 ⚠️ 나이는 **연령대**로 넣기를 권합니다. 성별 + 정확한 나이 + 관심사 + 동선이 조합되면
 재식별 가능성이 생깁니다.
@@ -189,35 +186,51 @@ OneS1ght.identify(profileId: profileId)
 | 함수 | 용도 |
 |---|---|
 | `createProfile(_:)` | 생성 — `profileId` 반환 |
-| `getProfile(_:)` | 조회 |
-| `putProfile(_:_:)` | 속성 전체 교체 |
+| `fetchProfile(_:)` | 속성 조회 |
+| `replaceProfile(_:attributes:)` | 속성 **전체** 교체 — 넘기지 않은 속성은 지워집니다 |
 | `deleteProfile(_:)` | 삭제 |
 | `identify(profileId:)` | 연결 — 측위 전에 필수 |
 
 ---
 
-## Step 5: 공간 선택
+## Step 5: 공간 선택 (선택)
+
+건너뛰어도 됩니다. 갱신된 로케이터는 BLE 로 자기 층을 알리므로, 엔진이 `begin()` 뒤 1~2초 안에 층을
+스스로 찾습니다. 사람이 층을 골라야 하거나, 측위 전에 지도를 먼저 그리고 싶을 때만 직접 고르세요.
 
 ```swift
 let buildings = try await OneS1ght.buildings()
-let floors    = try await OneS1ght.floors(buildings[0].id)
+let floors    = try await OneS1ght.floors(buildingId: buildings[0].id)
 
-try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
+try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 ```
 
 `setFloorMap` 은 로케이터·UWB 세션 ID·존을 받아 엔진에 주입합니다. 실행 중에 다시 호출하면
 층이 전환되고 세션은 유지됩니다.
 
+### 엔진이 찾은 층 따라가기
+
+```swift
+let session = try OneS1ght.floorSession()
+session.onFloorDetected = { floorId in
+    guard let floorId else { return }              // nil = 층을 잃음
+    // floorId 는 Floor.id 와 같은 값이다 — 그 층을 그리거나 setFloorMap 하면 된다.
+}
+```
+
+⚠️ 층을 바꾸려고 측위를 끄지 **마세요.** 실행 중 `setFloorMap` 은 안전하고 세션을 유지합니다 —
+끄면 엔진이 로케이터를 처음부터 다시 찾습니다.
+
 ### 지도 그리기
 
 ```swift
-let floor = try await OneS1ght.floor(buildings[0].id, floors[0].id)
+let floor = try await OneS1ght.floor(buildingId: buildings[0].id, floorId: floors[0].id)
 mapView.setBackground(floor.image,
                       bounds: (floor.minX, floor.minY, floor.maxX, floor.maxY))
 ```
 
-⚠️ `floors(_:)` 는 목록을 가볍게 유지하려고 `image == nil` 로 돌려줍니다. 그릴 층만 단건으로
-받으면 캐시에서 나오므로 추가 요청이 발생하지 않습니다.
+⚠️ `floors(buildingId:)` 는 목록을 가볍게 유지하려고 `image == nil` 로 돌려줍니다. 그릴 층만 단건으로
+받으세요. 도면은 캐시해 두었다가 콘솔이 도면을 바꾸면(`.planChanged`) 버립니다.
 
 **예상 로그**
 
@@ -243,6 +256,13 @@ session.onZoneExit  = { zone in hideCoupon(zone) }
 session.onZoneDwell = { zone, seconds in … }
 session.onPosition  = { coord in mapView.moveMarker(coord) }
 session.onTriggers  = { zoneId, triggers in handle(triggers) }
+session.onStopped   = { reason in
+    switch reason {
+    case .ended:        break
+    case .engineFailed: showRetry()   // 원인(권한·Bluetooth)을 풀고 begin() 을 다시 부른다
+    @unknown default:   break
+    }
+}
 
 try await session.begin()
 …
@@ -251,6 +271,49 @@ await session.end()
 
 `floorSession()` 은 항상 같은 인스턴스를 돌려줍니다 — UWB 라디오·판정 엔진·좌표 버퍼가
 기기당 하나뿐이라 세션이 여럿이면 물리적으로 충돌합니다.
+
+엔진이 스스로 꺼지면 SDK 가 다시 켭니다(3·10·30초 뒤, 앱이 화면에 있을 때만). 그래도 안 되거나 사람이 풀어야
+하는 원인(위치 권한·Bluetooth·라이선스)이면 SDK 가 **세션을 닫습니다** — `isRunning` 이 `false` 가 되고
+`onStopped(.engineFailed)` 가 오므로 `begin()` 이 다시 먹습니다.
+
+`onZoneDwell` 은 존의 `dwellSeconds` 가 지나면 방문당 한 번 옵니다. `dwellSeconds` 가 없는 존은 진입·이탈만
+옵니다.
+
+### 일시정지는 종료가 아닙니다
+
+```swift
+session.pause()      // 표시·수집만 멈춘다 — 엔진은 계속 돈다
+session.resume()
+session.isPaused
+```
+
+| | `pause()` | `end()` |
+|---|---|---|
+| 좌표 콜백 | 멈춤 | 멈춤 |
+| 존 진입·이탈 | 멈춤 | 멈춤 |
+| 서버 전송 | 멈춤 | 잔여 전송 후 멈춤 |
+| 엔진 · 층 · 로케이터 | **유지** | 해제 |
+| 돌아오는 비용 | 즉시 | 로케이터를 처음부터 찾음 |
+
+"잠깐 내 위치를 숨긴다" 는 `pause()` 입니다. `end()` 는 공간을 떠날 때 씁니다. 일시정지는 백그라운드에
+다녀와도 유지되고, `resume()`·`end()`·`begin()` 에서만 풀립니다. 재개하면 판정 상태를 비우므로, 멈춘 동안
+걸어 나온 존의 늦은 이탈 이벤트는 오지 않습니다.
+
+### 콘솔 변경 수신
+
+```swift
+session.onConfigChanged = { change in
+    switch change {
+    case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }
+    case .planChanged:                 reloadPlan()
+    case .rulesChanged, .sdkConfigChanged: break
+    @unknown default:                  break
+    }
+}
+```
+
+실시간 연결은 **층을 정했거나 측위가 도는 동안** 붙어 있습니다. 연달아 오면 1초쯤 접은 뒤 새로고침하세요 —
+구역을 다시 받을 때마다 판정이 처음부터 시작됩니다.
 
 **예상 로그**
 
@@ -266,20 +329,41 @@ await session.end()
 
 | 구분 | API |
 |---|---|
-| 초기화 | `initialize(sdkKey:)` · `permissions()` · `reset()` |
-| 프로필 | `createProfile(_:)` · `getProfile(_:)` · `putProfile(_:_:)` · `deleteProfile(_:)` · `identify(profileId:)` |
-| 공간 조회 | `buildings()` · `building(_:)` · `floors(_:)` · `floor(_:_:)` · `zones(_:_:)` · `zone(_:_:_:)` · `locators(_:_:)` |
-| 층 지정 | `setFloorMap(_:buildingID:)` · `refreshZones()` |
-| 측위 | `floorSession()` → `begin()` · `end()` |
-| 세션 콜백 | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` |
-| 버퍼 | `send()`(전송) · `empty()`(폐기) |
+| 초기화 | `initialize(sdkKey:baseURL:)` · `requestPermission()` · `reset()` · `defaultBaseURL` |
+| 프로필 | `createProfile(_:)` · `fetchProfile(_:)` · `replaceProfile(_:attributes:)` · `deleteProfile(_:)` · `identify(profileId:)` |
+| 공간 조회 | `buildings()` · `building(id:)` · `floors(buildingId:)` · `floor(buildingId:floorId:)` · `zones(buildingId:floorId:)` · `zone(buildingId:floorId:zoneId:)` · `locators(buildingId:floorId:)` |
+| 층 지정 | `setFloorMap(_:buildingId:)` · `refreshZones()` |
+| 측위 | `floorSession()` → `begin()` · `end()` · `pause()` · `resume()` · `isPaused` · `isRunning` |
+| 세션 콜백 | `onZoneEnter` · `onZoneExit` · `onZoneDwell` · `onPosition` · `onTriggers` · `onFloorDetected` · `onStopped` · `onConfigChanged` |
+| 버퍼 | `uploadPendingPositions()` · `discardPendingPositions()` |
 | 조회 | `isInitialized` · `isDeviceAvailable` · `deviceAvailability` · `onDebugLog` · `setLanguage(_:)` · `sdkVersion` |
 | 콘솔 제공 값 | `googleMapKey` |
 
-⚠️ `empty()` 는 쌓인 좌표를 **전송하지 않고 버립니다.** 전송은 `send()` 입니다.
+⚠️ `discardPendingPositions()` 는 쌓인 좌표를 **전송하지 않고 버립니다.** 전송은 `uploadPendingPositions()` 입니다.
 
 ⚠️ 앱이 직접 쓰는 콘솔 값은 `googleMapKey` 하나입니다. 측위 라이선스·공간 서비스 주소는
 SDK 가 내부에서만 쓰므로 밖으로 내주지 않습니다 — 앱이 알 필요도, 다룰 이유도 없습니다.
+
+0.1.24 이후 바뀐 옛 이름(`floor(_:_:)`·`permissions()`·`send()`·`empty()`·`getProfile`·`putProfile`·
+`setFloorMap(_:buildingID:)`·`Trigger.trigger_id` …)은 deprecated 경고만 내고 그대로 컴파일됩니다 —
+[CHANGELOG](CHANGELOG.md) 참고.
+
+### SDK enum 을 switch 할 때
+
+SDK enum 은 마이너 판에서 케이스가 늘 수 있습니다. `ConfigChange`·`SdkErrorCode`·`ZoneEvent`·
+`FloorSession.StopReason`·`PermissionStatus`·`OneS1ght.DeviceAvailability`·`LogLevel` 을 switch 할 때는
+`@unknown default` 를 두세요 — 새 케이스가 빌드를 깨지 않습니다.
+
+```swift
+switch change {                 // ConfigChange
+case .zonesChanged, .resyncNeeded: Task { await OneS1ght.refreshZones() }
+case .planChanged:                 reloadPlan()
+case .rulesChanged, .sdkConfigChanged: break
+@unknown default:                  break    // 나중에 늘어난 케이스는 빌드를 깨지 않고 여기로 온다
+}
+```
+
+없으면 빠짐없는 `switch` 가 새 케이스에서 컴파일 오류가 됩니다.
 
 ---
 
@@ -297,12 +381,22 @@ initialize ─→ begin ─→ [UWB 좌표] ─┬─→ onPosition            (
 `onZoneEnter` 는 온디바이스 판정 즉시 발화합니다. `onTriggers` 는 서버 응답 후에
 도착하므로, 네트워크가 끊기면 앞의 것만 오고 뒤는 오지 않습니다.
 
+### 구역 판정은 어디서 하나
+
+측위 엔진은 시작할 때 공간 서비스에서 받은 **자기 지오펜스**로 진입·이탈을 판정합니다.
+`zones(buildingId:floorId:)` 로 받는 구역은 이름·ID 매핑용이라, 콘솔에서 판정 파라미터를 바꿔도 판정은
+바뀌지 않습니다.
+
+SDK 는 `refreshZones()` 때 구역 집합이 실제로 바뀌었는지(추가·삭제·다시 그림) 보고 바뀌었을 때만 엔진을
+다시 읽힙니다. 엔진이 재시작되므로 **좌표가 1초 남짓 끊깁니다.** 그 간극을 「신호 끊김」으로 처리하는
+UI 가 있다면 유예를 그보다 길게 두세요.
+
 ### 배치 정책
 
 | 트리거 | 값 |
 |---|---|
-| 건수 | 300건 |
-| 주기 | 60초 |
+| 건수 | 300건 (버퍼가 닿는 순간) |
+| 주기 | 60초 (실패한 전송도 이때 다시 보냄) |
 | 백그라운드 전환 | 측위 정지 + 잔여 전송 |
 | `end()` | 잔여 전송 |
 
@@ -320,9 +414,11 @@ initialize ─→ begin ─→ [UWB 좌표] ─┬─→ onPosition            (
 | 증상 | 코드 | 첫 확인 |
 |---|---|---|
 | 앱은 도는데 좌표가 안 나온다 | `E3007` · `E3003` · `E4002` | 층 탐지(BLE) → UWB 세션 → 로케이터 배치 |
-| 존 이벤트가 안 뜬다 | `E3004` | 콘솔에 존이 등록됐는지 |
+| 공간 목록이 비고 `floor()` 가 `notInitialized` | `E1007` | 콘솔의 측위 키 설정, `/config` 도달 여부 |
+| 존 이벤트가 안 뜬다 | `E3004` · `E3009` | 콘솔에 존이 있는지, 존 이름이 엔진 영역과 같은지 |
+| 데이터가 엉뚱한 층에 쌓인다 | `E3008` | 엔진 층과 콘솔 층이 다름 |
 | 특정 기기에서만 안 된다 | `E2001` · `E2002` | iOS 27 / iPhone 12 이상인지 |
-| 권한 팝업이 다시 안 뜬다 | `E2003` | 이미 거부됨 — 설정 앱 유도 |
+| `begin()` 직후 측위가 닫힌다 | `E2003` · `E2004` | 위치·Bluetooth 권한, Bluetooth 켜짐, Info.plist 키 |
 | 연동 직후 401 | `E1002` | 키 상태·환경(production/development) |
 | 콘솔에 데이터가 안 보인다 | `E5001` · `E5006` | 네트워크 → 배치 주기 |
 
@@ -332,17 +428,23 @@ initialize ─→ begin ─→ [UWB 좌표] ─┬─→ onPosition            (
 | `E1002` | SDK 키 무효 또는 폐기 |
 | `E1003` | 테넌트에서 측위 비활성 |
 | `E1004` | 프로필 미연결 |
+| `E1007` | 측위 키를 못 구함 (콘솔에 없거나 조회 실패) |
 | `E2001` | iOS 버전 미달 |
 | `E2002` | UWB 미지원 기기 |
-| `E2003` | 측위 권한 거부 |
+| `E2003` | 측위 권한 거부 (또는 Info.plist 키 누락) |
 | `E2004` | Bluetooth 꺼짐 |
-| `E3001` | 층 미지정 |
+| `E3001` | 층 미지정 — `onDebugLog` 에만 남고 서버로는 안 올라감 (엔진이 층을 찾는 정상 경로) |
 | `E3002` | 층에 로케이터 없음 |
 | `E3003` | 층에 UWB 세션 없음 |
 | `E3004` | 층에 존 없음 |
-| `E4001` | UWB 세션 실패 |
+| `E3006` | 로케이터 조회 실패 — 지도는 그대로 열림 |
+| `E3007` | 층 미탐지 (BLE) |
+| `E3008` | 엔진 층과 콘솔 층 불일치 |
+| `E3009` | 엔진 영역 이름에 맞는 콘솔 존 없음 |
+| `E4001` | UWB 세션 실패 / 엔진 정지 |
 | `E4002` | 좌표 미산출 |
 | `E4003` | 로케이터 일부 미수신 — **WARN, 측위는 계속됩니다** |
+| `E4004` | 영역 판정 실패 (그 회차만) |
 | `E5001` | 네트워크 실패 |
 | `E5002` | 서버 오류 |
 | `E5003` | 요청 형식 불일치 |
