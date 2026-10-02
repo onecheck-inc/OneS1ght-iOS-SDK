@@ -22,9 +22,11 @@ final class UwbAreaJudgeTests: XCTestCase {
     }
 
     /// 이벤트·코드·로그를 모아 두는 관찰자. 테스트마다 새로 만든다.
+    /// 체류 시간은 100배 빠르게 흐른다 — 1초 체류 = 10ms.
     private func makeJudge() -> (UwbAreaJudge, Observed) {
         let o = Observed()
         let j = UwbAreaJudge()
+        j.sleep = { try await Task.sleep(nanoseconds: UInt64($0 * 10_000_000)) }
         j.onEvent = { o.events.append($0) }
         j.onReport = { code, ctx in o.reports.append((code, ctx)) }
         j.onLog = { level, msg in o.logs.append((level, msg)) }
@@ -130,13 +132,29 @@ final class UwbAreaJudgeTests: XCTestCase {
 
     // MARK: - DWELL 파생
 
+    private func dwells(_ o: Observed) -> [TimeInterval] {
+        o.events.compactMap { if case .dwell(_, let s, _) = $0 { return s }; return nil }
+    }
+
+    /// **체류가 실제로 나온다** — 아래 "안 나온다" 테스트들은 이게 없으면 아무것도 지키지 못한다(감사 K6).
+    func testDwellFiresOnceAfterConfiguredSeconds() async throws {
+        let (j, o) = makeJudge()
+        j.apply(zones: [zone("zn_7", "정육 코너", dwell: 3)])
+        j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
+
+        await waitUntil { !self.dwells(o).isEmpty }
+        XCTAssertEqual(dwells(o), [3])
+        await settle(0.1)                                   // 체류 10배 시간 — 반복 발화 없음
+        XCTAssertEqual(dwells(o), [3], "체류는 방문당 한 번이다")
+    }
+
     /// dwell_seconds 가 없는 존은 체류 이벤트를 만들지 않는다.
     func testNoDwellWhenNotConfigured() async throws {
         let (j, o) = makeJudge()
         j.apply(zones: [zone("zn_7", "정육 코너")])          // dwell 미설정
 
         j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
-        try await Task.sleep(nanoseconds: 150_000_000)
+        await settle(0.1)
 
         XCTAssertFalse(o.events.contains { if case .dwell = $0 { return true }; return false },
                        "\(o.events)")
@@ -150,7 +168,7 @@ final class UwbAreaJudgeTests: XCTestCase {
         j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
 
         j.apply(zones: [])                                  // 층 전환 · 존 전부 삭제
-        try await Task.sleep(nanoseconds: 150_000_000)
+        await settle(0.1)                                   // 체류(10ms)의 10배를 기다린다
 
         XCTAssertFalse(o.events.contains { if case .dwell = $0 { return true }; return false },
                        "존이 사라졌는데 체류가 발화했다: \(o.events)")
@@ -163,7 +181,7 @@ final class UwbAreaJudgeTests: XCTestCase {
 
         j.handleAreaEvent(inOut: "IN", areaName: "정육 코너")
         j.handleAreaEvent(inOut: "OUT", areaName: "정육 코너")
-        try await Task.sleep(nanoseconds: 150_000_000)
+        await settle(0.1)                                   // 체류(10ms)의 10배를 기다린다
 
         XCTAssertFalse(o.events.contains { if case .dwell = $0 { return true }; return false },
                        "\(o.events)")

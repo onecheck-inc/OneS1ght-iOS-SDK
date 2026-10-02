@@ -6,10 +6,7 @@ import XCTest
 final class SessionCoordinatorLiveTests: XCTestCase {
 
     private func makeCoordinator(suite: String) -> SessionCoordinator {
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        let identity = IdentityStore(defaults: defaults)
-        return SessionCoordinator(api: ApiClient(apiKey: "ock_test"), identity: identity)
+        Fixture.coordinator(suite: suite)
     }
 
     func testConfigChangeIsForwardedUntouched() {
@@ -17,9 +14,9 @@ final class SessionCoordinatorLiveTests: XCTestCase {
         var got: [ConfigChange] = []
         coord.onConfigChange = { got.append($0) }
 
-        coord.deliverConfigChangeForTest(.zonesChanged(floorId: "f-1"))
-        coord.deliverConfigChangeForTest(.resyncNeeded)
-        coord.deliverConfigChangeForTest(.rulesChanged(zoneId: "88"))
+        coord.deliverConfigChange(.zonesChanged(floorId: "f-1"))
+        coord.deliverConfigChange(.resyncNeeded)
+        coord.deliverConfigChange(.rulesChanged(zoneId: "88"))
 
         XCTAssertEqual(got, [.zonesChanged(floorId: "f-1"),
                              .resyncNeeded,
@@ -28,13 +25,9 @@ final class SessionCoordinatorLiveTests: XCTestCase {
 
     // MARK: - 층 전환 시 스트림 재구독 판정
     //
-    // 네트워크 재현(실제로 새 필터로 구독됐는지)은 이 유닛 테스트 범위 밖이다 —
-    // LiveConfigStream 은 .shared 세션을 직접 쓰고 프로토콜 경계가 없어, 가로채려면
-    // LiveConfigStream.swift 를 건드리거나 테스트에서 실제 네트워크를 타야 한다.
-    // 둘 다 이번 라운드에서는 하지 않는다(전자는 별도 라운드가 그 파일을 다루는 중이고,
-    // 후자는 실네트워크에 의존하는 깨지기 쉬운 테스트가 된다).
-    //
-    // 대신 재구독 여부를 결정하는 순수 판정(floorFilterChangedForTest)을 검증한다 —
+    // 코디네이터는 주입받은 세션을 LiveConfigStream 에 물려준다(감사 K11 — 예전엔 안 물려줘 테스트가
+    // 실제로 stub.test 에 SSE 연결을 시도했고 iOS 테스트 로그에 -1003 이 찍혔다). 그래도 여기서는
+    // 재구독 여부를 결정하는 순수 판정(floorFilterChanged)을 검증한다 —
     // 이게 실제로 스트림을 다시 붙일지 말지를 가르는 유일한 조건이라, 여기가 틀리면
     // 리포트에 적힌 버그(층 전환 후 필터가 옛 층에 머무름)가 그대로 재발한다.
 
@@ -45,27 +38,27 @@ final class SessionCoordinatorLiveTests: XCTestCase {
 
     func testFloorFilterUnchangedWhenNothingSet() {
         let coord = makeCoordinator(suite: "SessionCoordinatorLiveTests.unchanged-nil")
-        XCTAssertFalse(coord.floorFilterChangedForTest(from: nil, to: nil))
+        XCTAssertFalse(coord.floorFilterChanged(from: nil, to: nil))
     }
 
     func testFloorFilterChangesFromNilToFloor() {
         let coord = makeCoordinator(suite: "SessionCoordinatorLiveTests.nil-to-floor")
         let a = floorState(building: "B1", floor: "F1")
-        XCTAssertTrue(coord.floorFilterChangedForTest(from: nil, to: a))
+        XCTAssertTrue(coord.floorFilterChanged(from: nil, to: a))
     }
 
     func testFloorFilterChangesFromFloorToNil() {
         // setFloorMap(nil, ...) — 층을 비우는 것도 "바뀜"이다(테넌트 전체 필터로 계속 받아야 한다).
         let coord = makeCoordinator(suite: "SessionCoordinatorLiveTests.floor-to-nil")
         let a = floorState(building: "B1", floor: "F1")
-        XCTAssertTrue(coord.floorFilterChangedForTest(from: a, to: nil))
+        XCTAssertTrue(coord.floorFilterChanged(from: a, to: nil))
     }
 
     func testFloorFilterChangesBetweenTwoDifferentFloors() {
         let coord = makeCoordinator(suite: "SessionCoordinatorLiveTests.floor-to-floor")
         let a = floorState(building: "B1", floor: "F1")
         let b = floorState(building: "B1", floor: "F2")
-        XCTAssertTrue(coord.floorFilterChangedForTest(from: a, to: b))
+        XCTAssertTrue(coord.floorFilterChanged(from: a, to: b))
     }
 
     func testFloorFilterUnchangedWhenSameFloorReset() {
@@ -74,7 +67,7 @@ final class SessionCoordinatorLiveTests: XCTestCase {
         let coord = makeCoordinator(suite: "SessionCoordinatorLiveTests.same-floor")
         let a = floorState(building: "B1", floor: "F1", sessionId: nil)
         let a2 = floorState(building: "B1", floor: "F1", sessionId: 42)
-        XCTAssertFalse(coord.floorFilterChangedForTest(from: a, to: a2))
+        XCTAssertFalse(coord.floorFilterChanged(from: a, to: a2))
     }
 }
 
@@ -91,16 +84,16 @@ final class SessionCoordinatorStreamLifetimeTests: XCTestCase {
 
     /// 이번 수정의 핵심 — 측위를 시작하지 않아도 층만 정해지면 붙는다.
     func testStreamWantedWhenFloorSetWithoutSession() {
-        XCTAssertTrue(SessionCoordinator.streamWantedForTest(floorSet: true, running: false))
+        XCTAssertTrue(SessionCoordinator.streamWanted(floorSet: true, running: false))
     }
 
     /// 종전 동작도 그대로 — 층이 아직 없어도 측위가 돌면 붙는다(상위집합이라 회귀가 없다).
     func testStreamWantedWhileRunningWithoutFloor() {
-        XCTAssertTrue(SessionCoordinator.streamWantedForTest(floorSet: false, running: true))
+        XCTAssertTrue(SessionCoordinator.streamWanted(floorSet: false, running: true))
     }
 
     /// 둘 다 아니면 붙이지 않는다 — 앱만 켜 둔 기기까지 연결을 잡지는 않는다.
     func testStreamNotWantedWhenIdle() {
-        XCTAssertFalse(SessionCoordinator.streamWantedForTest(floorSet: false, running: false))
+        XCTAssertFalse(SessionCoordinator.streamWanted(floorSet: false, running: false))
     }
 }

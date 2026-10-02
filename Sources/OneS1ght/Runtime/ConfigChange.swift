@@ -9,6 +9,8 @@
 import Foundation
 
 /// 콘솔 변경 알림 — `FloorSession.onConfigChanged` 로 전달된다.
+///
+/// ⚠️ 서버가 이벤트 종류를 늘리면 케이스가 는다 — `switch` 에는 `@unknown default` 를 둘 것.
 public enum ConfigChange: Equatable {
     /// 구역이 생기거나 바뀌거나 사라졌다.
     case zonesChanged(floorId: String?)

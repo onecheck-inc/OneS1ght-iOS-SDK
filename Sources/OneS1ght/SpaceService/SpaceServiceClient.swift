@@ -4,15 +4,14 @@
 //
 //  ⚠️ SDK 내부 전용 — 호스트 앱은 이 타입을 모른다.
 //     고객사는 initialize(sdkKey:) 로 SDK 키 하나만 넘긴다 — 공간 서비스 모바일 키는 콘솔이
-//     정본이라 SDK 가 /config 로 받아 온다(geoSdkKey 인자는 콘솔이 답하지 못할 때의 폴백으로만
-//     남은 deprecated 인자). 앵커·세션·도면·존이 어디서 오는지는 SDK 사정으로 감춘다.
+//     정본이라 SDK 가 /config 로 받아 온다(앱이 넘기는 인자는 없다). 앵커·세션·도면·존이 어디서
+//     오는지는 SDK 사정으로 감춘다.
 //
-//  공간 서비스 연동 — 한 호스트, 두 키.
-//  · /api/m/floors/{id}/plan       (gsk_, X-SDK-Key)    → 도면 이미지(base64) + widthM + origin
-//  · /api/m/floors/{id}/anchors    (gsk_, X-SDK-Key)    → 앵커(도면 로컬 미터 0~13)
-//  · 존은 콘솔(ock_)에서 — 파트너 키(gpk_)는 존 쓰기 권한이 있어 클라이언트 배포 금지
-//  모든 좌표가 0~13 프레임(origin 0,0)이라 변환(÷57.7·Y플립) 불필요.
-//  (console /positioning/floors 는 HTML 회귀로 사용 불가 → 파트너 zones 로 대체.)
+//  두 곳에서 받는다.
+//  · 콘솔(ock_, initialize 의 baseURL) — 건물·층 목록, 도면 프록시(§6.4b), 존(§6.4)
+//  · 공간 서비스(gsk_)                  — 앵커(콘솔 미제공), 그리고 콘솔이 실패했을 때의 건물·도면 폴백
+//  · 파트너 키(gpk_)는 존 쓰기 권한이 있어 클라이언트에 두지 않는다 — 존은 콘솔에서만 받는다.
+//  존 폴리곤이 픽셀로 오면 도면 치수로 미터로 바꾼다(normalizeZones).
 //
 
 import Foundation
@@ -35,15 +34,13 @@ final class SpaceServiceClient {
 
     private let host = "geospace.geoplan.io"
 
-    // 공개 타입(SpaceBuilding/SpaceFloor/AnchorPoint/FloorInfra)은 Models/SpaceModels.swift.
-    // 존은 SDK 공통 타입(Zone/Position)을 그대로 쓴다 — ZoneEngine 에 변환 없이 주입된다.
-
-    private(set) var status: String = SdkLocalized.text("gs.idle")
+    // 공개 타입(Building·Floor·Locator·FloorLocators)은 Models/SpaceModels.swift.
+    // 존은 SDK 공통 타입(Zone/Position)을 그대로 쓴다.
 
     // TLS 검증은 표준 그대로 — SDK 는 인증서 우회를 하지 않는다 (ApiClient 와 동일 원칙)
     private let session: URLSession
 
-    enum GsError: Error { case badResponse(Int), noImage, decode }
+    enum GsError: Error { case badResponse(Int), decode }
 
     // MARK: - 공개 진입점
 
@@ -88,14 +85,15 @@ final class SpaceServiceClient {
         return floors.map { Floor(id: $0.floorId, name: $0.floorName, hasPlan: $0.hasPlan) }
     }
 
-    /// 층 단건 — 도면 이미지까지 채워 반환. loadFloors 가 캐시를 데워 두면 왕복 없음.
+    /// 층 단건 — 도면 이미지까지 채워 반환. 도면은 층별로 캐시한다(콘솔이 도면을 바꾸면 invalidatePlan).
+    /// (예전 주석의 "loadFloors 가 캐시를 데운다" 는 틀렸다 — 목록은 도면을 받지 않는다.)
     func loadFloor(buildingId: String, floorId: String) async throws -> Floor {
         let plan = try? await consolePlan(buildingId, floorId)
-        return makeFloor(id: floorId, from: plan, withImage: true)
+        return makeFloor(id: floorId, from: plan)
     }
 
-    /// ConsolePlanResponse → Floor. withImage=false 면 치수·이름만 채우고 PNG 는 뺀다.
-    private func makeFloor(id: String, from plan: ConsolePlanResponse?, withImage: Bool) -> Floor {
+    /// ConsolePlanResponse → Floor (도면 PNG 포함).
+    private func makeFloor(id: String, from plan: ConsolePlanResponse?) -> Floor {
         guard let plan, let img = plan.plan?.image else {
             return Floor(id: id, name: plan?.floorName ?? String(id.prefix(8)),
                          hasPlan: plan?.hasPlan ?? false)
@@ -103,7 +101,7 @@ final class SpaceServiceClient {
         let heightM = img.widthM * Double(img.imgH) / Double(img.imgW)
         return Floor(id: id,
                      name: plan.floorName ?? String(id.prefix(8)),
-                     image: withImage ? img.pngData() : nil,
+                     image: img.pngData(),
                      hasPlan: plan.hasPlan,
                      originX: img.originX, originY: img.originY,
                      widthM: img.widthM, heightM: heightM)
@@ -141,7 +139,6 @@ final class SpaceServiceClient {
     ///    못 받아 그런 층은 측위 자체가 불가능했다(앱에는 "지도 조회 실패"로만 보였다).
     ///    좌표는 도면이 아니라 로케이터 배치에서 나오므로, 도면이 없어도 측위는 정상이다.
     func loadFloorState(buildingId: String, floorId: String) async throws -> FloorState {
-        status = SdkLocalized.text("gs.loading")
         async let planTask = planImageIfAny(buildingId: buildingId, floorId)
         async let anchorTask = anchorsOrEmpty(floorId)
         async let zoneTask = getZones(buildingId: buildingId, floorId)
@@ -158,7 +155,6 @@ final class SpaceServiceClient {
             hasPlan: planImage != nil,
             locatorsFetchFailed: anchors == nil
         )
-        status = SdkLocalized.format("gs.done", state.locators.count, zones.count)
         return state
     }
 
@@ -205,7 +201,7 @@ final class SpaceServiceClient {
     /// console 공통 GET (X-SDK-Key + snake_case 디코딩)
     private func consoleGet<R: Decodable>(_ urlString: String) async throws -> R {
         guard let url = URL(string: urlString) else { throw GsError.decode }
-        var req = URLRequest(url: url, timeoutInterval: 20)
+        var req = URLRequest(url: url, timeoutInterval: SdkTimeouts.space)
         req.setValue(keys.sdk, forHTTPHeaderField: "X-SDK-Key")
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode)
@@ -276,9 +272,11 @@ final class SpaceServiceClient {
     /// 존 원시 데이터 (폴리곤 단위 미정 — normalizeZones 로 미터 정규화)
     struct RawZone {
         let id: String; let name: String; let polygon: [[Double]]
-        // 판정 파라미터 — 콘솔 존 메타에서 보존 (기본값 = 서버 기본)
-        var inDist: Double = 3.0; var inCount: Int = 0; var inCountInterval: Int = 0
-        var outPeriod: Int = 0; var priority: Int = 1; var callInout: Bool = true
+        // 판정 파라미터 — 콘솔 존 메타에서 보존 (기본값 = 서버 기본, ZoneDefaults)
+        var inDist = ZoneDefaults.inDist; var inCount = ZoneDefaults.inCount
+        var inCountInterval = ZoneDefaults.inCountInterval
+        var outPeriod = ZoneDefaults.outPeriod; var priority = ZoneDefaults.priority
+        var callInout = ZoneDefaults.callInout
         var dwellSeconds: Int? = nil
     }
 
@@ -300,9 +298,12 @@ final class SpaceServiceClient {
             guard z.isActive, poly.count >= 3,
                   seen.insert(z.name).inserted else { return nil }
             return RawZone(id: z.zoneId, name: z.name, polygon: poly,
-                           inDist: z.inDist ?? 3.0, inCount: z.inCount ?? 0,
-                           inCountInterval: z.inCountInterval ?? 0, outPeriod: z.outPeriod ?? 0,
-                           priority: z.priority ?? 1, callInout: z.callInout ?? true,
+                           inDist: z.inDist ?? ZoneDefaults.inDist,
+                           inCount: z.inCount ?? ZoneDefaults.inCount,
+                           inCountInterval: z.inCountInterval ?? ZoneDefaults.inCountInterval,
+                           outPeriod: z.outPeriod ?? ZoneDefaults.outPeriod,
+                           priority: z.priority ?? ZoneDefaults.priority,
+                           callInout: z.callInout ?? ZoneDefaults.callInout,
                            dwellSeconds: z.dwellSeconds)
         }
     }
@@ -314,7 +315,7 @@ final class SpaceServiceClient {
         try await request(path, header: "X-SDK-Key", value: keys.space)
     }
     private func request<R: Decodable>(_ path: String, header: String, value: String) async throws -> R {
-        var req = URLRequest(url: URL(string: "https://\(host)/\(path)")!, timeoutInterval: 20)
+        var req = URLRequest(url: URL(string: "https://\(host)/\(path)")!, timeoutInterval: SdkTimeouts.space)
         req.setValue(value, forHTTPHeaderField: header)
         req.setValue("close", forHTTPHeaderField: "Connection")
         let (data, resp) = try await session.data(for: req)
@@ -482,14 +483,6 @@ final class SpaceServiceClient {
             return Locator(address: addr & 0xFFFF, x: x, y: y, z: 0,
                            isPlaced: clusterStatus.map { $0 == "auto_done" } ?? true)
         }
-    }
-
-    /// 파트너 zones 응답 = 최상위 배열. 폴리곤은 미터(0~13). (판정 파라미터 다수 있으나 지도엔 name/폴리곤만)
-    private struct ZoneDTO: Decodable {
-        let id: String          // zone_id (console 다운링크 큐와 동일 UUID)
-        let name: String
-        let isActive: Bool
-        let polygon: [[Double]]?
     }
 }
 

@@ -248,7 +248,7 @@ final class RuntimeAuditFixesTests: XCTestCase {
         _ = try await c.floor(buildingId: "B1", floorId: "A")
         XCTAssertEqual(Fixture.requests(endingWith: "/plan").count, 1, "캐시가 있으면 다시 받지 않는다")
 
-        c.deliverConfigChangeForTest(.planChanged(floorId: "A"))
+        c.deliverConfigChange(.planChanged(floorId: "A"))
         _ = try await c.floor(buildingId: "B1", floorId: "A")
         XCTAssertEqual(Fixture.requests(endingWith: "/plan").count, 2, "도면이 바뀌면 다시 받아야 한다")
     }
@@ -261,6 +261,23 @@ final class RuntimeAuditFixesTests: XCTestCase {
         XCTAssertTrue(c.isLiveStreamAttached)
         await c.stop()
         XCTAssertFalse(c.isLiveStreamAttached, "층도 측위도 없으면 연결을 남기지 않는다")
+    }
+
+    // MARK: - K9 같은 사건은 한 줄
+
+    /// 초기화 완료는 화면 로그에 한 줄만 — 코드 줄과 번역 문구 줄이 따로 찍히지 않는다.
+    /// 코드 줄의 등급은 서버 등급과 같은 세기다(예전엔 전부 .log 였다).
+    func testOneLinePerReportedEvent() async throws {
+        Fixture.route(["/config": (500, "{}")])            // → E1007 도 남는다
+        let c = Fixture.coordinator()
+        var lines: [(LogLevel, String)] = []
+        c.onLog = { lines.append(($0, $1)) }
+        try await c.prepare()
+
+        XCTAssertEqual(lines.filter { $0.1.contains("tenant") }.count, 1, "\(lines)")
+        let keyLines = lines.filter { $0.1.contains("[E1007]") || $0.1.contains(SdkLocalized.text("coord.keyUnavailable")) }
+        XCTAssertEqual(keyLines.count, 1, "\(lines)")
+        XCTAssertEqual(keyLines.first?.0, .error)
     }
 
     // MARK: - S17 관대한 디코딩

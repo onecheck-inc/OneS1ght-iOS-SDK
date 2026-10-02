@@ -2,7 +2,7 @@
 //  FloorSession.swift
 //  측위 세션 — 앱이 측위를 켜고 끄고 이벤트를 받는 인스턴스.
 //
-//  · 층은 setFloorMap 이 이미 잡아 두었으므로 만들 때 인자가 없다.
+//  · 만들 때 인자가 없다 — 층은 setFloorMap 으로 정하거나(선택), 엔진이 BLE 로 찾는다(onFloorDetected).
 //  · **싱글턴** — UWB 라디오·판정 엔진·좌표 버퍼가 기기당 하나뿐이라
 //    세션이 여럿이면 물리적으로 충돌한다. floorSession() 은 항상 같은 인스턴스를 준다.
 //  · 가동 중 setFloorMap 을 다시 부르면 이 세션이 새 층으로 갈아탄다(재생성 불필요).
@@ -96,7 +96,8 @@ public final class FloorSession {
         #endif
     }
 
-    /// 측위 시작 (커스텀 측위 주입) — 테스트(Mock)·데모 등 특수 경우용.
+    /// 측위 시작 (provider 주입) — 앱이 provider 를 직접 들고 화면에 묶을 때(온보딩 앱) 또는 커스텀 provider.
+    /// 구역 콜백·일시정지·onFloorDetected 는 어느 provider 든 같은 길(delegate)로 온다.
     ///
     /// ⚠️ **측위 엔진 라이선스는 여기서 SDK 가 넣는다.** 호스트 앱이 넣을 일이 아니다 —
     ///    고객은 OneS1ght 하나만 붙이고, 그 아래에서 어떤 엔진이 도는지도 그 엔진이

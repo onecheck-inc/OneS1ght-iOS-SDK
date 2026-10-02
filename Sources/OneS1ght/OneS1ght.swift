@@ -4,17 +4,18 @@
 //
 //  설계 규칙: "문은 static, 부품은 인스턴스".
 //  · 문(이 클래스) — 앱 전체에 하나뿐인 진입점. private init 이라 인스턴스화 불가, 전부 static.
-//  · 부품(coordinator·ApiClient·엔진) — 키 교체·reset 때 갈아끼우는 인스턴스. 밖에 안 보임.
+//  · 부품(coordinator·ApiClient·엔진) — 키 교체·reset 때 갈아끼우는 인스턴스. 밖에 안 보임
+//    (ApiClient 는 옛 defaultBaseURL 호환 때문에 타입 이름만 공개다).
 //  하나만 존재해야 하는 이유: UWB 라디오·존 엔진·Keychain ID·좌표 버퍼가 기기당 1개라
 //  세션이 여럿이면 서로 충돌한다.
 //
 //  사용 (호스트 앱):
 //    // ① 앱 시작 시 — 키 검증 + 테넌트 설정 수신 (기기 게이트는 여기 없다 — ④ begin() 이 담당)
 //    try await OneS1ght.initialize(sdkKey: "ock_…")
-//    // ② 공간 선택 — 필수. 이걸 안 하면 좌표가 나오지 않는다
+//    // ② 공간 선택 — 선택. 안 하면 엔진이 BLE 로 층을 찾는다(session.onFloorDetected)
 //    let buildings = try await OneS1ght.buildings()
-//    let floors = try await OneS1ght.floors(buildings[0].id)
-//    try await OneS1ght.setFloorMap(floors[0], buildingID: buildings[0].id)
+//    let floors = try await OneS1ght.floors(buildingId: buildings[0].id)
+//    try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 //    // ③ 프로필 연결 — createProfile 로 발급받아 앱이 보관한 값
 //    OneS1ght.identify(profileId: "pf_8a3c")
 //    // ④ 매장 진입 시 — 측위 가동
@@ -39,9 +40,9 @@ public final class OneS1ght {
 
     // MARK: - 콜백
 
-    /// SDK 내부 활동 로그 (디버그용) — verify·좌표 flush·zone 전송의 성공/실패 통지.
-    /// 데모/개발 중 "전송이 실제로 되고 있나"를 눈으로 확인하는 용도. 운영에선 미등록 권장.
-    /// SDK 내부 로그 — 등급과 글자가 함께 온다.
+    /// SDK 내부 활동 로그 (디버그용) — 등급과 글자가 함께 온다. verify·좌표 flush·zone 전송의
+    /// 성공/실패, 그리고 E·I 코드 줄(`[E1007] …`)이 온다. 운영에선 미등록 권장.
+    /// ⚠️ 메인 스레드에서 불린다.
     ///
     /// ⚠️ v0.1.12 에서 `(String) -> Void` 에서 바뀌었다. 예전에는 글자만 왔고, 받는 쪽이
     /// 맨 앞 이모지를 보고 등급을 짐작해야 했다 — 문구가 바뀌면 조용히 오분류됐다.

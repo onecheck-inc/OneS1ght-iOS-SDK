@@ -54,6 +54,9 @@
 
 - `Trigger.trigger_id`(→`triggerId`)는 서버가 빼면 빈 문자열, `type` 은 서버가 빼면 `"generic"` 입니다(예전엔
   그 존 이벤트의 트리거 전체가 사라졌습니다).
+- `onDebugLog` 의 코드 줄(`[E1007] …`·`[I1001] …`)이 이제 코드의 세기대로 `.error`·`.warn`·`.info` 로 옵니다
+  (예전엔 전부 `.log`). 같은 사건이 코드 줄과 문구 줄로 두 번 찍히던 것을 한 줄(`[코드] 문구 — 문맥`)로
+  합쳤습니다 — 문구로 줄을 거르던 앱은 확인하세요.
 - `UwbPositioningProvider.stop()`·`start()` 가 일시정지를 풀지 않습니다. `FloorSession` 의 `begin()`·`end()` 는
   예전처럼 일시정지 없이 시작·종료합니다.
 

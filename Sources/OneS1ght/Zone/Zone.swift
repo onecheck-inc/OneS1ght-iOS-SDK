@@ -36,8 +36,10 @@ public struct Zone: Identifiable, Equatable {
     public let dwellSeconds: Int?
 
     public init(id: String, name: String, polygon: [Position],
-                inDist: Double = 3.0, inCount: Int = 0, inCountInterval: Int = 0,
-                outPeriod: Int = 0, priority: Int = 1, callInout: Bool = true,
+                inDist: Double = ZoneDefaults.inDist, inCount: Int = ZoneDefaults.inCount,
+                inCountInterval: Int = ZoneDefaults.inCountInterval,
+                outPeriod: Int = ZoneDefaults.outPeriod, priority: Int = ZoneDefaults.priority,
+                callInout: Bool = ZoneDefaults.callInout,
                 dwellSeconds: Int? = nil) {
         self.id = id; self.name = name; self.polygon = polygon
         self.inDist = inDist; self.inCount = inCount; self.inCountInterval = inCountInterval
@@ -61,6 +63,18 @@ public struct Zone: Identifiable, Equatable {
         }
         return inside
     }
+}
+
+/// 콘솔 존 판정 파라미터의 서버 기본값 — 서버가 값을 안 줄 때. Zone.init 과 공간 응답 해석이 같은 값을
+/// 쓴다(예전엔 세 군데 따로 박혀 있었다 — 감사 K15). 공개 init 의 기본값이라 @usableFromInline.
+@usableFromInline
+enum ZoneDefaults {
+    @usableFromInline static let inDist = 3.0
+    @usableFromInline static let inCount = 0
+    @usableFromInline static let inCountInterval = 0
+    @usableFromInline static let outPeriod = 0
+    @usableFromInline static let priority = 1
+    @usableFromInline static let callInout = true
 }
 
 /// Zone 이벤트.

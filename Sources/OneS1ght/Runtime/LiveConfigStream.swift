@@ -2,8 +2,10 @@
 //  LiveConfigStream.swift
 //  콘솔 변경 실시간 수신 (SSE).
 //
-//  · 측위 세션 구간에만 연결한다 — 존·도면이 실제로 쓰이는 구간과 일치하고,
-//    동시 연결 수가 동시 체류 인원을 넘지 않는다.
+//  · 층이 정해졌거나 측위가 도는 동안만 연결한다(SessionCoordinator.liveStreamWanted) — 층을 띄워 둔
+//    기기는 이미 "쓰고 있는" 기기라 동시 연결 수가 유계다. (처음엔 측위 구간에만 붙였는데, 그러면 층을
+//    골라 도면을 보는 동안 콘솔 변경이 안 왔다.)
+//  · 로그 훅(onLog)·변경 훅(onChange)은 메인 밖에서 불린다 — 받는 쪽(코디네이터)이 메인으로 넘긴다.
 //  · iOS 는 백그라운드에서 연결을 끊는다. 그래서 연결이 될 때마다 .resyncNeeded 를 올린다 —
 //    "연결됐다"는 곧 "그 사이를 놓쳤을 수 있다"는 뜻이다.
 //  · ⚠️ 받은 신호로 무엇을 할지는 **고객사가 정한다.** 이 클래스는 존을 다시 받지 않고,
@@ -67,7 +69,7 @@ final class LiveConfigStream {
                 if Task.isCancelled { return }
                 if connected { backoff = minBackoff }
                 let wait = Self.jitter(backoff)
-                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                try? await Task.sleep(seconds: wait)
                 backoff = min(backoff * 2, maxBackoff)
             }
         }
@@ -152,7 +154,7 @@ final class LiveConfigStream {
         if let change = signal.change { onChange?(change) }
     }
 
-    /// 갭 판정만 떼어 검증하기 위한 진입점 (테스트 전용 — 네트워크를 타지 않는다).
+    /// 갭 판정만 떼어 검증하기 위한 진입점 (테스트 전용 — 운영 경로는 쓰지 않는다).
     func acceptForTest(_ frame: SseFrame) { accept(frame) }
 
     /// ±20% 흔들어 재연결이 한꺼번에 몰리지 않게 한다.

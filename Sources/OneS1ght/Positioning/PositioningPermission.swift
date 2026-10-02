@@ -56,7 +56,7 @@ final class NIPermissionProbe: NSObject, NISessionDelegate {
             // 층을 아직 모르므로 networkIdentifier 는 0 (권한 판정에는 무관 — 파일 헤더 참고)
             s.run(NIDLTDOAConfiguration(networkIdentifier: 0))
             timeoutTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.timeout) * 1_000_000_000)
+                try? await Task.sleep(seconds: Self.timeout)
                 // 응답이 없으면 "확인 못 함" 이므로 보수적으로 거부 취급
                 self?.finish(.denied)
             }
