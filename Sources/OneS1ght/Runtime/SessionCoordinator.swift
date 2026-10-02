@@ -77,8 +77,6 @@ final class SessionCoordinator {
     private(set) var remoteConfig: [String: String] = [:]
     /// 서버 전송용 좌표 다운샘플 기준 시각 — 판정 입력은 솎지 않는다
     private var lastRecordedAt: Date?
-    private(set) var floorConfigs: [String: ResFloorConfig] = [:]   // 층별 존 설정 (lazy)
-    private var loadingFloors: Set<String> = []
     private(set) var floorState: FloorState?    // setFloorMap 결과 — start 시 provider 에 주입
     private(set) var currentFloor: Floor?        // setFloorMap 이 받은 Floor (floorSession 노출용)
     private var flushTimer: Timer?
@@ -144,7 +142,7 @@ final class SessionCoordinator {
     }
 
     private func sendLogs(_ batch: [SdkLogEntry]) async -> Bool {
-        // profileId 가 없으면 귀속할 곳이 없다 — 로그를 버린다(초기화 전 단계).
+        // profileId 가 없으면 귀속할 곳이 없다 — 버퍼가 canSend 로 미리 걸러 여기 오지 않는다.
         guard let profileId else { return false }
         let req = ReqSdkLogs(profile_id: profileId, platform_name: "iOS",
                              sdk_version: OneS1ght.sdkVersion, entries: batch)
@@ -171,7 +169,7 @@ final class SessionCoordinator {
         self.buffer = TrajectoryBuffer(maxPerRequest: maxPerRequest) { [weak self] batch in
             await self?.sendPositions(batch) ?? false
         }
-        self.logBuffer = SdkLogBuffer { [weak self] batch in
+        self.logBuffer = SdkLogBuffer(canSend: { [weak self] in self?.profileId != nil }) { [weak self] batch in
             await self?.sendLogs(batch) ?? false
         }
     }
@@ -259,7 +257,10 @@ final class SessionCoordinator {
         positioningLicense = key
         // ⚠️ 주입받은 session 을 그대로 물려준다 — 안 그러면 `.shared` 로 떨어져 테스트의
         // 스텁 세션을 우회하고 실제 서비스로 요청이 나간다(I3).
+        // 콘솔 조회는 initialize(baseURL:) 로 받은 주소로 간다 — 예전엔 prod 주소를 박아 써서 자체
+        // 서버·스테이징 고객의 건물·층·구역 조회가 prod 로 나갔다(S15).
         spaceClient = SpaceServiceClient(keys: .init(sdk: api.apiKey, space: key),
+                                         consoleBaseURL: api.baseURL,
                                          session: session)
     }
 
@@ -350,11 +351,22 @@ final class SessionCoordinator {
         do {
             let zones = try await spaceClient.loadZones(buildingId: state.buildingId,
                                                      floorId: state.floorId)
-            let changed = Self.geofencesChanged(from: state.zones, to: zones)
+            // ⚠️ 기다리는 사이 층이 바뀌었으면 이 결과는 옛 층의 것이다 — 쓰지 않는다.
+            //    예전엔 확인 없이 floorState 에 넣어, 5초 폴링과 setFloorMap(B) 가 겹치면 B 층에
+            //    A 층 구역이 들어갔다(지도·판정 모두 — 2026-10-02 감사 S10).
+            guard let now = floorState, now.buildingId == state.buildingId,
+                  now.floorId == state.floorId else {
+                return floorState?.zones ?? []
+            }
+            let changed = Self.geofencesChanged(from: now.zones, to: zones)
+            let modified = now.zones != zones
             floorState?.zones = zones
             // 구역을 전부 지웠을 때도 엔진에 반영해야 한다 — 안 그러면 판정 엔진이 삭제된 구역을
             // 계속 물고 있어 지도에서 사라진 자리에서 없어진 시책이 계속 발화한다.
-            if isRunning {
+            // ⚠️ **바뀌었을 때만** 넣는다. 넣을 때마다 판정기가 초기화돼 체류 타이머가 지워지므로,
+            //    5초마다 새로고침하는 앱(온보딩 앱)은 dwell_seconds 가 5초를 넘는 체류 시책을 영영
+            //    못 받았다(S11).
+            if isRunning, modified {
                 provider?.apply(config: PositioningConfig(zones: zones))
                 // ⚠️ 위 apply 만으로는 **판정이 안 바뀐다.** 측위 엔진은 지오펜스를 자기 서버에서
                 //    받아 start() 때 한 번만 읽는다(주입한 존은 zone_id 매핑·진단용). 그래서
@@ -508,7 +520,10 @@ final class SessionCoordinator {
     /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
     func identify(profileId: String?) {
         self.profileId = profileId
-        if profileId != nil { report(.identified) }
+        guard profileId != nil else { return }
+        report(.identified)
+        // 프로필이 없던 동안 붙들어 둔 로그(초기화 중 E1007 등)를 이제 보낸다(S13).
+        Task { await self.logBuffer.flush() }
     }
 
     // MARK: - 프로필 CRUD (키 검증 통과가 전제라 coordinator 경유)
@@ -560,10 +575,6 @@ final class SessionCoordinator {
         provider?.stop()
         flushTimer?.invalidate(); flushTimer = nil
         receptionCheckTask?.cancel(); receptionCheckTask = nil
-        // 층을 계속 보고 있으면 스트림은 그대로 둔다 — 측위를 껐다고 콘솔 변경까지
-        // 안 받을 이유는 없다. 관찰자도 그래서 남긴다(reset 에서 정리).
-        ensureLiveStream()
-        if !liveStreamWanted { removeLifecycleObservers() }
         let pending = buffer.count
         log(SdkLocalized.format("coord.stopFlush", pending))
         await buffer.flush()
@@ -574,6 +585,12 @@ final class SessionCoordinator {
         report(.positioningOff, "visitor=\(visitorId)")
         await logBuffer.flush()          // 세션 종료 — 잔여 로그도 내보낸다
         isRunning = false
+        // 층을 계속 보고 있으면 스트림은 그대로 둔다 — 측위를 껐다고 콘솔 변경까지
+        // 안 받을 이유는 없다. 관찰자도 그래서 남긴다(reset 에서 정리).
+        // ⚠️ isRunning=false **뒤에** 판단한다. 예전엔 앞에서 판단해 "측위 중" 으로 읽혔고, 층을 안 정한
+        //    채 end() 해도 실시간 연결·생명주기 관찰이 남았다(S18).
+        ensureLiveStream()
+        if !liveStreamWanted { removeLifecycleObservers() }
     }
 
     // MARK: - 실시간 수신 (SSE)
@@ -604,8 +621,13 @@ final class SessionCoordinator {
         guard liveStreamWanted else { live?.stop(); live = nil; return }
         if live != nil, !floorFilterChangedForTest(from: liveFilter, to: floorState) { return }
         live?.stop()
-        let s = LiveConfigStream(baseURL: api.baseURL, apiKey: api.apiKey)
-        s.onLog = { [weak self] level, line in self?.log(level, line) }
+        let s = LiveConfigStream(baseURL: api.baseURL, apiKey: api.apiKey, session: session)
+        // ⚠️ 스트림은 메인 밖에서 이 클로저를 부른다 — 메인으로 넘긴 뒤 앱 훅(onDebugLog)에 닿게 한다.
+        //    예전엔 그대로 불러 고객 앱의 onDebugLog 가 백그라운드 스레드에서 돌았다(Swift 6 의 @MainActor
+        //    클로저면 격리 검사로 크래시, Swift 5 면 데이터 경쟁 — S14).
+        s.onLog = { [weak self] level, line in
+            Task { @MainActor [weak self] in self?.log(level, line) }
+        }
         s.onChange = { [weak self] change in
             Task { @MainActor in self?.deliverConfigChangeForTest(change) }
         }
@@ -616,6 +638,11 @@ final class SessionCoordinator {
 
     /// 지금 붙어 있는 스트림이 어떤 층으로 구독했는지 — 재연결 여부 판단용.
     private var liveFilter: FloorState?
+
+    /// 실시간 연결이 붙어 있는가 — 테스트가 수명을 확인한다.
+    var isLiveStreamAttached: Bool { live != nil }
+    /// 내려가는 중인가(stop 이 잔여 좌표를 보내며 기다리는 동안).
+    var isStopping: Bool { stopInFlight != nil }
 
     /// 코디네이터를 버리기 전 정리. stop() 은 층이 남아 있으면 스트림을 일부러 살려 두므로,
     /// 참조를 놓는 쪽에서 이걸 부르지 않으면 열린 연결이 다음 재연결 회차까지 남는다.
@@ -629,6 +656,13 @@ final class SessionCoordinator {
     /// 고객사에게 그대로 넘긴다. 이름에 ForTest 가 붙어 있지만 운영 경로도 이것을 쓴다 —
     /// 전달 외에 하는 일이 없어 분기할 이유가 없다.
     func deliverConfigChangeForTest(_ change: ConfigChange) {
+        // 도면 캐시만은 SDK 가 지운다 — 앱이 floor() 를 다시 불러도 캐시가 옛 도면을 주면 앱이 할 수
+        // 있는 일이 없다(재초기화 전까지 — S16). 재동기화는 그 사이 도면이 바뀌었을 수 있다는 뜻이다.
+        switch change {
+        case .planChanged(let floorId): spaceClient?.invalidatePlan(floorId: floorId)
+        case .resyncNeeded:             spaceClient?.invalidatePlan(floorId: nil)
+        default: break
+        }
         onConfigChange?(change)
     }
 
@@ -666,34 +700,12 @@ final class SessionCoordinator {
                                   points: batch)
         do {
             let res = try await api.sendPositionLogs(req)
-            log(.info, SdkLocalized.format("coord.logsSent", batch.count, res.accepted_count))
+            log(.info, SdkLocalized.format("coord.logsSent", batch.count, res.accepted_count ?? batch.count))
             return true
         } catch {
             log(.warn, SdkLocalized.format("coord.logsFail", batch.count))
             reportApi(error, "positions=\(batch.count)")
             return false
-        }
-    }
-
-    /// 층 설정 lazy 로드 — 처음 보는 floorId만 (사양서: 층 진입 시 해당 층만)
-    private func ensureFloorLoaded(_ floorId: String) {
-        guard floorConfigs[floorId] == nil, !loadingFloors.contains(floorId) else { return }
-        loadingFloors.insert(floorId)
-        Task {
-            do {
-                let config = try await api.floorConfig(floorId: floorId)
-                floorConfigs[floorId] = config
-                log(SdkLocalized.format("coord.floorZones", config.zones.count, String(floorId.prefix(8))))
-            } catch ApiError.notFound {
-                log(.info, SdkLocalized.text("coord.floorEmpty"))
-                // 404 = 이 층에 존 없음 → "정상 분기" (사양서 §9). 빈 설정으로 마킹해 재조회 방지
-                floorConfigs[floorId] = ResFloorConfig(floor_id: floorId, building_id: nil,
-                                                       name: floorId, synced_at: "",
-                                                       zones: [], anchors: [])
-            } catch {
-                // 네트워크 등 — 마킹 안 함 → 다음 좌표에서 재시도
-            }
-            loadingFloors.remove(floorId)
         }
     }
 
@@ -758,7 +770,9 @@ final class SessionCoordinator {
                     // 복귀는 새 기회다 — 내려가기 전의 재시도 횟수는 잊는다. 이 시작이 접히면
                     // provider 가 didStopUnexpectedly 로 알려 오고, 거기서 다시 켜 보거나 세션을 닫는다.
                     self.engineRestartAttempts = 0
-                    if self.isRunning { self.provider?.start() }
+                    // 내려가는 중(stop 이 잔여 좌표를 보내며 기다리는 동안)이면 켜지 않는다 — 끝난 세션에서
+                    // 엔진이 다시 돌며 옛 방문 ID 로 존 이벤트를 보내게 된다(S9).
+                    if self.isRunning, self.stopInFlight == nil { self.provider?.start() }
                     self.live = nil                     // 배경에서 끊긴 것 — 새로 붙인다
                     self.ensureLiveStream()
                 }
@@ -767,8 +781,11 @@ final class SessionCoordinator {
         #endif
     }
 
+    /// 앱이 화면에 떠 있는가 — 테스트가 바꿔 끼운다.
+    var isAppActive: () -> Bool = { SessionCoordinator.appIsActive }
+
     /// 앱이 화면에 떠 있는가. UIKit 이 없는 곳(macOS swift test)에선 true — 판정할 것이 없다.
-    static var isAppActive: Bool {
+    static var appIsActive: Bool {
         #if canImport(UIKit) && !os(watchOS)
         return UIApplication.shared.applicationState == .active
         #else
@@ -825,29 +842,48 @@ extension SessionCoordinator: PositioningProviderDelegate {
         report(.uwbSessionFailed, "engine stopped, retry \(attempt + 1)/\(engineRestartDelays.count) in \(Int(delay))s — \(context)")
         log(.warn, SdkLocalized.format("coord.engineRetry", attempt + 1, engineRestartDelays.count, Int(delay)))
         engineRestartTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard let self, !Task.isCancelled, self.isRunning, self.provider === p else { return }
-            // 백그라운드면 켜지 않는다 — UWB 가 안 돈다. 포그라운드 복귀가 대신 켠다.
-            guard Self.isAppActive else { return }
+            try? await Task.sleep(seconds: delay)
+            // 화면에 없으면 돌아올 때까지 기다린다 — UWB 는 포그라운드에서만 돈다.
+            // ⚠️ 예전엔 여기서 그냥 돌아갔다. 제어 센터·전화 배너처럼 앱이 **비활성(inactive)** 일 뿐인
+            //    때는 그 뒤 포그라운드 알림(willEnterForeground)이 오지 않아, 아무도 다시 켜지 않고
+            //    「세션은 도는데 엔진은 죽음」 으로 남았다(S7). 진짜 백그라운드로 가면 배경 알림이
+            //    이 작업을 취소하고, 포그라운드 복귀가 대신 켠다.
+            while let self, !Task.isCancelled, !self.isAppActive() {
+                try? await Task.sleep(seconds: 0.5)
+            }
+            guard let self, !Task.isCancelled, self.isLiveSession(p) else { return }
             p.start()
         }
     }
 
-    /// 좌표 fix — 층 설정 확보 + 버퍼 적재, 임계 도달 시 flush
+    /// 좌표 fix — 버퍼 적재, 임계에 **닿는 순간** flush
     func provider(_ p: PositioningProvider, didUpdate coordinates: Coordinates,
                   floorId: String, at capturedAt: Date) {
+        guard isLiveSession(p) else { return }
         engineRestartAttempts = 0         // 다시 살아났다 — 다음 고장은 처음부터 센다
         onPosition?(coordinates)          // 앱 훅 — 원속도 유지 (지도 렌더)
-        ensureFloorLoaded(floorId)
         // ⚠️ 서버 전송분만 솎는다. 존 판정(provider 내부 zoneEngine)은 원속도 그대로 —
         //    옛 존 엔진의 시간 게이트가 입력 간격을 전제로 동작해 여기까지 줄이면 체류·이탈이 어긋난다.
         guard shouldRecord(at: capturedAt) else { return }
+        let before = buffer.count
         buffer.add(PositionPoint(floor_id: floorId,
                                  coordinates: coordinates,
                                  captured_at: Self.iso(capturedAt)))
-        if buffer.count >= flushThreshold {
+        // ⚠️ 임계를 **넘어서는 순간에만** 당긴다. 예전엔 `>=` 라, 오프라인에서 한 번 실패해 버퍼가
+        //    임계 위에 머무르면 좌표(4Hz)마다 새 전송을 시도했고 실패마다 E5001(ERROR) 로그 전송까지
+        //    붙어 기기당 초당 ~8요청이 났다(2026-10-02 감사 S5). 실패분은 60초 타이머가 다시 보낸다.
+        if before < flushThreshold, buffer.count >= flushThreshold {
             Task { await buffer.flush() }
         }
+    }
+
+    /// 지금 이 provider 의 좌표·판정을 받아도 되는가 — 세션이 돌고 있고, 내려가는 중이 아니고,
+    /// 지금 물린 provider 가 보낸 것일 때만.
+    ///
+    /// 종료(stop)는 잔여 좌표를 보내느라 기다리는 동안 isRunning 을 true 로 둔다. 그 창에 늦게 온
+    /// 존 판정이 끝난 세션의 방문 ID 로 나가지 않게 막는다(S9).
+    private func isLiveSession(_ p: PositioningProvider) -> Bool {
+        isRunning && stopInFlight == nil && provider === p
     }
 
     /// position_rate_hz 다운샘플 판정.
@@ -863,8 +899,7 @@ extension SessionCoordinator: PositioningProviderDelegate {
     /// 존 판정 — 즉시 전송 (network 실패만 1회 재시도), triggers는 호스트 콜백으로
     func provider(_ p: PositioningProvider, didDetectZone zoneId: String,
                   status: ZoneEventStatus, floorId: String, at occurredAt: Date) {
-        ensureFloorLoaded(floorId)
-        guard let profileId else { return }
+        guard isLiveSession(p), let profileId else { return }
         let req = ReqZoneEvent(profile_id: profileId,
                                visitor_id: visitorId,
                                floor_id: floorId,

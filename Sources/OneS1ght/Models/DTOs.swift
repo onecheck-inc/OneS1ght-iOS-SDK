@@ -85,12 +85,29 @@ public struct ReqProfile: Codable {
 /// 고객사 회원 ID ↔ profile_id 매핑은 고객사만 보관 — 회원 ID 는 OneS1ght 에 오지 않는다.
 public struct ResProfileCreate: Codable {
     public let profile_id: String
+
+    /// id 는 숫자로 와도 받는다(S17). 아예 없으면 발급 실패라 던진다 — 빈 id 로 넘어가면 안 된다.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard let id = c.lenientID(.profile_id), !id.isEmpty else {
+            throw DecodingError.keyNotFound(CodingKeys.profile_id, .init(
+                codingPath: c.codingPath, debugDescription: "profile_id 가 없습니다"))
+        }
+        profile_id = id
+    }
 }
 
 /// GET·PUT /profiles/{id} 응답
 public struct ResProfile: Codable {
-    public let profile_id: String
+    public let profile_id: String?
+    /// 속성 자루 — 값 종류가 섞여 와도(숫자·불리언) 문자열로 접어 읽는다(S17).
     public let attributes: [String: String]?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        profile_id = c.lenientID(.profile_id)
+        attributes = (try? c.decode(LenientStringMap.self, forKey: .attributes))?.values
+    }
 }
 
 /// DELETE /profiles/{id} 응답
@@ -118,7 +135,13 @@ public struct ReqSdkLogs: Codable {
 }
 
 public struct ResSdkLogs: Codable {
-    public let accepted_count: Int
+    /// 서버가 빼거나 타입을 바꿔도 200 은 성공이다 — 그래서 옵셔널로 관대하게 읽는다(S17).
+    public let accepted_count: Int?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accepted_count = c.lenient(Int.self, .accepted_count)
+    }
 }
 
 // MARK: - 응답 (서버 → SDK)
@@ -285,20 +308,42 @@ public struct Trigger: Codable {
         self.payload = payload
     }
 
+    /// ⚠️ 관대하게 읽는다(S17). id 가 숫자로 와도, 빠져도 트리거는 산다 — 쿠폰을 그리는 데 필요한
+    ///    것은 payload 다. type 이 빠지면 "generic" 으로 본다.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        trigger_id = try c.decode(String.self, forKey: .trigger_id)
-        type = try c.decode(String.self, forKey: .type)
+        trigger_id = c.lenientID(.trigger_id) ?? ""
+        type = c.lenient(String.self, .type) ?? "generic"
         payload = (try? c.decode(LenientStringMap.self, forKey: .payload))?.values
     }
 }
+
+/// POST /events/zone 응답.
+///
+/// ⚠️ 원소 단위로 관대하게 읽는다(S17). 예전엔 event_id 가 숫자·null 이거나 트리거 하나가 틀리면
+///    응답 전체가 디코드 실패 → 그 존 이벤트의 쿠폰이 **전부** 조용히 사라졌다.
 public struct ResZoneEvent: Codable {
     public let accepted: Bool
-    public let event_id: String
+    public let event_id: String?
     public let triggers: [Trigger]
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accepted = c.lenient(Bool.self, .accepted) ?? true     // 200 이면 받은 것이다
+        event_id = c.lenientID(.event_id)
+        triggers = c.lossyArray(Trigger.self, .triggers)
+    }
 }
 
 /// POST /positioning/logs 응답
+///
+/// ⚠️ accepted_count 를 엄격하게 읽으면 서버가 이 필드를 빼거나 타입을 바꾸는 순간 **200 을 실패로**
+///    읽어 같은 좌표를 다시 보냈다(S17). 이 값은 로그에만 쓴다.
 public struct ResPositionBulk: Codable {
-    public let accepted_count: Int
+    public let accepted_count: Int?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accepted_count = c.lenient(Int.self, .accepted_count)
+    }
 }

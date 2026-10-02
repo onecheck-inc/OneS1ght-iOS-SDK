@@ -50,6 +50,14 @@ public final class MockPositioningProvider: PositioningProvider {
         appliedFloorId = floorId
     }
 
+    /// apply(config:) 가 불린 횟수와 마지막 값 — 코어가 판정기를 다시 물렸는지 테스트가 본다.
+    public private(set) var applyConfigCount = 0
+    public private(set) var lastConfig: PositioningConfig?
+    public func apply(config: PositioningConfig) {
+        applyConfigCount += 1
+        lastConfig = config
+    }
+
     // MARK: - 시뮬레이션 트리거 (테스트·데모가 호출)
 
     /// 빌딩 입장 발생

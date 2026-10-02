@@ -48,7 +48,7 @@ private struct ErrorBody: Decodable { let detail: String? }
 
 public final class ApiClient {
 
-    public static let defaultBaseURL = URL(string: "https://console.ones1ght.com/api/sdk/v1")!
+    public static let defaultBaseURL = OneS1ght.defaultBaseURL
 
     // 같은 모듈의 LiveConfigStream 이 스트림 요청을 만들 때 쓴다.
     // ⚠️ internal 까지만 — public 으로 올리면 SDK 키가 고객사 코드에 노출된다.
@@ -62,7 +62,7 @@ public final class ApiClient {
     ///   - baseURL: 환경별 교체 가능 (기본 prod)
     ///   - session: 테스트에서 URLProtocol 스텁 세션 주입
     public init(apiKey: String,
-                baseURL: URL = ApiClient.defaultBaseURL,
+                baseURL: URL = OneS1ght.defaultBaseURL,
                 session: URLSession = .shared) {
         self.apiKey = apiKey
         self.baseURL = baseURL

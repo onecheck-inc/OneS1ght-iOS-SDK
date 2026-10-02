@@ -31,8 +31,11 @@ public final class OneS1ght {
 
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
-    /// SDK 버전 (verify의 client.sdk_version에 실림)
+    /// SDK 버전 (서버 로그의 sdk_version 에 실림)
     public static let sdkVersion = "0.1.24"
+
+    /// 기본 서버 주소 — `initialize(sdkKey:baseURL:)` 의 기본값.
+    nonisolated public static let defaultBaseURL = URL(string: "https://console.ones1ght.com/api/sdk/v1")!
 
     // MARK: - 콜백
 
@@ -141,13 +144,15 @@ public final class OneS1ght {
     /// setFloorMap 없이 begin() 하면 엔진이 BLE 로 층을 찾을 때까지 좌표가 나오지 않는다(정상 경로 —
     /// 끝내 못 찾으면 E3007 로 통지).
     public static func initialize(sdkKey: String,
-                                  baseURL: URL = ApiClient.defaultBaseURL) async throws {
+                                  baseURL: URL = OneS1ght.defaultBaseURL) async throws {
         // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.
         // 여기서 막으면 세션이 안 만들어져 도면·존 조회까지 전부 닫힌다(coordinator != nil 가드).
 
         // ① 키가 바뀌었으면 세션 재구성 — "새 키로 initialize = 새 키로 시작"이라는 직관 보장.
         if let stored = storedKey, stored != sdkKey {
             await coordinator?.stop()
+            // reset() 과 같은 정리 — 빠뜨리면 옛 키로 붙은 실시간 연결·관찰자가 남는다(S19).
+            coordinator?.teardown()
             coordinator = nil
         }
 
@@ -161,6 +166,10 @@ public final class OneS1ght {
             c.onPosition = { coord in FloorSession.shared.onPosition?(coord) }
             c.onConfigChange = { change in FloorSession.shared.onConfigChanged?(change) }
             c.onLog = { level, line in OneS1ght.onDebugLog?(level, line) }
+            // identify 를 먼저 불렀거나(문서 순서와 반대), 키를 바꿔·reset 뒤에 다시 초기화한 경우에도
+            // 프로필을 이어 준다. 예전엔 정적 값만 저장하고 새 코디네이터에 안 넘겨 begin() 이 E1004 로
+            // 실패했다(2026-10-02 감사 S12).
+            if let profileId { c.identify(profileId: profileId) }
             coordinator = c
             storedKey = sdkKey
         }

@@ -19,7 +19,7 @@ public struct Position: Equatable {
 }
 
 /// 폴리곤 하나로 정의되는 구역.
-public struct Zone: Identifiable {
+public struct Zone: Identifiable, Equatable {
     public let id: String
     public let name: String
     public let polygon: [Position]     // 꼭짓점 (순서대로)

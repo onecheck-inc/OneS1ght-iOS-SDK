@@ -14,9 +14,11 @@ final class StubURLProtocol: URLProtocol {
     nonisolated(unsafe) static var lastRequest: URLRequest?
     nonisolated(unsafe) static var lastBody: Data?
     nonisolated(unsafe) static var requests: [(path: String, method: String, body: Data?)] = []
+    /// 요청 URL 전체 — 호스트까지 봐야 하는 테스트(어느 서버로 갔는가)용.
+    nonisolated(unsafe) static var urls: [URL] = []
 
     static func reset() {
-        handler = nil; lastRequest = nil; lastBody = nil; requests = []
+        handler = nil; lastRequest = nil; lastBody = nil; requests = []; urls = []
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -38,6 +40,7 @@ final class StubURLProtocol: URLProtocol {
         Self.lastRequest = request
         Self.lastBody = body
         Self.requests.append((request.url?.path ?? "", request.httpMethod ?? "", body))
+        if let url = request.url { Self.urls.append(url) }
 
         let (status, resBody) = Self.handler?(request) ?? (200, Data("{}".utf8))
         let res = HTTPURLResponse(url: request.url!, statusCode: status,

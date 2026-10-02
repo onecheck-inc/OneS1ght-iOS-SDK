@@ -228,20 +228,22 @@ final class SessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(body.points[0].coordinates, Coordinates(x: 1, y: 2, z: 0))
         XCTAssertEqual(body.visitor_id, c.visitorId)
         XCTAssertEqual(body.profile_id, "pf_8a3c")
-        XCTAssertTrue(StubURLProtocol.requests.contains { $0.path.contains("/positioning/floors/F") })
         await c.stop()
     }
 
-    // floors 404 = "존 없음" 정상 분기 — 좌표 수집은 계속
-    func testFloors404_isNormalBranch_positionsStillFlow() async throws {
-        routeDefaults(floorStatus: 404)
+    // S4 — 좌표마다 층 설정(/positioning/floors/{id})을 서버에 묻지 않는다. 예전엔 404 가 아닌 실패(5xx·401)를
+    // 기억하지 않아 다음 좌표에서 또 물었고(기기마다 초당 몇 번), 받은 값은 아무도 안 읽었다.
+    func testPositions_doNotFetchFloorConfig() async throws {
+        routeDefaults(floorStatus: 500)
         let c = try await makeStarted(flushThreshold: 1)
 
-        provider.simulatePosition(Coordinates(x: 1, y: 1, z: 0), floorId: "F")
+        let t0 = Date()
+        for i in 0..<5 {
+            provider.simulatePosition(Coordinates(x: 1, y: 1, z: 0), floorId: "F",
+                                      at: t0.addingTimeInterval(Double(i)))
+        }
         try await waitUntil { StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") } }
-
-        try await waitUntil { c.floorConfigs["F"] != nil }
-        XCTAssertEqual(c.floorConfigs["F"]?.zones.count, 0)      // 빈 설정으로 마킹 (재조회 방지)
+        XCTAssertFalse(StubURLProtocol.requests.contains { $0.path.contains("/positioning/floors/") })
         await c.stop()
     }
 
