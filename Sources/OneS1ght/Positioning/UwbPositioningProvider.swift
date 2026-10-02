@@ -281,6 +281,10 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         // 에러 3·7·10 뒤의 자동 정지 — 자동 재개 없음. 호스트가 "다시 시작" 을 안내한다.
         addLog(selfStopped ? .warn : .log,
                SdkLocalized.text(selfStopped ? "uwb.stoppedSelf" : "uwb.stopped"))
+        if selfStopped {
+            notifyUnexpectedStop("engine stopped itself (last error \(lastHubError.map(String.init) ?? "-"))",
+                                 retryable: Self.isRetryable(hubError: lastHubError))
+        }
         if detectedFloorId != nil {
             detectedFloorId = nil
             onFloorDetected?(nil)
@@ -361,6 +365,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     }
 
     fileprivate func errored(_ code: Int, _ msg: String) {
+        lastHubError = code
         addLog(.error, SdkLocalized.format("uwb.error", code, msg, Self.describe(code)))
         onEngineError?(code, msg)
         // 화면 로그에 더해 E-코드로도 올린다 — 관리자는 콘솔 로그 분석기에서 이걸 본다.
@@ -374,6 +379,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
             phase = .idle
             if isRunning { isRunning = false; latestPosition = nil }
             hub.setListener(nil)
+            notifyUnexpectedStop("engine=\(code) at start", retryable: Self.isRetryable(hubError: code))
         }
     }
 
@@ -411,6 +417,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         }
         IntelligenceHub.setLicense(key)
         detectedFloorId = nil
+        lastHubError = nil
         phase = .starting
         addLog(.info, SdkLocalized.format("uwb.starting", String(key.prefix(8))))
 
@@ -472,12 +479,33 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 정지가 끝나는 대로 다시 띄워야 하는가 — 내려가는 중에 start 가 온 경우.
     private var startAfterStop = false
 
+    /// 코어가 켜 달라고 한 상태인가 — `start()` 로 켜고 `stop()` 으로 끈다. 이 동안 엔진이
+    /// **스스로** 꺼지면 코어에 알린다(notifyUnexpectedStop). 코어가 끈 것은 알리지 않는다.
+    private var wantsRunning = false
+    /// 마지막 엔진 오류 — 스스로 멈춘 이유가 사람이 풀어야 하는 것인지 가를 때 본다.
+    private var lastHubError: Int?
+
+    /// 켜 달라고 했는데 엔진이 꺼졌다 — 코어에 한 번만 알린다(그 뒤 다시 켜는지는 코어가 정한다).
+    private func notifyUnexpectedStop(_ context: String, retryable: Bool) {
+        guard wantsRunning else { return }
+        wantsRunning = false
+        delegate?.provider(self, didStopUnexpectedly: retryable, context: context)
+    }
+
+    /// 다시 켜 볼 만한가 — 1(라이선스 없음)·3(Bluetooth)·7(위치)·10(라이선스 거부)은 사람이 풀어야
+    /// 한다. 다시 켜 봐야 같은 자리에서 접힌다. 나머지(11 라이선스 서버 연결 등)는 잠시 뒤 풀릴 수 있다.
+    nonisolated static func isRetryable(hubError code: Int?) -> Bool {
+        guard let code else { return true }
+        return ![1, 3, 7, 10].contains(code)
+    }
+
     /// 시작 전 단계에서 되돌린다 — phase 를 .starting 에 남기면 이후 start 가 전부 막힌다.
     private func abortStart() {
         guard phase == .starting else { return }
         phase = .idle
         if isRunning { isRunning = false; latestPosition = nil }
         floorWatchTask?.cancel(); floorWatchTask = nil
+        notifyUnexpectedStop("location denied at start", retryable: false)
     }
 
     private func launchHub() {
@@ -542,6 +570,7 @@ extension UwbPositioningProvider: PositioningProvider {
     /// 엔진이 아직 안 돌고 있으면 여기서 띄운다.
     public func start() {
         guard !isRunning else { return }
+        wantsRunning = true
         // 내려가는 중이면 지금 띄우면 안 된다.
         //
         // hub.stop() 은 비동기다 — onStopped 가 나중에 온다. 그 사이에 start 하면
@@ -557,7 +586,10 @@ extension UwbPositioningProvider: PositioningProvider {
             return
         }
         if phase == .idle { startDetection() }
-        guard phase != .idle else { return }     // 라이선스 없음 등으로 못 뜬 경우
+        guard phase != .idle else {              // 라이선스 없음 등으로 못 뜬 경우
+            notifyUnexpectedStop("engine did not start (no license)", retryable: false)
+            return
+        }
         measurementCount = 0
         latestPosition = nil
         judge.reset()
@@ -611,6 +643,7 @@ extension UwbPositioningProvider: PositioningProvider {
     public func stop() {
         // 예약된 start 가 있으면 먼저 지운다 — 끄겠다는 최신 의사가 이긴다.
         startAfterStop = false
+        wantsRunning = false
         guard isRunning else { return }
         isRunning = false
         isPaused = false

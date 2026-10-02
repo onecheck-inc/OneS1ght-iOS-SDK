@@ -20,8 +20,16 @@ public final class MockPositioningProvider: PositioningProvider {
 
     public init() {}
 
-    public func start() { isRunning = true }
+    /// start() 가 불린 횟수 — 코어가 엔진을 다시 켰는지 테스트가 본다.
+    public private(set) var startCount = 0
+    public func start() { isRunning = true; startCount += 1 }
     public func stop() { isRunning = false }
+
+    /// 엔진이 스스로 꺼졌다(시작이 접혔거나 엔진 오류) — 실제 엔진이 하는 것처럼 꺼진 뒤 코어에 알린다.
+    public func simulateUnexpectedStop(retryable: Bool, context: String = "mock") {
+        isRunning = false
+        delegate?.provider(self, didStopUnexpectedly: retryable, context: context)
+    }
 
     /// 코어가 "영역이 바뀌었다" 고 판단한 횟수 — 테스트가 이 값을 본다.
     public private(set) var reloadGeofencesCount = 0

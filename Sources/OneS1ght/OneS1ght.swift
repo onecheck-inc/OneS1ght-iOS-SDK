@@ -138,7 +138,8 @@ public final class OneS1ght {
     /// - baseURL: 자체 서버를 구축한 고객만. 운영/개발 구분은 이 인자가 아니라
     ///   콘솔이 발급하는 키(production/development)가 가른다.
     /// ⚠️ 건물·층은 조회하지 않는다 — 공간 선택은 buildings()/setFloorMap() 의 책임이다.
-    /// setFloorMap 없이 begin() 하면 측위 파이프라인은 돌지만 좌표가 나오지 않는다(E3001 로 통지).
+    /// setFloorMap 없이 begin() 하면 엔진이 BLE 로 층을 찾을 때까지 좌표가 나오지 않는다(정상 경로 —
+    /// 끝내 못 찾으면 E3007 로 통지).
     public static func initialize(sdkKey: String,
                                   baseURL: URL = ApiClient.defaultBaseURL) async throws {
         // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.

@@ -368,7 +368,7 @@ Every failure carries a code. Include it when contacting support.
 
 | Symptom | Codes | First check |
 |---|---|---|
-| App runs but no coordinates | `E3001` · `E3003` · `E4002` | Floor set? → UWB session? → locator placement |
+| App runs but no coordinates | `E3007` · `E3003` · `E4002` | Floor detected (BLE)? → UWB session? → locator placement |
 | Zone events never fire | `E3004` | Are zones registered in Console? Were they there **when positioning started**? |
 | A zone drawn while running never fires | — | Fixed in 0.1.21 — the engine now reloads geofences when the zone set changes |
 | Paused but zone events keep coming | — | Fixed in 0.1.22 |

@@ -124,6 +124,16 @@
     "ja": "すでに測位中のため開始要求をスキップします",
     "en": "Already positioning \u2014 start request ignored"
   },
+  "coord.engineRetry": {
+    "ko": "측위 엔진이 스스로 멈췄습니다 — %d/%d번째로 %d초 뒤 다시 켭니다",
+    "ja": "測位エンジンが自ら停止しました — %d/%d回目、%d秒後に再起動します",
+    "en": "Positioning engine stopped on its own — restart %d/%d in %ds"
+  },
+  "coord.engineGaveUp": {
+    "ko": "측위 엔진을 다시 켜지 못해 세션을 닫았습니다 — begin() 으로 다시 시작하세요 (%@)",
+    "ja": "測位エンジンを再起動できずセッションを閉じました — begin() で再開してください (%@)",
+    "en": "Could not restart the positioning engine; session closed — call begin() again (%@)"
+  },
   "coord.stopFlush": {
     "ko": "종료 — 잔여 %d건 flush 시도",
     "ja": "終了 — 残り %d件を flush",
