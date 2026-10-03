@@ -28,4 +28,19 @@ final class HubErrorTests: XCTestCase {
     func testNumbersAreOneThroughTwelve() {
         XCTAssertEqual(HubError.allCases.map(\.rawValue), Array(1...12))
     }
+
+    /// 2026-10-03 안드 감사 SP-B9 — 안드로이드와 같은 값. 1·10 은 측위 키(E1007), 3+미지원 문장은 미지원 기기(E2002),
+    /// 7·9 는 맞는 기존 코드가 없어 E2003 그대로.
+    func testRemappedCodesMatchAndroid() {
+        XCTAssertEqual(HubError.licenseMissing.sdkCode(), .keyUnavailable)
+        XCTAssertEqual(HubError.licenseRejected.sdkCode(), .keyUnavailable)
+        XCTAssertEqual(HubError.bluetoothUnavailable.sdkCode(message: "bluetooth unavailable: unsupported on this device"),
+                       .deviceNotSupported)
+        XCTAssertEqual(HubError.bluetoothUnavailable.sdkCode(message: "bluetooth unavailable: permission required"),
+                       .permissionDenied)
+        XCTAssertEqual(HubError.locationUnavailable.sdkCode(), .permissionDenied)
+        XCTAssertEqual(HubError.bluetoothKeyMissing.sdkCode(), .permissionDenied)
+        XCTAssertFalse(HubError.allCases.contains { $0.sdkCode() == .invalidKey },
+                       "엔진 오류는 SDK 키(E1002) 문제가 아니다")
+    }
 }

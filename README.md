@@ -211,6 +211,9 @@ try await OneS1ght.setFloorMap(floors[0], buildingId: buildings[0].id)
 
 `setFloorMap` fetches locators, the UWB session ID and zones, then injects them into the
 engines. Calling it again while running switches floors — the session stays.
+Pass `buildingId` the first time; after that you may omit it and the last building is reused.
+With neither, it throws `SdkError.floorNotSet` (`E3001`) and leaves the current floor as it
+is. `setFloorMap(nil)` clears the floor.
 
 ### Following the floor the engine found
 
@@ -440,12 +443,12 @@ Every failure carries a code. Include it when contacting support.
 | `E1002` | Invalid or revoked SDK key |
 | `E1003` | Positioning disabled for tenant |
 | `E1004` | No profile attached |
-| `E1007` | Positioning key unavailable (not in Console, or lookup failed) |
+| `E1007` | Positioning key unavailable (not in Console, lookup failed, or rejected by the positioning engine) |
 | `E2001` | iOS version too low |
-| `E2002` | Device does not support UWB |
+| `E2002` | Device does not support positioning (no UWB, or Bluetooth unsupported) |
 | `E2003` | Positioning permission denied (or Info.plist key missing) |
 | `E2004` | Bluetooth is off |
-| `E3001` | No floor set — shown in `onDebugLog` only; not uploaded (normal when the engine finds the floor) |
+| `E3001` | `setFloorMap(floor)` without a building (`SdkError.floorNotSet`). Starting without a floor is normal and is not uploaded |
 | `E3002` | No locators on floor |
 | `E3003` | No UWB session on floor |
 | `E3004` | No zones on floor |

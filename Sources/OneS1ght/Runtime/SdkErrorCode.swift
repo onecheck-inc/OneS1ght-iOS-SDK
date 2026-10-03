@@ -19,7 +19,7 @@
 //  ## 등급 기준 (0.1.19 재정의)
 //
 //  **글자(E/I)는 계열이고, 등급(level)은 알람 세기다. 둘은 별개 축이다.**
-//  `SdkError` 로 던져지는 다섯(E1001·E1003·E1004·E2001·E2002)은 앱 입장에서 "호출이
+//  `SdkError` 로 던져지는 여섯(E1001·E1003·E1004·E2001·E2002·E3001)은 앱 입장에서 "호출이
 //  진행되지 않았다"라 E 번호를 유지해야 한다 — 그렇다고 관리자에게 전부 ERROR 로
 //  보일 이유는 없다.
 //
@@ -51,6 +51,7 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// initialize 없이 다른 API 를 호출했다.
     case notInitialized      = "E1001"
     /// SDK 키가 무효하거나 폐기됐다 (401). 재시도해도 소용없다.
+    /// 측위 엔진의 라이선스 오류(엔진 1·10)는 여기가 아니라 E1007 이다(2026-10-03~, 안드 감사 SP-B9).
     case invalidKey          = "E1002"
     /// 키는 유효하나 테넌트에서 측위가 꺼져 있다.
     case positioningDisabled = "E1003"
@@ -61,6 +62,8 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// 측위 키를 못 구했다 — 콘솔에 없거나 조회에 실패했다. buildings()/floors()/
     /// zones() 는 빈 배열로, floor()/locators()/setFloorMap() 은 notInitialized 로 떨어진다 —
     /// isInitialized 는 true 인 채로. 관리자가 콘솔 로그 분석기에서 반드시 봐야 하는 자리다.
+    /// 측위 엔진이 그 키(라이선스)를 거부하거나 비어 있다고 할 때(엔진 오류 1·10)도 이 코드다 —
+    /// 예전엔 E1002 라 멀쩡한 SDK 키를 의심하게 했다(2026-10-03, 안드 감사 SP-B9).
     case keyUnavailable      = "E1007"
 
     // MARK: 2xxx — 기기·권한
@@ -68,6 +71,8 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
     /// iOS 27 미만. OS 업데이트로 해결된다.
     case osVersionTooLow     = "E2001"
     /// UWB(DL-TDoA) 칩이 없다. iPhone 12 이상 필요.
+    /// 엔진이 「Bluetooth 미지원 기기」(오류 3 + `unsupported on this device`)라고 할 때도 이 코드다 —
+    /// 설정 안내로 풀리지 않아 권한 거부(E2003)와 가른다(2026-10-03, 안드 감사 SP-B9).
     case deviceNotSupported  = "E2002"
     /// 사용자가 측위 권한을 거부했다. 앱에서 재요청 불가 — 설정 앱으로 안내해야 한다.
     case permissionDenied    = "E2003"
@@ -77,10 +82,11 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
 
     // MARK: 3xxx — 공간·설정
 
-    /// 층이 정해지지 않은 채로 측위를 시작했다.
+    /// 층 미지정 — 지금은 `setFloorMap(floor)` 를 건물 문맥 없이 불렀을 때(`SdkError.floorNotSet`)의 코드다
+    /// (2026-10-03~, 안드로이드와 같다).
     ///
-    /// ⚠️ **SDK 는 이 코드를 더 이상 내보내지 않는다**(0.1.24 다음 판) — 층 없이 시작하는 것이 정상 경로라
-    /// 시작할 때마다 콘솔 로그를 덮었다. 화면 로그에만 INFO 문구로 남는다. 옛 로그 해석을 위해 케이스는 둔다.
+    /// ⚠️ 층 없이 측위를 **시작**하는 것으로는 내보내지 않는다(0.2.0~) — 정상 경로라 시작할 때마다 콘솔 로그를
+    /// 덮었다. 그때는 화면 로그에만 INFO 문구로 남는다. 층을 끝내 못 찾으면 E3007.
     ///
     /// **WARN 이다(0.1.19~).** 예전에는 ERROR 였다 — 앱이 층을 고르던 시절에는 층 없이
     /// begin 하는 것이 곧 실수였기 때문이다. 지금은 엔진이 BLE 로 층을 스스로 찾으므로
@@ -185,9 +191,9 @@ public enum SdkErrorCode: String, Sendable, CaseIterable {
         case .invalidKey:          return "SDK 키 무효 또는 폐기"
         case .positioningDisabled: return "테넌트에서 측위 비활성"
         case .notIdentified:       return "프로필 미연결"
-        case .keyUnavailable:      return "측위 키를 못 구함"
+        case .keyUnavailable:      return "측위 키를 못 구함 또는 엔진이 거부"
         case .osVersionTooLow:     return "iOS 버전 미달"
-        case .deviceNotSupported:  return "UWB 미지원 기기"
+        case .deviceNotSupported:  return "측위 미지원 기기 (UWB·Bluetooth)"
         case .permissionDenied:    return "측위 권한 거부"
         case .bluetoothOff:        return "Bluetooth 꺼짐"
         case .floorNotSet:         return "층 미지정"
@@ -275,6 +281,7 @@ public extension SdkError {
         case .positioningDisabled: return .positioningDisabled
         case .deviceNotSupported:  return .deviceNotSupported
         case .osVersionTooLow:     return .osVersionTooLow
+        case .floorNotSet:         return .floorNotSet
         }
     }
 }

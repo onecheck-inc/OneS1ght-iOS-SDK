@@ -31,6 +31,11 @@ public enum SdkError: Error, Equatable {
     case positioningDisabled   // verify는 통과했으나 positioning_enabled=false
     case deviceNotSupported    // UWB 칩 없음 (측위 불가 기기)
     case osVersionTooLow       // iOS 27 미만
+    /// 층을 지정하려는데 건물을 알 수 없다 — `setFloorMap(floor)` 를 `buildingId` 없이, 직전에 지정한 건물도 없이 불렀다.
+    /// 처음에는 `setFloorMap(floor, buildingId:)` 로 건물을 함께 넘긴다(그 뒤로는 생략 가능). 층 상태는 바뀌지 않는다.
+    /// 코드는 E3001(층 미지정). 2026-10-03 안드 감사 SF-A1 과 같은 값 — 안드로이드는 이름이 `SdkError.BuildingNotSet`
+    /// 이지만 iOS 는 코드 이름(`SdkErrorCode.floorNotSet`)과 맞췄다(2026-10-03 사용자 결정).
+    case floorNotSet
 }
 
 @MainActor
@@ -282,7 +287,15 @@ final class SessionCoordinator {
 
     /// 측위·판정에 쓸 층을 지정한다. 호출할 때마다 갱신되고, nil 이면 비운다.
     /// 가동 중에 부르면 즉시 층 전환 — 세션은 그대로, 엔진 주입값만 갈린다.
+    ///
+    /// - throws: `SdkError.floorNotSet`(E3001) — `floor` 가 있는데 `buildingId` 가 없다. 층 상태는 그대로 둔다.
+    ///   ⚠️ 2026-10-03 안드 감사(SF-A1): 예전엔 이 경우를 「층 해제」 로 처리해 호출은 성공하는데 층·구역이 조용히
+    ///   비었다 — 구역 이벤트가 0건이 되고 이유가 어디에도 안 남았다. `setFloorMap(nil)`(명시적 해제)은 그대로 허용한다.
     func setFloorMap(_ floor: Floor?, buildingId: String?) async throws {
+        if let floor, buildingId == nil {
+            report(.floorNotSet, "setFloorMap floor=\(floor.id) without buildingId")
+            throw SdkError.floorNotSet
+        }
         let previousFloor = floorState
         guard let floor, let buildingId else {
             floorState = nil
@@ -659,16 +672,7 @@ final class SessionCoordinator {
             // 백그라운드: UWB는 어차피 정지(포그라운드 전용) → 엔진 정지 + 잔여 flush (일시정지는 유지)
             nc.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                            object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    // 내려가면 다시 켜 보기를 멈춘다 — 백그라운드에선 UWB 가 안 돈다. 돌아오면 아래에서 켠다.
-                    self.supervisor.cancel()
-                    if self.isRunning {                 // 측위는 세션이 돌 때만
-                        self.provider?.stop()
-                        await self.uploads.flush()
-                    }
-                    self.liveStream.suspend()           // 스트림은 언제나 끊는다
-                }
+                Task { @MainActor in await self?.handleDidEnterBackground() }
             },
             // 포그라운드 복귀: 측위 재개 + 실시간 수신 재연결
             // 재연결 자체가 LiveConfigStream 쪽에서 .resyncNeeded 를 올린다 — 배경에 있던
@@ -689,6 +693,20 @@ final class SessionCoordinator {
             },
         ]
         #endif
+    }
+
+    /// 백그라운드 진입 — 엔진 정지 + 잔여 flush (일시정지는 유지). 내부 공개 — 테스트가 알림 없이 밟는다.
+    func handleDidEnterBackground() async {
+        // 내려가면 다시 켜 보기를 멈춘다 — 백그라운드에선 UWB 가 안 돈다. 돌아오면 복귀 쪽에서 켠다.
+        supervisor.cancel()
+        if isRunning {                          // 측위는 세션이 돌 때만
+            // 배경에서는 UWB 가 멈춰 OUT 이 안 온다 — 정지 **전에** 안에 있던 구역의 EXIT 를 낸다.
+            // 정지 뒤에는 provider 가 이벤트를 버린다(2026-10-03 안드 감사 SP-B15). 일시정지 중이면 provider 가 안 낸다.
+            (provider as? ExitsZoneBeforeBackground)?.exitActiveZoneBeforeBackground()
+            provider?.stop()
+            await uploads.flush()
+        }
+        liveStream.suspend()                    // 스트림은 언제나 끊는다
     }
 
     /// 앱이 화면에 떠 있는가 — 테스트가 바꿔 끼운다(EngineSupervisor 가 재시도 전에 본다).

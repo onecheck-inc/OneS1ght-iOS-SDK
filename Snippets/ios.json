@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "sdkVersion": "0.2.0",
+  "sdkVersion": "0.2.1",
   "language": "swift",
   "requirements": {
     "positioning": {
@@ -87,9 +87,10 @@
       "throws": [
         "E1001",
         "E3002",
-        "E3003"
+        "E3003",
+        "E3001"
       ],
-      "warning": "건너뛰어도 된다. 엔진이 BLE 로 층을 찾으므로 층 없이 begin() 하는 것이 정상 경로다. 층을 끝내 못 찾으면 E3007(WARN)이 남는다.",
+      "warning": "건너뛰어도 된다. 엔진이 BLE 로 층을 찾으므로 층 없이 begin() 하는 것이 정상 경로다. 층을 끝내 못 찾으면 E3007(WARN)이 남는다. 처음 setFloorMap 할 때는 buildingId 를 함께 넘긴다 — 건물 인자도 직전 건물도 없으면 SdkError.floorNotSet(E3001)을 던지고 층은 그대로다. setFloorMap(nil) 은 층을 비운다.",
       "expectedLog": "[I3001] 층 지정 — building=… floor=… locators=N zones=M"
     },
     {

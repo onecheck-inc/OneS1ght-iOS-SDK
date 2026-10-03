@@ -68,6 +68,13 @@ final class MockPositioningProvider: PositioningProvider {
 
     // MARK: - 시뮬레이션 트리거 (테스트·데모가 호출)
 
+    /// 배경 전환 직전 EXIT — 코어가 부른 순간의 상태를 테스트가 본다(2026-10-03 안드 감사 SP-B15).
+    /// `activeZoneId` 가 있으면 실제 provider 처럼 그 구역의 EXIT 를 정상 경로로 낸다(일시정지 중이면 안 냄).
+    var activeZoneId: String?
+    private(set) var exitBeforeBackgroundCount = 0
+    /// 불렸을 때 아직 측위 중이었는가 — 정지 **전에** 불러야 한다.
+    private(set) var wasRunningAtExitBeforeBackground: Bool?
+
     /// 빌딩 입장 발생
     func simulateEnter(buildingId: String) {
         delegate?.provider(self, didEnter: buildingId)
@@ -92,5 +99,15 @@ final class MockPositioningProvider: PositioningProvider {
     func simulateZone(_ zoneId: String, status: ZoneEventStatus,
                              floorId: String, at: Date = Date()) {
         delegate?.provider(self, didDetectZone: zoneId, status: status, floorId: floorId, at: at)
+    }
+}
+
+extension MockPositioningProvider: ExitsZoneBeforeBackground {
+    func exitActiveZoneBeforeBackground() {
+        exitBeforeBackgroundCount += 1
+        wasRunningAtExitBeforeBackground = isRunning
+        guard let id = activeZoneId, !isPaused else { return }
+        activeZoneId = nil
+        delegate?.provider(self, didDetectZone: id, status: .exit, floorId: "F", at: Date())
     }
 }

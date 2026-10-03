@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.2.0",
+  "currentVersion": "0.2.1",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -293,6 +293,25 @@
           "why": "엔진을 다시 켜지 못하면 SDK 가 세션을 닫는다. 화면이 「찾는 중」에 굳지 않게 알림을 받는다.",
           "before": "// 세션이 닫혀도 알 길이 없었다",
           "after": "session.onStopped = { reason in\n    if reason == .engineFailed { showRetrySearch() }\n}"
+        }
+      ]
+    },
+    {
+      "from": "0.2.0",
+      "to": "0.2.1",
+      "breaking": true,
+      "summary": "건물 없이 setFloorMap(floor) 를 부르면 이제 SdkError.floorNotSet(E3001)을 던진다(예전엔 조용히 층·구역을 비우고 성공했다). 앱이 백그라운드로 갈 때 들어가 있던 구역의 EXIT 를 보내고, 같은 구역의 중복 ENTER 를 거른다. 엔진 라이선스 오류는 E1002 대신 E1007, 미지원 기기 블루투스 오류는 E2003 대신 E2002 로 남는다.",
+      "action": "① setFloorMap(floor) 를 처음 부를 때 buildingId 를 함께 넘긴다(buildings() 에서 고른 건물). 이미 그렇게 하고 있으면 고칠 것 없다. ② SdkError 를 switch 로 빠짐없이 다루고 default/@unknown default 가 없으면 .floorNotSet 을 더한다. ③ onDebugLog·콘솔 로그에서 E1002 로 라이선스 문제를 찾던 곳은 E1007 도 본다. ④ 백그라운드로 가면 onZoneExit 가 불린다 — 복귀 뒤 같은 구역이면 onZoneEnter 가 다시 온다.",
+      "changes": [
+        {
+          "why": "건물 문맥 없이 층만 넘기면 SDK 가 구역을 못 찾아 조용히 비웠다 — 성공처럼 보이는데 구역 이벤트가 0건이었다.",
+          "before": "try await OneS1ght.setFloorMap(floor)   // 건물 없이 — 조용히 층·구역이 비었다",
+          "after": "try await OneS1ght.setFloorMap(floor, buildingId: building.id)"
+        },
+        {
+          "why": "새 오류 경우가 생겼다 — 빠짐없는 switch 는 컴파일이 안 된다.",
+          "before": "switch error {\ncase .notInitialized, .notIdentified, .positioningDisabled, .deviceNotSupported, .osVersionTooLow: …\n}",
+          "after": "switch error {\ncase .floorNotSet: askUserToPickBuilding()\n…\n@unknown default: break\n}"
         }
       ]
     }
