@@ -392,6 +392,15 @@ final class SessionCoordinator {
         Set(old.map(\.id)) != Set(new.map(\.id))
     }
 
+    /// 구역 목록의 내용 지문 — id 뿐 아니라 이름·판정 파라미터·폴리곤까지. 순서에 흔들리지 않게
+    /// 정렬해서 잇는다. 같은 지문이면 판정기에 다시 넣지 않는다(refreshZones).
+    static func zoneContentSignature(_ zones: [Zone]) -> String {
+        zones.map { z in
+            let poly = z.polygon.map { String(format: "%.2f,%.2f", $0.x, $0.y) }.joined(separator: ";")
+            return "\(z.id)|\(z.name)|\(z.inDist)|\(z.inCount)|\(z.outPeriod)|\(poly)"
+        }.sorted().joined(separator: "\n")
+    }
+
     /// 직전과 결과가 같으면 침묵 (폴링 도배 방지). 호스트가 버튼으로 부른 건 앱이 따로 남긴다.
     private var lastZoneOutcome: String?
     private func logZoneOutcome(_ message: String, key: String) {

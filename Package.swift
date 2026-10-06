@@ -38,6 +38,12 @@ let package = Package(
         // 앵커 목록·앵커별 수신 상태·세션ID·zone_id 는 노출하지 않는다(진단 한계).
         // 레인징·존 판정·로거 프레임워크를 캐리어 타깃으로 싣고 온다.
         .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.0.1"),
+        // 직접 선택 모드(PositioningMode.manual) — 콘솔 로케이터·세션으로 NISession 을 SDK 가 직접
+        // 돌릴 때 앵커 수신값→좌표 계산에 쓴다. 위 엔진이 같은 2.1.0 을 실어 오므로 버전 충돌은 없다.
+        .package(url: "https://github.com/Geoplan-Mobile/gpi-dltdoa", exact: "2.1.0"),
+        // 직접 선택 모드의 존 판정 — 자동 모드에서 엔진이 안에서 돌리는 것과 같은 판정기(PRM)를 SDK 가
+        // 직접 돌려, 콘솔 존 파라미터가 두 모드에서 똑같이 소비되게 한다. 엔진이 같은 2.0.0 을 실어 온다.
+        .package(url: "https://github.com/Geoplan-Mobile/gpi-prm", exact: "2.0.0"),
     ],
     targets: [
         .target(
@@ -45,6 +51,10 @@ let package = Package(
             dependencies: [
                 .product(name: "gpi-ihub", package: "gpi-ihub",
                          condition: .when(platforms: [.iOS])),   // 맥 테스트는 엔진 없이 코어만
+                .product(name: "gpi-dltdoa", package: "gpi-dltdoa",
+                         condition: .when(platforms: [.iOS])),   // 직접 선택 모드 — 좌표 계산
+                .product(name: "gpi-prm", package: "gpi-prm",
+                         condition: .when(platforms: [.iOS])),   // 직접 선택 모드 — 존 판정
             ],
             path: "Sources/OneS1ght",
             resources: [

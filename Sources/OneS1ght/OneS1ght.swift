@@ -48,6 +48,10 @@ public final class OneS1ght {
     /// 맨 앞 이모지를 보고 등급을 짐작해야 했다 — 문구가 바뀌면 조용히 오분류됐다.
     public static var onDebugLog: ((LogLevel, String) -> Void)?
 
+    /// 측위 모드 — 층을 엔진이 정할지(automatic, 기본) 앱이 고를지(manual). PositioningMode 참고.
+    /// `begin()` 시점의 값이 그 세션에 적용된다.
+    public static var positioningMode: PositioningMode = .automatic
+
     // MARK: - 상태
 
     /// 세션 가능 상태인가 (initialize 성공 = 키 유효 + 설정 로드됨). 기기 지원 여부는 별개 —

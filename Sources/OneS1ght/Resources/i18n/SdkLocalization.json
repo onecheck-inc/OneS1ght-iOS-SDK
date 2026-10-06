@@ -27,7 +27,7 @@
   "coord.startIgnored": {
     "ko": "이미 측위 중이라 시작 요청을 넘깁니다",
     "ja": "すでに測位中のため開始要求をスキップします",
-    "en": "Already positioning \u2014 start request ignored"
+    "en": "Already positioning — start request ignored"
   },
   "coord.engineRetry": {
     "ko": "측위 엔진이 스스로 멈췄습니다 — %d/%d번째로 %d초 뒤 다시 켭니다",
@@ -219,6 +219,26 @@
     "ja": "コンソールのエリア %d件 を投入 (ロケーター %d台 は診断用 — 測位エンジンは自社サーバーのアンカーを使用)",
     "en": "Applied %d console zones (%d locators are diagnostics only — the positioning engine uses its own anchors)"
   },
+  "uwb.manualStart": {
+    "ko": "선택 모드 — 층 %@ · 세션 %d · 로케이터 %d대로 직접 측위 시작",
+    "ja": "選択モード — 階 %@ · セッション %d · ロケーター %d台で直接測位を開始",
+    "en": "Manual mode — starting direct positioning on floor %@ · session %d · %d locators"
+  },
+  "uwb.manualNoSession": {
+    "ko": "선택 모드인데 이 층의 세션 ID·로케이터가 없다 — setFloorMap 으로 층을 먼저 넣어야 한다",
+    "ja": "選択モードだがこの階のセッションID・ロケーターがない — 先に setFloorMap で階を指定すること",
+    "en": "Manual mode but this floor has no session ID/locators — call setFloorMap first"
+  },
+  "uwb.manualIgnoresDetection": {
+    "ko": "선택 모드 — 로케이터 탐색(자동 층 결정)은 하지 않는다. 건물·층을 고른 뒤 begin()",
+    "ja": "選択モード — ロケーター探索(自動階判定)は行わない。建物・階を選んでから begin()",
+    "en": "Manual mode — no locator search (automatic floor detection). Pick a building/floor, then begin()"
+  },
+  "uwb.manualStop": {
+    "ko": "선택 모드 측위 종료 — measurement %d건",
+    "ja": "選択モードの測位を終了 — measurement %d件",
+    "en": "Manual mode positioning stopped — %d measurements"
+  },
   "uwb.fullAccuracy": {
     "ko": "정밀 위치가 아닙니다 — 임시 정밀 승격을 요청합니다",
     "ja": "正確な位置情報ではありません — 一時的な精度向上を要求します",
@@ -333,5 +353,125 @@
     "ko": "엔진이 아직 내려가는 중 — 정지가 끝나면 이어서 시작합니다",
     "en": "Engine still stopping - will start once it finishes",
     "ja": "エンジンが停止中 - 停止完了後に開始します"
+  },
+  "diag.fail": {
+    "ko": "측위 불가 — 유효앵커 %d/3",
+    "ja": "測位不可 — 有効アンカー %d/3",
+    "en": "Positioning unavailable — valid anchors %d/3"
+  },
+  "diag.missing": {
+    "ko": " · 미수신 %@",
+    "ja": " · 未受信 %@",
+    "en": " · missing %@"
+  },
+  "diag.ok": {
+    "ko": "측위 정상 (좌표 산출 중)",
+    "ja": "測位正常 (座標算出中)",
+    "en": "Positioning OK (computing coordinates)"
+  },
+  "diag.pending": {
+    "ko": "앵커 충분 — 좌표 수렴 대기",
+    "ja": "アンカー十分 — 座標収束待ち",
+    "en": "Anchors sufficient — awaiting fix"
+  },
+  "diag.summary": {
+    "ko": "등록 %d·수신 %d·유효 %d%@ → %@",
+    "ja": "登録 %d·受信 %d·有効 %d%@ → %@",
+    "en": "Registered %d·Received %d·Valid %d%@ → %@"
+  },
+  "provider.anchorScan": {
+    "ko": "📡 앵커 0x%012llX  RSSI %.1f  %@",
+    "ja": "📡 アンカー 0x%012llX  RSSI %.1f  %@",
+    "en": "📡 Anchor 0x%012llX  RSSI %.1f  %@"
+  },
+  "provider.diag": {
+    "ko": "통신 진단: %@",
+    "ja": "通信診断: %@",
+    "en": "Diagnostic: %@"
+  },
+  "provider.invalid": {
+    "ko": "세션 무효화: %@",
+    "ja": "セッション無効化: %@",
+    "en": "Session invalidated: %@"
+  },
+  "provider.permissionDenied": {
+    "ko": "⛔️ 측위 권한이 거부되어 중단합니다 — 설정 앱에서 허용해야 재개할 수 있습니다",
+    "ja": "⛔️ 測位権限が拒否されたため停止します — 設定アプリで許可すると再開できます",
+    "en": "⛔️ Positioning permission denied — enable it in Settings to resume."
+  },
+  "provider.resumed": {
+    "ko": "세션 재개",
+    "ja": "セッション再開",
+    "en": "Session resumed"
+  },
+  "provider.suspended": {
+    "ko": "세션 일시중단",
+    "ja": "セッション一時停止",
+    "en": "Session suspended"
+  },
+  "zone.confirmEstimate": {
+    "ko": "ℹ️ [%@] 진입확정 %d회 → 존 안 약 %.1f초 연속 체류 시 IN (좌표 %.2f초 주기)",
+    "ja": "ℹ️ [%@] 進入確定 %d回 → ゾーン内に約 %.1f秒 連続滞在で IN (座標 %.2f秒周期)",
+    "en": "ℹ️ [%@] Confirm %d× → IN after ~%.1fs continuous stay inside (%.2fs coordinate period)"
+  },
+  "zone.defaultInCount": {
+    "ko": "진입확정 %d회",
+    "ja": "進入確定 %d回",
+    "en": "confirm %d×"
+  },
+  "zone.defaultInDist": {
+    "ko": "진입거리 %@m",
+    "ja": "進入距離 %@m",
+    "en": "inDist %@m"
+  },
+  "zone.defaultInterval": {
+    "ko": "집계간격 %d초",
+    "ja": "集計間隔 %d秒",
+    "en": "interval %ds"
+  },
+  "zone.defaultOutPeriod": {
+    "ko": "이탈유예 %d초",
+    "ja": "離脱猶予 %d秒",
+    "en": "outPeriod %ds"
+  },
+  "zone.defaultPriority": {
+    "ko": "우선순위 %d",
+    "ja": "優先度 %d",
+    "en": "priority %d"
+  },
+  "zone.defaultsApplied": {
+    "ko": "ℹ️ [%@] 미설정 항목에 기본값 적용 — %@",
+    "ja": "ℹ️ [%@] 未設定項目にデフォルト値を適用 — %@",
+    "en": "ℹ️ [%@] Defaults applied to unset fields — %@"
+  },
+  "zone.intervalTooShort": {
+    "ko": "⚠️ [%@] 집계간격 %d초 ≤ 좌표 주기 %.2f초 — 카운트가 매번 리셋되어 IN 발화 불가",
+    "ja": "⚠️ [%@] 集計間隔 %d秒 ≤ 座標周期 %.2f秒 — カウントが毎回リセットされ IN が発火しません",
+    "en": "⚠️ [%@] Interval %ds ≤ coordinate period %.2fs — count resets every time, IN can never fire"
+  },
+  "zone.noZones": {
+    "ko": "⚠️ 이 층에 등록된 구역이 없어 판정을 돌리지 않습니다 — 콘솔에서 구역을 만들어 주세요",
+    "ja": "⚠️ この階に登録されたエリアがないため判定を行いません — コンソールでエリアを作成してください",
+    "en": "⚠️ No zones on this floor, so judging is off — create a zone in the console"
+  },
+  "zone.paramDump": {
+    "ko": "존 판정 → %@ 진입거리 %.2f · 확정 %d회/%d초 · 이탈유예 %d초",
+    "ja": "ゾーン判定 → %@ 進入距離 %.2f · 確定 %d回/%d秒 · 離脱猶予 %d秒",
+    "en": "Zone judging → %@ inDist %.2f · confirm %d×/%ds · outPeriod %ds"
+  },
+  "zone.startFailed": {
+    "ko": "⚠️ 구역 %d개를 넣었는데 판정 엔진이 시작되지 않았습니다 — 좌표를 버립니다",
+    "ja": "⚠️ エリアを %d 件投入しましたが判定エンジンが開始されていません — 座標を破棄します",
+    "en": "⚠️ %d zones were injected but the judging engine did not start — dropping coordinates"
+  },
+  "provider.anchorMatched": {
+    "ko": "✓매칭",
+    "ja": "✓一致",
+    "en": "✓matched"
+  },
+  "provider.anchorUnmatched": {
+    "ko": "✗미매칭",
+    "ja": "✗不一致",
+    "en": "✗unmatched"
   }
 }

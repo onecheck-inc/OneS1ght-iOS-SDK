@@ -32,7 +32,9 @@ import Combine
 import simd
 import os
 import CoreLocation
+import NearbyInteraction   // 선택 모드 — NISession(DL-TDoA)을 SDK 가 직접 띄운다
 import gpi_ihub
+import gpi_dltdoa          // 선택 모드 — 앵커 수신값 → 좌표 계산
 
 // Mac 콘솔에서 필터: subsystem "co.onecheck.ones1ght" / category "UWB"
 private let mlog = Logger(subsystem: "co.onecheck.ones1ght", category: "UWB")
@@ -99,6 +101,26 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// ⚠️ internal — 앱이 엔진 키를 보거나 넣을 일이 없다(0.1.24 까지 public 이었다 — 감사 K4).
     var license = ""
 
+    // MARK: - 측위 모드 (automatic / manual)
+
+    /// 이번 세션의 모드 — `start()` 때 `OneS1ght.positioningMode` 를 읽어 고정한다.
+    /// · automatic: 엔진이 층을 정하고 로케이터·세션을 자기 서버에서 받는다 (아래 hub 경로).
+    /// · manual:    앱이 고른 층의 콘솔 로케이터·세션으로 SDK 가 NISession 을 직접 돌린다 (startManual).
+    ///   엔진 쪽에 층·로케이터가 등록(프로비저닝)돼 있지 않은 현장(시리얼 모드)을 위한 길이다.
+    @Published public private(set) var mode: PositioningMode = .automatic
+    /// 선택 모드 재료 — 콘솔 층별 UWB 세션(networkIdentifier). apply(config:) 의 sessionId.
+    private var networkIdentifier: Int?
+    private var manualSession: NISession?
+    private let positioner = DLTDoAPositioner(minRssi: -90.0)
+    private var manualCancellable: AnyCancellable?
+    /// 선택 모드에서 실제로 신호가 잡힌 로케이터 주소 — 진단(등록 vs 수신)에 쓴다.
+    private var seenAddresses = Set<UInt64>()
+    /// 선택 모드 존 판정 — 엔진(gpi-ihub)이 없으므로 엔진이 안에서 쓰는 것과 같은 판정기(gpi-prm)를
+    /// SDK 가 직접 돌린다. 콘솔 존 파라미터(in_dist·in_count·out_period…)가 두 모드에서 똑같이 소비된다.
+    private let manualJudge = PrmZoneEngine()
+    /// 선택 모드용 콘솔 존 — apply(config:) 는 시작 전에 오므로 들고 있다가 startManual 이 판정기에 넣는다.
+    private var manualZones: [Zone] = []
+
     // MARK: - 내부
 
     private var buildingId = ""
@@ -136,6 +158,15 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         }
         judge.onLog = { [weak self] level, msg in self?.addLog(level, msg) }
         judge.onReport = { [weak self] code, ctx in self?.reportToSDK(code, ctx) }
+        // 선택 모드 판정기 — 이벤트 처리는 엔진 판정기와 같은 길로.
+        manualJudge.onEvent = { [weak self] event in
+            guard let self else { return }
+            self.addLog("🎯 \(event.label)")
+            self.onZoneEvent?(event)
+            self.delegate?.provider(self, didEmit: event)     // → FloorSession.onZoneEnter/Exit/Dwell
+            self.forwardToSDK(event)
+        }
+        manualJudge.onLog = { [weak self] level, msg in self?.addLog(level, msg) }   // PRM 수명주기·오류
         addLog(SdkLocalized.format("uwb.ready", hub.getLibraryVersion(),
                                    SdkLocalized.text(Self.isSupported ? "uwb.supported"
                                                                       : "uwb.unsupported")))
@@ -195,6 +226,25 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         let summary = SdkLocalized.format("uwb.diag", phase.rawValue,
                                           detectedFloorId.map(String.init) ?? "-",
                                           measurementCount, reg.count)
+        // 선택 모드는 NISession 이 앵커별 수신을 주므로 등록 vs 수신을 실제로 가를 수 있다.
+        if mode == .manual {
+            let recv = Set(seenAddresses.map { Int($0) })
+            let regSet = Set(reg)
+            let matched = regSet.intersection(recv).sorted()
+            let missing = regSet.subtracting(recv).sorted()
+            let miss = missing.map { String(format: "0x%04X", $0) }.joined(separator: ",")
+            let verdict = fix ? SdkLocalized.text("diag.ok")
+                        : matched.count >= 3 ? SdkLocalized.text("diag.pending")
+                        : SdkLocalized.format("diag.fail", matched.count)
+            let missPart = missing.isEmpty ? "" : SdkLocalized.format("diag.missing", miss)
+            return AnchorDiagnostic(registered: reg,
+                                    received: recv.sorted(),
+                                    matched: matched,
+                                    missing: missing,
+                                    hasFix: fix,
+                                    summary: SdkLocalized.format("diag.summary", reg.count, recv.count,
+                                                                 matched.count, missPart, verdict))
+        }
         return AnchorDiagnostic(registered: reg,
                                 received: fix ? reg : [],
                                 matched: fix ? reg : [],
@@ -321,6 +371,12 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     }
 
     fileprivate func positioned(_ fid: Int64, _ x: Double, _ y: Double, _ z: Double) {
+        consume(x, y, z, floorId: String(fid))
+    }
+
+    /// 좌표 한 건의 공통 소비 경로 — 자동 모드(엔진 콜백)와 선택 모드(NISession → 계산기) 둘 다 여기로.
+    /// 선택 모드의 층 ID 는 콘솔 값(문자열)이라 Int64 로 못 만들 수 있어 문자열로 받는다.
+    private func consume(_ x: Double, _ y: Double, _ z: Double, floorId fidString: String) {
         // 탐색만 하는 동안(측위 시작 전)의 좌표는 버린다 — 화면에도, 서버에도, 판정에도 안 간다.
         guard isRunning else { return }
         // 일시정지 중에도 엔진은 좌표를 계속 준다. 여기서 버린다 — 엔진을 끄지 않는 것이
@@ -331,8 +387,10 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         measurementCount += 1
         // 좌표 라인은 로그에서 제외 — 초당 여러 건이라 판정 이벤트를 묻어버린다.
         // ① SDK 로 좌표 전달 (버퍼링 → positioning/logs 는 코어 몫)
-        delegate?.provider(self, didUpdate: coord, floorId: String(fid), at: Date())
-        // ② 존 판정은 엔진이 한다 — 여기서 좌표를 넣지 않는다 (areaEvent 로 들어온다)
+        delegate?.provider(self, didUpdate: coord, floorId: fidString, at: Date())
+        // ② 존 판정 — 자동 모드는 엔진이 한다(areaEvent 로 들어온다). 선택 모드는 엔진이 없으므로
+        //    여기서 좌표를 PRM 판정기에 넣는다 — 자동 모드에서 엔진이 안에서 하는 일과 같다.
+        if mode == .manual { manualJudge.ingest(Position(x: x, y: y), now: Date()) }
     }
 
     /// 엔진이 올린 영역 전환. `fileprivate` 이 아니라 내부 공개 — 테스트가 직접 밟는다.
@@ -399,6 +457,12 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 알리고, 호스트가 건물·층을 자동 선택한다. 측위 가동은 그 뒤 `start()` 가 한다.
     public func startDetection() {
         guard phase == .idle else { return }
+        // 선택 모드에서는 엔진(로케이터 탐색·자동 층 결정)을 띄우지 않는다.
+        guard OneS1ght.positioningMode == .automatic else {
+            addLog(.info, SdkLocalized.text("uwb.manualIgnoresDetection"))
+            return
+        }
+        mode = .automatic          // 엔진이 뜬다 — 이후 stop/stopDetection 은 엔진 경로를 탄다
         let key = license.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             addLog(.error, SdkLocalized.text("uwb.noLicense"))
@@ -540,6 +604,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
 
     /// 엔진을 완전히 멈춘다. 측위 중이었으면 그것도 끝난다.
     public func stopDetection() {
+        // 선택 모드엔 엔진이 없다 — 돌고 있는 UWB 세션만 끝낸다.
+        if mode == .manual { if isRunning { stopManual() }; return }
         guard phase != .idle, phase != .stopping else { return }
         // 끄겠다는 것이 최신 의사다 — 구역 재적재 중이었어도 정지 완료 뒤 다시 켜지 않는다.
         // 예전엔 이 표식을 안 지워, 재적재 1.5초 안에 end()/백그라운드로 가면 hubStopped 가 「재적재」 로
@@ -577,12 +643,21 @@ extension UwbPositioningProvider: PositioningProvider {
     }
 
     /// 콘솔 로케이터·세션·존.
-    /// · 앵커·세션은 엔진이 자기 서버에서 받으므로 **주입해도 측위에 쓰이지 않는다** — 진단용.
+    /// · 앵커·세션 — 자동 모드에선 엔진이 자기 서버에서 받으므로 **주입해도 측위에 쓰이지 않는다**(진단용).
+    ///   선택 모드에선 이 값으로 NISession 을 돌린다(startManual) — 없으면 시작하지 못한다.
     /// · 존은 zone_id 매핑용으로 판정기에 꽂는다. 빈 목록도 "없다"는 뜻이라 그대로 반영한다
     ///   (구역을 전부 지운 상황이 엔진에 전달되지 않으면 사라진 구역에서 시책이 계속 발화한다).
     public func apply(config: PositioningConfig) {
-        if !config.anchors.isEmpty { anchors = config.anchors }
+        if !config.anchors.isEmpty {
+            anchors = config.anchors
+            positioner.anchorCoordinatesOverride = config.anchors   // 선택 모드가 쓴다 (자동 모드는 진단용)
+        }
+        if let sid = config.sessionId { networkIdentifier = sid }   // 선택 모드의 UWB 세션
         judge.apply(zones: config.zones)
+        manualZones = config.zones
+        // 선택 모드로 돌고 있으면 바로 교체(구역 새로고침) — 아니면 startManual 이 넣는다.
+        // PRM 은 apply 마다 stop→start 라, 안 돌 때 넣으면 자동 모드 옆에서 헛돈다.
+        if mode == .manual, isRunning { manualJudge.apply(zones: config.zones) }
         addLog(SdkLocalized.format("uwb.zonesApply", config.zones.count, config.anchors.count))
     }
 
@@ -594,6 +669,8 @@ extension UwbPositioningProvider: PositioningProvider {
     /// 다시 뜨는 동안(실측 1.5초 남짓) 좌표가 끊기고 층을 BLE 로 다시 찾는다. 같은 층이면
     /// 호스트에는 아무 일도 없었던 것처럼 보인다 — `hubStopped()` 가 세션 정리를 건너뛴다.
     public func reloadGeofences() {
+        // 선택 모드는 존을 apply(config:) 로 직접 받으므로 다시 읽을 엔진이 없다.
+        guard mode == .automatic else { return }
         // 측위 중이 아니면 할 일이 없다 — 다음 start() 가 어차피 새로 읽는다.
         guard isRunning, phase != .idle, phase != .stopping, !reloadingGeofences else { return }
         reloadingGeofences = true
@@ -620,6 +697,22 @@ extension UwbPositioningProvider: PositioningProvider {
         guard phase != .stopping else {
             startAfterStop = true
             addLog(SdkLocalized.text("uwb.startQueued"))
+            return
+        }
+        // 모드는 세션 시작 시점에 고정 — 도중에 바꾸면 다음 start() 부터.
+        mode = OneS1ght.positioningMode
+        if mode == .manual {
+            // 자동 모드 엔진이 아직 떠 있으면(설정을 바꾼 직후 탐색 중이던 경우) 먼저 내린다 —
+            // 두 경로가 같이 돌면 엔진이 잡은 층이 사람이 고른 층을 덮어쓴다. 정지가 끝나면
+            // hubStopped() 가 start() 를 이어 불러 여기로 다시 온다.
+            if phase != .idle {
+                startAfterStop = true
+                phase = .stopping
+                hub.stop()
+                addLog(SdkLocalized.text("uwb.startQueued"))
+                return
+            }
+            startManual()
             return
         }
         if phase == .idle { startDetection() }
@@ -674,6 +767,7 @@ extension UwbPositioningProvider: PositioningProvider {
         // 이탈이 영영 안 나오고 다음 진입도 통째로 묻힌다. 비워 두면 엔진이 보내는 다음
         // 전환에서 다시 맞춰진다.
         judge.reset()
+        manualJudge.reset()
         addLog(.info, SdkLocalized.text("uwb.resumed"))
     }
 
@@ -683,6 +777,7 @@ extension UwbPositioningProvider: PositioningProvider {
         startAfterStop = false
         wantsRunning = false
         guard isRunning else { return }
+        if mode == .manual { stopManual(); return }
         isRunning = false
         latestPosition = nil
         floorWatchTask?.cancel(); floorWatchTask = nil
@@ -704,7 +799,127 @@ extension UwbPositioningProvider: ExitsZoneBeforeBackground {
     /// 일시정지 중이면 보내지 않는다(안드로이드와 같다 — 이벤트를 막는 중이다).
     func exitActiveZoneBeforeBackground() {
         guard isRunning, !isPaused else { return }
+        // 선택 모드는 자기 판정기를 쓴다 — 같은 이유로 그쪽도 나간 것으로 친다.
+        if mode == .manual { manualJudge.exitActive(at: Date()); return }
         judge.exitActive(at: Date())
+    }
+}
+
+// MARK: - 선택 모드 (manual) — 콘솔 로케이터·세션으로 NISession 을 직접 돌린다
+
+@available(iOS 27.0, *)
+extension UwbPositioningProvider {
+
+    /// 선택 모드 시작. 엔진(hub)은 건드리지 않는다 — 층은 앱이 골랐고, 로케이터·세션은
+    /// `apply(config:)` 로 이미 들어와 있어야 한다(setFloorMap → 코어 applyFloorStateToProvider).
+    fileprivate func startManual() {
+        guard let networkIdentifier, !anchors.isEmpty else {
+            addLog(.error, SdkLocalized.text("uwb.manualNoSession"))
+            onEngineError?(4, "manual mode: no session id / locators for the floor")
+            return
+        }
+        measurementCount = 0
+        latestPosition = nil
+        seenAddresses.removeAll()
+        manualJudge.apply(zones: manualZones)     // PRM 시작 — 콘솔 존 파라미터 그대로 (없으면 안 돈다)
+        isRunning = true
+        isPaused = false
+        phase = .tracking
+        detectedFloorId = Int64(floorId)          // 콘솔 층 ID 가 숫자면 엔진 층과 같은 자리에 둔다
+        addLog(.info, SdkLocalized.format("uwb.manualStart", floorId, networkIdentifier, anchors.count))
+        delegate?.provider(self, didEnter: buildingId)
+        if let fid = detectedFloorId { onFloorDetected?(fid) }
+
+        // 좌표 스트림 — DispatchQueue.main (RunLoop.main 은 스크롤 중 배달을 멈춘다, 08-06 실측)
+        manualCancellable = positioner.$estimatedPosition
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] pos in
+                guard let self, let pos else { return }
+                self.consume(pos.x, pos.y, pos.z, floorId: self.floorId)
+            }
+
+        // DL-TDoA 는 위치 권한(정밀 포함)이 있어야 돈다 — 자동 모드와 같은 순서로 확보한 뒤 띄운다.
+        ensureLocationAuthorization { [weak self] ok in
+            guard let self, self.isRunning, self.mode == .manual else { return }
+            guard ok else { self.stopManual(); return }
+            let session = NISession()
+            session.delegate = self
+            self.manualSession = session
+            session.run(NIDLTDOAConfiguration(networkIdentifier: networkIdentifier))
+            self.addLog(SdkLocalized.text("provider.waiting"))
+            // 통신 진단 — 5초 뒤 1회 (등록 vs 수신)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard let self, self.isRunning, self.mode == .manual else { return }
+                let d = self.diagnostic
+                self.addLog(d.canPosition ? .info : .error, SdkLocalized.format("provider.diag", d.summary))
+            }
+        }
+    }
+
+    fileprivate func stopManual() {
+        manualSession?.invalidate(); manualSession = nil
+        manualCancellable?.cancel(); manualCancellable = nil
+        manualJudge.stop()                        // PRM 정지 — 존 목록은 남아 다음 시작 때 다시 들어간다
+        isRunning = false
+        isPaused = false
+        latestPosition = nil
+        phase = .idle
+        addLog(.info, SdkLocalized.format("uwb.manualStop", measurementCount))
+        if detectedFloorId != nil {
+            detectedFloorId = nil
+            onFloorDetected?(nil)
+        }
+    }
+}
+
+// MARK: - NISessionDelegate (선택 모드)
+
+@available(iOS 27.0, *)
+extension UwbPositioningProvider: NISessionDelegate {
+
+    // ★ 앵커 수신값 → 좌표 계산기에 그대로 주입
+    public nonisolated func session(_ session: NISession,
+                                    didUpdateDLTDOA measurements: [NIDLTDOAMeasurement]) {
+        Task { @MainActor in
+            guard session === self.manualSession else { return }
+            self.positioner.update(measurements: measurements)
+            for m in measurements {
+                let addr = UInt64(m.address)
+                if self.seenAddresses.insert(addr).inserted {
+                    let matched = SdkLocalized.text(self.anchors[Int(addr)] != nil
+                                                ? "provider.anchorMatched" : "provider.anchorUnmatched")
+                    self.addLog(.info, String(format: SdkLocalized.text("provider.anchorScan"),
+                                              addr, m.signalStrength, matched))
+                }
+            }
+        }
+    }
+
+    public nonisolated func sessionWasSuspended(_ session: NISession) {
+        Task { @MainActor in self.addLog(SdkLocalized.text("provider.suspended")) }
+    }
+
+    /// 중단이 끝났다 — 같은 설정으로 run 을 다시 불러야 측정이 재개된다(Apple NISessionDelegate 계약).
+    /// 이걸 빼먹으면 좌표가 그 자리에서 영영 멈춘다 — 오류도 로그도 없이.
+    public nonisolated func sessionSuspensionEnded(_ session: NISession) {
+        Task { @MainActor in
+            self.addLog(SdkLocalized.text("provider.resumed"))
+            guard self.isRunning, self.mode == .manual, session === self.manualSession,
+                  let networkIdentifier = self.networkIdentifier else { return }
+            session.run(NIDLTDOAConfiguration(networkIdentifier: networkIdentifier))
+        }
+    }
+
+    public nonisolated func session(_ session: NISession, didInvalidateWith error: Error) {
+        let denied = (error as NSError).code == NIError.Code.userDidNotAllow.rawValue
+        Task { @MainActor in
+            guard session === self.manualSession else { return }
+            self.addLog(.error, denied ? SdkLocalized.text("provider.permissionDenied")
+                               : SdkLocalized.format("provider.invalid", error.localizedDescription))
+            self.onEngineError?(denied ? 7 : 0, error.localizedDescription)
+            self.stopManual()
+        }
     }
 }
 
