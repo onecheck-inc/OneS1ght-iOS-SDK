@@ -37,7 +37,9 @@ let package = Package(
         // 공개 API 는 진입 클래스 7개 + 리스너 7개가 전부다 —
         // 앵커 목록·앵커별 수신 상태·세션ID·zone_id 는 노출하지 않는다(진단 한계).
         // 레인징·존 판정·로거 프레임워크를 캐리어 타깃으로 싣고 온다.
-        .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.0.1"),
+        // 1.1.0(2026-09-22): 층 판정을 여러 앵커로·새 층은 앵커 3대 이상·첫 층 1초 관찰·UWB 세션이
+        // 끊기면 엔진이 스스로 다시 연다(오류 5 는 알림만 — 우리는 원래 5 로 멈추지 않는다). 공개 API 동일.
+        .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.1.0"),
     ],
     targets: [
         .target(
