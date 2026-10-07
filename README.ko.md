@@ -77,6 +77,25 @@ targets: [
 > 사용자가 "대략적인 위치" 를 고르거나 권한을 거부하면 측위가 시작되지 않고
 > `onDebugLog` 에 `E2003` 이 남습니다.
 
+### 선택: 위치 '항상' 권한 · Bluetooth 백그라운드 모드
+
+측위 엔진이 **백그라운드에서도 층을 알아보려면** 아래 셋이 모두 필요합니다. 필수는 아닙니다 —
+없어도 포그라운드 측위는 그대로 동작합니다.
+
+| 추가할 것 | 값 |
+|---|---|
+| Info.plist `UIBackgroundModes` | `bluetooth-central` |
+| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | 사용 목적 문구 |
+| 런타임 권한 요청 | `CLLocationManager.requestAlwaysAuthorization()` (앱이 직접) |
+
+> ⚠️ 셋을 갖춰도 **백그라운드에서는 좌표가 나오지 않습니다** — UWB 가 포그라운드 전용이라서입니다.
+> 또 현재 SDK 는 백그라운드로 전환되면 측위 엔진을 멈추므로(아래 배치 정책), **지금은 이 설정을
+> 해도 백그라운드 층 인식이 이어지지 않습니다** — 엔진 요구 사항을 미리 맞춰 두는 용도입니다. `bluetooth-central` 만 선언하고 권한이 '항상' 이 아니면 엔진이
+> 로그로 경고하지만 시작을 막지는 않습니다.
+>
+> '항상' 은 SDK 가 요청하지 않습니다. 요청하려면 '앱 사용 중' 허용을 받은 뒤 앱이
+> `requestAlwaysAuthorization()` 을 부르세요 — iOS 는 이 창을 앱마다 한 번만 띄웁니다.
+
 ---
 
 ## Step 2: SDK 초기화

@@ -78,6 +78,26 @@ permission is requested.
 > `CLLocationManager`. If the user picks "Approximate Location" or denies the
 > permission, positioning does not start and `E2003` is emitted to `onDebugLog`.
 
+### Optional: "Always" location · Bluetooth background mode
+
+For the positioning engine to **keep recognizing the floor in the background**, all three of the
+following are required. They are optional — foreground positioning works without them.
+
+| Add | Value |
+|---|---|
+| Info.plist `UIBackgroundModes` | `bluetooth-central` |
+| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | Purpose string |
+| Runtime permission | `CLLocationManager.requestAlwaysAuthorization()` (called by the app) |
+
+> ⚠️ Even with all three, **no coordinates are produced in the background** — UWB is foreground-only.
+> The current SDK also stops the positioning engine when the app moves to the background (see Batch
+> policy below), so **today these settings do not keep floor recognition running in the background** —
+> they only prepare the app for the engine's requirements. If you declare only
+> `bluetooth-central` without "Always", the engine logs a warning but still starts.
+>
+> The SDK does not request "Always". To request it, call `requestAlwaysAuthorization()` from the
+> app after "While Using" is granted — iOS shows this prompt only once per app.
+
 ---
 
 ## Step 2: SDK Initialization
