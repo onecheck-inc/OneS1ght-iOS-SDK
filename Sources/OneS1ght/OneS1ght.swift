@@ -33,7 +33,7 @@ public final class OneS1ght {
     private init() {}   // 인스턴스 생성 차단 — 진입점은 타입 자체 (전부 static)
 
     /// SDK 버전 (서버 로그의 sdk_version 에 실림)
-    nonisolated public static let sdkVersion = "0.2.1"
+    nonisolated public static let sdkVersion = "0.2.2"
 
     /// 기본 서버 주소 — `initialize(sdkKey:baseURL:)` 의 기본값.
     nonisolated public static let defaultBaseURL = URL(string: "https://console.ones1ght.com/api/sdk/v1")!

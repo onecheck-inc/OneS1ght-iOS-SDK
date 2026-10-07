@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.2.1",
+  "currentVersion": "0.2.2",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -314,6 +314,14 @@
           "after": "switch error {\ncase .floorNotSet: askUserToPickBuilding()\n…\n@unknown default: break\n}"
         }
       ]
+    },
+    {
+      "from": "0.2.1",
+      "to": "0.2.2",
+      "breaking": false,
+      "summary": "측위 엔진을 새 판으로 올렸다 — 층을 여러 앵커로 판단하고(새 층은 앵커 3대 이상, 첫 층은 1초 지켜본 뒤 확정), UWB 세션이 끊기면 엔진이 스스로 다시 연다. 공개 API 변경 없음.",
+      "action": "의존성 해석만 다시 하면 된다. 코드는 고칠 것이 없다. (선택) 백그라운드 층 인식을 준비하려면 README 「선택: 위치 '항상' 권한 · Bluetooth 백그라운드 모드」 참고.",
+      "changes": []
     }
   ]
 }
