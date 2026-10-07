@@ -78,25 +78,32 @@ permission is requested.
 > `CLLocationManager`. If the user picks "Approximate Location" or denies the
 > permission, positioning does not start and `E2003` is emitted to `onDebugLog`.
 
-### Optional: "Always" location · Bluetooth background mode
+### iOS 27.2 and later: "Always" location is required
 
-For the positioning engine to **keep recognizing the floor in the background**, all three of the
-following are required. They are optional — foreground positioning works without them.
+**On iOS 27.2 and later, location access must be "Always" for the floor to be detected.** The positioning
+engine picks the floor with BLE beacon region monitoring (`CLBeaconRegion`); from iOS 27.2 the system keeps
+reporting that region as "outside" under "While Using" — the floor is never found (`E3007`) and no
+coordinates arrive. iOS 27.1 and earlier work with "While Using".
 
 | Add | Value |
 |---|---|
-| Info.plist `UIBackgroundModes` | `bluetooth-central` |
 | Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | Purpose string |
-| Runtime permission | `CLLocationManager.requestAlwaysAuthorization()` (called by the app) |
+| Runtime permission | `CLLocationManager.requestAlwaysAuthorization()` once, right after "While Using" is granted (called by the app) |
 
-> ⚠️ Even with all three, **no coordinates are produced in the background** — UWB is foreground-only.
-> The current SDK also stops the positioning engine when the app moves to the background (see Batch
-> policy below), so **today these settings do not keep floor recognition running in the background** —
-> they only prepare the app for the engine's requirements. If you declare only
-> `bluetooth-central` without "Always", the engine logs a warning but still starts.
+```swift
+func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    if manager.authorizationStatus == .authorizedWhenInUse {
+        manager.requestAlwaysAuthorization()   // iOS shows this prompt only once per app
+    }
+}
+```
+
+> The SDK does not request "Always". If the user declines, the SDK still starts — it just cannot find the
+> floor on iOS 27.2 and later; guide the user to Settings.
 >
-> The SDK does not request "Always". To request it, call `requestAlwaysAuthorization()` from the
-> app after "While Using" is granted — iOS shows this prompt only once per app.
+> ⚠️ **Do not add `bluetooth-central` to `UIBackgroundModes`.** The SDK stops positioning in the background,
+> so the mode is never used, and App Store review may reject an unused background mode (Guideline 2.5.4).
+> Explain the "Always" request in your review notes (iBeacon region monitoring needs it from iOS 27.2).
 
 ---
 
@@ -473,7 +480,7 @@ Every failure carries a code. Include it when contacting support.
 | `E3003` | No UWB session on floor |
 | `E3004` | No zones on floor |
 | `E3006` | Locator lookup failed — the map still opens |
-| `E3007` | Floor not detected (BLE) |
+| `E3007` | Floor not detected (BLE) — on iOS 27.2+ check that location is "Always" |
 | `E3008` | Engine floor differs from Console floor |
 | `E3009` | No Console zone matches an engine area name |
 | `E4001` | UWB session failed / engine stopped |
