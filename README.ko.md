@@ -77,24 +77,31 @@ targets: [
 > 사용자가 "대략적인 위치" 를 고르거나 권한을 거부하면 측위가 시작되지 않고
 > `onDebugLog` 에 `E2003` 이 남습니다.
 
-### 선택: 위치 '항상' 권한 · Bluetooth 백그라운드 모드
+### iOS 27.2 이상: 위치 '항상' 권한 필수
 
-측위 엔진이 **백그라운드에서도 층을 알아보려면** 아래 셋이 모두 필요합니다. 필수는 아닙니다 —
-없어도 포그라운드 측위는 그대로 동작합니다.
+**iOS 27.2 이상에서는 위치 권한이 '항상' 이어야 층을 찾습니다.** 측위 엔진은 BLE 비콘 영역 감시(`CLBeaconRegion`)로
+층을 고르는데, iOS 27.2 부터 '앱 사용 중' 권한에서는 시스템이 그 영역을 계속 "밖" 으로 알립니다 — 층을 못 찾아
+(`E3007`) 좌표가 나오지 않습니다. iOS 27.1 이하는 '앱 사용 중' 으로도 됩니다.
 
 | 추가할 것 | 값 |
 |---|---|
-| Info.plist `UIBackgroundModes` | `bluetooth-central` |
 | Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | 사용 목적 문구 |
-| 런타임 권한 요청 | `CLLocationManager.requestAlwaysAuthorization()` (앱이 직접) |
+| 런타임 권한 요청 | '앱 사용 중' 허용 직후 `CLLocationManager.requestAlwaysAuthorization()` 한 번 (앱이 직접) |
 
-> ⚠️ 셋을 갖춰도 **백그라운드에서는 좌표가 나오지 않습니다** — UWB 가 포그라운드 전용이라서입니다.
-> 또 현재 SDK 는 백그라운드로 전환되면 측위 엔진을 멈추므로(아래 배치 정책), **지금은 이 설정을
-> 해도 백그라운드 층 인식이 이어지지 않습니다** — 엔진 요구 사항을 미리 맞춰 두는 용도입니다. `bluetooth-central` 만 선언하고 권한이 '항상' 이 아니면 엔진이
-> 로그로 경고하지만 시작을 막지는 않습니다.
+```swift
+func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    if manager.authorizationStatus == .authorizedWhenInUse {
+        manager.requestAlwaysAuthorization()   // iOS 는 이 창을 앱마다 한 번만 띄웁니다
+    }
+}
+```
+
+> '항상' 은 SDK 가 요청하지 않습니다. 사용자가 거절해도 SDK 는 시작을 막지 않습니다 — iOS 27.2 이상에서 층을
+> 못 찾을 뿐이니 설정 앱으로 안내하세요.
 >
-> '항상' 은 SDK 가 요청하지 않습니다. 요청하려면 '앱 사용 중' 허용을 받은 뒤 앱이
-> `requestAlwaysAuthorization()` 을 부르세요 — iOS 는 이 창을 앱마다 한 번만 띄웁니다.
+> ⚠️ **`UIBackgroundModes` 의 `bluetooth-central` 은 넣지 마세요.** SDK 는 백그라운드로 가면 측위를 멈춰 이 모드를
+> 쓰지 않고, App Store 심사에서 쓰지 않는 백그라운드 모드(2.5.4)로 거절될 수 있습니다. 심사 메모에는 '항상' 을
+> 요청하는 이유(iOS 27.2 부터 비콘 영역 감시에 필요)를 적어 두세요.
 
 ---
 
@@ -459,7 +466,7 @@ UI 가 있다면 유예를 그보다 길게 두세요.
 | `E3003` | 층에 UWB 세션 없음 |
 | `E3004` | 층에 존 없음 |
 | `E3006` | 로케이터 조회 실패 — 지도는 그대로 열림 |
-| `E3007` | 층 미탐지 (BLE) |
+| `E3007` | 층 미탐지 (BLE) — iOS 27.2 이상이면 위치 '항상' 확인 |
 | `E3008` | 엔진 층과 콘솔 층 불일치 |
 | `E3009` | 엔진 영역 이름에 맞는 콘솔 존 없음 |
 | `E4001` | UWB 세션 실패 / 엔진 정지 |
