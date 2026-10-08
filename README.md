@@ -13,8 +13,8 @@ on device.
 | Item | Requirement |
 |---|---|
 | Positioning | **iOS 27.0+** · **iPhone 12 or later** (UWB chip) |
-| Package | iOS 15.0+ — the app runs normally on unsupported devices, only the SDK stays inactive |
-| Build | Xcode 26.6+ |
+| Package | iOS 18.0+ — the app runs normally on unsupported devices, only the SDK stays inactive |
+| Build | Xcode 27+ |
 
 You also need keys and a configured space before the SDK does anything useful:
 
@@ -38,7 +38,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.2")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -128,8 +128,8 @@ step (Step 5) — only your app knows which floor to use.
 **Expected logs**
 
 ```
-[I1001] Initialized — tenant=itoku
-verify passed (tenant: itoku)
+[I1001] Initialized — tenant=YOUR_TENANT
+verify passed (tenant: YOUR_TENANT)
 ```
 
 ### Check device support first
