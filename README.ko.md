@@ -15,8 +15,8 @@ SDK 에 대해
 | 항목 | 요구사항 |
 |---|---|
 | 측위 동작 | **iOS 27.0+** · **iPhone 12 이상** (UWB 칩) |
-| 패키지 추가 | iOS 15.0+ — 미지원 기기에서도 앱은 정상 동작하고 SDK만 비활성 |
-| 빌드 환경 | Xcode 26.6+ |
+| 패키지 추가 | iOS 18.0+ — 미지원 기기에서도 앱은 정상 동작하고 SDK만 비활성 |
+| 빌드 환경 | Xcode 27+ |
 
 SDK가 실제로 동작하려면 키와 공간 설정이 먼저 준비되어야 합니다.
 
@@ -40,7 +40,7 @@ https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.2")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -126,8 +126,8 @@ try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 **예상 로그**
 
 ```
-[I1001] 초기화 완료 — tenant=itoku
-verify 통과 (tenant: itoku)
+[I1001] 초기화 완료 — tenant=YOUR_TENANT
+verify 통과 (tenant: YOUR_TENANT)
 ```
 
 ### 기기 지원 여부 먼저 확인

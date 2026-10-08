@@ -12,8 +12,8 @@
 | 項目 | 要件 |
 |---|---|
 | 測位 | **iOS 27.0 以上** ・ **iPhone 12 以降**（UWB チップ搭載） |
-| パッケージ導入 | iOS 15.0 以上 — 非対応端末でもアプリは正常に動作し、SDK のみ無効になります |
-| ビルド環境 | Xcode 26.6 以上 |
+| パッケージ導入 | iOS 18.0 以上 — 非対応端末でもアプリは正常に動作し、SDK のみ無効になります |
+| ビルド環境 | Xcode 27 以上 |
 
 SDK が実際に動作するには、キーと空間設定が先に用意されている必要があります。
 
@@ -37,7 +37,7 @@ https://github.com/onecheck-inc/OneS1ght-iOS-SDK
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.0")
+    .package(url: "https://github.com/onecheck-inc/OneS1ght-iOS-SDK", from: "0.2.2")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -124,8 +124,8 @@ try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 **想定されるログ**
 
 ```
-[I1001] 初期化完了 — tenant=itoku
-verify 通過 (tenant: itoku)
+[I1001] 初期化完了 — tenant=YOUR_TENANT
+verify 通過 (tenant: YOUR_TENANT)
 ```
 
 ### 端末の対応可否を先に確認
