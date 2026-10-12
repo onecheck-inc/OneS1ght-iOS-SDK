@@ -320,7 +320,7 @@
       "to": "0.2.2",
       "breaking": false,
       "summary": "측위 엔진을 새 판으로 올렸다 — 층을 여러 앵커로 판단하고(새 층은 앵커 3대 이상, 첫 층은 1초 지켜본 뒤 확정), UWB 세션이 끊기면 엔진이 스스로 다시 연다. 공개 API 변경 없음.",
-      "action": "의존성 해석만 다시 하면 된다. 코드는 고칠 것이 없다. (선택) 백그라운드 층 인식을 준비하려면 README 「선택: 위치 '항상' 권한 · Bluetooth 백그라운드 모드」 참고.",
+      "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다. 단, iOS 27.2 이상에서는 위치 권한이 '항상' 이어야 층을 찾는다 — Info.plist 에 NSLocationAlwaysAndWhenInUseUsageDescription 을 넣고 '앱 사용 중' 허용 뒤 앱이 requestAlwaysAuthorization() 을 한 번 부른다(README 「iOS 27.2 이상: 위치 '항상' 권한 필수」, Snippets permission 단계). UIBackgroundModes 의 bluetooth-central 은 넣지 않는다.",
       "changes": []
     }
   ]
