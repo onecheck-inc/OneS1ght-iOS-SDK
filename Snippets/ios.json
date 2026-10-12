@@ -15,7 +15,7 @@
     }
   },
   "notes": [
-    "measured: 위치 권한이 없으면 UWB 세션이 INVALID_CONFIGURATION 으로 실패한다 — DL-TDoA 의 시스템 전제 조건이다. 위치·정밀 위치 권한은 begin() 이 엔진을 켤 때 SDK 가 직접 요청한다(앱이 CLLocationManager 를 부르지 않는다). Info.plist 문구가 없으면 시작을 접고 E2003 을 남긴다.",
+    "measured: 위치 권한이 없으면 UWB 세션이 INVALID_CONFIGURATION 으로 실패한다 — DL-TDoA 의 시스템 전제 조건이다. 위치·정밀 위치 권한은 begin() 이 엔진을 켤 때 SDK 가 직접 요청한다(앱이 따로 요청할 필요가 없다 — 단, iOS 27.2 이상의 '항상' 은 앱이 직접 요청한다: permission 단계). Info.plist 문구가 없으면 시작을 접고 E2003 을 남긴다.",
     "층은 엔진이 BLE 로 스스로 찾는다. 층을 지정하지 않은 채 begin() 하는 것이 정상 경로이며, 그때 E3001(층 미지정)은 서버로 올라가지 않는다. 층을 끝내 못 찾으면 E3007(층 미탐지)이 남는다. 사람이 층을 고르게 하려면 setFloorMap 을 쓴다.",
     "identify 없이 측위를 시작하면 데이터가 어디에도 귀속되지 않는다 (E1004).",
     "iOS 의 UWB 는 포그라운드 전용이다. 백그라운드에서는 측위가 멈춘다.",
@@ -33,24 +33,24 @@
         {
           "path": "Package.swift",
           "language": "swift",
-          "code": "dependencies: [\n    .package(url: \"https://github.com/onecheck-inc/OneS1ght-iOS-SDK\", from: \"0.1.0\"),\n],\ntargets: [\n    .target(name: \"YourApp\", dependencies: [\n        .product(name: \"OneS1ght\", package: \"OneS1ght-iOS-SDK\"),\n    ])\n]"
+          "code": "dependencies: [\n    .package(url: \"https://github.com/onecheck-inc/OneS1ght-iOS-SDK\", from: \"0.2.2\"),\n],\ntargets: [\n    .target(name: \"YourApp\", dependencies: [\n        .product(name: \"OneS1ght\", package: \"OneS1ght-iOS-SDK\"),\n    ])\n]"
         },
         {
           "path": "Info.plist",
           "language": "xml",
-          "code": "<key>NSLocationWhenInUseUsageDescription</key>\n<string>매장 내 위치 확인을 위해 사용합니다.</string>\n<key>NSNearbyInteractionUsageDescription</key>\n<string>UWB 정밀 측위를 위해 사용합니다.</string>\n<key>NSBluetoothAlwaysUsageDescription</key>\n<string>주변 측위 장비를 찾는 데 사용합니다.</string>\n<key>NSLocationTemporaryUsageDescriptionDictionary</key>\n<dict>\n    <key>Positioning</key>\n    <string>정확한 실내 위치를 계산하는 데 사용합니다.</string>\n</dict>"
+          "code": "<key>NSLocationWhenInUseUsageDescription</key>\n<string>매장 내 위치 확인을 위해 사용합니다.</string>\n<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>\n<string>iOS 27.2 이상에서 매장의 층을 찾는 데 사용합니다.</string>\n<key>NSNearbyInteractionUsageDescription</key>\n<string>UWB 정밀 측위를 위해 사용합니다.</string>\n<key>NSBluetoothAlwaysUsageDescription</key>\n<string>주변 측위 장비를 찾는 데 사용합니다.</string>\n<key>NSLocationTemporaryUsageDescriptionDictionary</key>\n<dict>\n    <key>Positioning</key>\n    <string>정확한 실내 위치를 계산하는 데 사용합니다.</string>\n</dict>"
         }
       ],
-      "xcode": "File → Add Package Dependencies… 에 https://github.com/onecheck-inc/OneS1ght-iOS-SDK 를 입력하고 Dependency Rule 을 Up to Next Major Version · 0.1.0 으로 둔다. OneS1ght 라이브러리를 앱 타깃에 추가한다.",
-      "warning": "권한 문구 네 개가 모두 필요하다. 앞의 세 개가 없으면 권한 요청 시점에 앱이 종료된다. NSLocationTemporaryUsageDescriptionDictionary 안의 키는 반드시 Positioning 이어야 하며, 다르면 정밀 위치 승격 요청이 오류도 로그도 없이 무시된다."
+      "xcode": "File → Add Package Dependencies… 에 https://github.com/onecheck-inc/OneS1ght-iOS-SDK 를 입력하고 Dependency Rule 을 Up to Next Major Version · 0.2.2 으로 둔다. OneS1ght 라이브러리를 앱 타깃에 추가한다.",
+      "warning": "권한 문구 다섯 개가 모두 필요하다. 앞의 세 개(NSLocationWhenInUse·NSNearbyInteraction·NSBluetoothAlways)가 없으면 권한 요청 시점에 앱이 종료된다. NSLocationAlwaysAndWhenInUseUsageDescription 은 iOS 27.2 이상에서 '항상' 권한을 요청하는 데 쓴다(permission 단계). NSLocationTemporaryUsageDescriptionDictionary 안의 키는 반드시 Positioning 이어야 하며, 다르면 정밀 위치 승격 요청이 오류도 로그도 없이 무시된다. UIBackgroundModes 의 bluetooth-central 은 넣지 않는다 — SDK 가 쓰지 않고 App Store 심사(2.5.4)에서 거절될 수 있다."
     },
     {
       "id": "permission",
       "title": "권한 — 위치는 SDK 가, Nearby Interaction 은 앱이 시점을 정한다",
       "order": 2,
       "language": "swift",
-      "code": "// 위치·정밀 위치 권한은 begin() 이 엔진을 켤 때 SDK 가 직접 요청한다 — 앱은 Info.plist 문구만 넣는다.\n// Nearby Interaction 권한은 확인과 요청이 분리되지 않는다 — 부르는 순간 시스템 창이 뜬다.\nswitch await OneS1ght.requestPermission() {\ncase .authorized:  break\ncase .denied:      showSettingsGuide()      // 앱에서 재요청 불가 — 설정 앱으로\ncase .unsupported: showUnsupportedNotice()\n@unknown default:  break\n}",
-      "warning": "위치 권한을 거부하면 측위가 시작되지 않고 E2003 이 남으며 세션이 닫힌다(onStopped(.engineFailed)). NSLocationWhenInUseUsageDescription 이 없으면 iOS 가 요청을 조용히 무시하므로 SDK 가 시작을 접고 E2003(Info.plist missing …)을 남긴다."
+      "code": "// 위치·정밀 위치 권한은 begin() 이 엔진을 켤 때 SDK 가 직접 요청한다 — 앱은 Info.plist 문구만 넣는다(iOS 27.2+ '항상' 은 아래).\n// Nearby Interaction 권한은 확인과 요청이 분리되지 않는다 — 부르는 순간 시스템 창이 뜬다.\nswitch await OneS1ght.requestPermission() {\ncase .authorized:  break\ncase .denied:      showSettingsGuide()      // 앱에서 재요청 불가 — 설정 앱으로\ncase .unsupported: showUnsupportedNotice()\n@unknown default:  break\n}\n\n// iOS 27.2 이상: 층을 찾으려면 위치 권한이 '항상' 이어야 한다(엔진이 BLE 비콘 영역 감시로 층을 고른다).\n// SDK 는 '항상' 을 요청하지 않는다 — '앱 사용 중' 이 허용된 직후 앱이 CLLocationManager 로 한 번 요청한다.\nfunc locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {\n    if manager.authorizationStatus == .authorizedWhenInUse {\n        manager.requestAlwaysAuthorization()   // iOS 는 이 창을 앱마다 한 번만 띄운다\n    }\n}",
+      "warning": "위치 권한을 거부하면 측위가 시작되지 않고 E2003 이 남으며 세션이 닫힌다(onStopped(.engineFailed)). NSLocationWhenInUseUsageDescription 이 없으면 iOS 가 요청을 조용히 무시하므로 SDK 가 시작을 접고 E2003(Info.plist missing …)을 남긴다. iOS 27.2 이상에서 위치 권한이 '앱 사용 중' 이면 시스템이 비콘 영역을 계속 '밖' 으로 알려 층을 못 찾고 E3007 이 남는다 — '항상' 을 거절해도 SDK 는 시작을 막지 않으니 설정 앱으로 안내한다. iOS 27.1 이하는 '앱 사용 중' 으로 된다."
     },
     {
       "id": "initialize",
