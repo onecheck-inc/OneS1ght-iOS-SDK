@@ -9,6 +9,19 @@
 
 ---
 
+## [0.2.3] — 2026-10-12
+
+### 문서 — SDK 코드·동작 변경 없음
+
+- **iOS 27.2 이상은 위치 권한이 '항상' 이어야 층을 찾습니다.** 코딩 에이전트(MCP)가 쓰는 스니펫에 이 안내가 빠져 있어,
+  스니펫대로 만든 앱은 27.2 이상에서 층을 못 찾았습니다(`E3007`). 스니펫 install 단계에
+  `NSLocationAlwaysAndWhenInUseUsageDescription` 을, permission 단계에 `requestAlwaysAuthorization()` 코드를 더했습니다.
+  0.2.2 항목의 「선택: … Bluetooth 백그라운드 모드」 안내는 README #62 에서 **필수 '항상' · `bluetooth-central` 금지** 로 바뀌었습니다.
+- 스니펫 설치 버전 `from: "0.1.0"` → `"0.2.2"`(스니펫 코드가 0.2.x API 를 씁니다).
+- README 요구사항을 `Package.swift` 에 맞췄습니다 — 패키지 추가 iOS 18.0+, 빌드 Xcode 27+. 예시 로그의 테넌트 코드를 자리표시자로 바꿨습니다.
+
+---
+
 ## [0.2.2] — 2026-10-07
 
 ### 바뀜 — 측위 엔진 개선

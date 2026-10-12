@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.2.2",
+  "currentVersion": "0.2.3",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -321,6 +321,14 @@
       "breaking": false,
       "summary": "측위 엔진을 새 판으로 올렸다 — 층을 여러 앵커로 판단하고(새 층은 앵커 3대 이상, 첫 층은 1초 지켜본 뒤 확정), UWB 세션이 끊기면 엔진이 스스로 다시 연다. 공개 API 변경 없음.",
       "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다. 단, iOS 27.2 이상에서는 위치 권한이 '항상' 이어야 층을 찾는다 — Info.plist 에 NSLocationAlwaysAndWhenInUseUsageDescription 을 넣고 '앱 사용 중' 허용 뒤 앱이 requestAlwaysAuthorization() 을 한 번 부른다(README 「iOS 27.2 이상: 위치 '항상' 권한 필수」, Snippets permission 단계). UIBackgroundModes 의 bluetooth-central 은 넣지 않는다.",
+      "changes": []
+    },
+    {
+      "from": "0.2.2",
+      "to": "0.2.3",
+      "breaking": false,
+      "summary": "문서·스니펫만 바뀐 판 — SDK 코드·동작 변경 없음. iOS 27.2 이상에서 층을 찾으려면 위치 권한 '항상' 이 필요하다는 안내를 스니펫(install·permission)과 README 에 반영했다.",
+      "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다. 아직 안 했다면 iOS 27.2 이상 대응으로 Info.plist 에 NSLocationAlwaysAndWhenInUseUsageDescription 을 넣고 '앱 사용 중' 허용 뒤 requestAlwaysAuthorization() 을 한 번 부른다(Snippets permission 단계). UIBackgroundModes 의 bluetooth-central 은 넣지 않는다.",
       "changes": []
     }
   ]
