@@ -10,6 +10,7 @@
 //    └ didStopUnexpectedly   → 다시 켜 보거나(3·10·30초) 세션을 닫는다
 //
 //  · 백그라운드: UWB 포그라운드 전용(결정사항 6) → 엔진 정지 + flush, 복귀 시 재개(일시정지는 유지)
+//    앱이 화면에 없을 때 begin 되면 세션만 열고 엔진은 화면에 올 때까지 미룬다(2026-10-16)
 //  · 실시간 수신(SSE): 층이 정해졌거나 측위가 도는 동안만 붙어 있다
 //
 //  여기는 **순서를 정하는 자리**다. 일은 부품이 한다(2026-10-02 감사 K7 — 한 타입에 책임 13개였다):
@@ -22,6 +23,9 @@
 import Foundation
 #if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(CoreLocation)
+import CoreLocation
 #endif
 
 /// 서버 에러(ApiError) 밖의 SDK 수준 실패
@@ -96,6 +100,19 @@ final class SessionCoordinator {
     private var receptionCheckTask: Task<Void, Never>?
     private let receptionCheckDelay: TimeInterval
     private var lifecycleObservers: [NSObjectProtocol] = []
+
+    /// 세션은 열렸는데 엔진은 **앱이 화면에 올 때까지** 꺼 둔 상태 — 화면 밖에서 시작했거나 배경으로 내려갔다.
+    ///
+    /// ⚠️ 2026-10-16: 위치 '항상' 권한이 있으면 엔진이 걸어 둔 비콘 영역 때문에 iOS 가 앱을 **배경에서**
+    ///    깨우고, 그 자리에서 begin() 이 불려 엔진이 화면 없이 켜졌다. 이때는 didEnterBackground 가 오지
+    ///    않아 엔진·층 미탐지 감시(20초)·수신 점검이 정지된 앱 안에서 그대로 걸려 있었고, 몇 분 뒤 앱을
+    ///    열면 밀린 `Task.sleep` 이 한꺼번에 깨어나 열자마자 「층을 찾지 못함」(E3007)이 떴다.
+    ///    복귀의 provider.start() 는 이미 「도는 중」 이라 아무 일도 하지 않았다.
+    ///    그래서 엔진은 앱이 화면에 있을 때만 켜고, 켜야 할 일이 남았다는 사실은 이 깃발 하나로 든다.
+    private(set) var engineAwaitingForeground = false
+
+    /// 엔진이 남긴 비콘 영역을 지운다 — 테스트가 바꿔 끼운다(실기기 CoreLocation 을 건드리지 않게).
+    var clearStaleEngineRegion: () -> Void = { StaleEngineRegion.clear() }
 
     /// 존 이벤트 응답의 개인화 액션 → 호스트 전달 (zoneId, triggers)
     var onTriggers: ((String, [Trigger]) -> Void)?
@@ -452,12 +469,43 @@ final class SessionCoordinator {
         //    이미 거부됨) — 그 알림(didStopUnexpectedly)이 isRunning=false 일 때 오면 무시돼, 세션은
         //    「측위 중」 인 채 엔진만 죽은 상태로 남았다.
         isRunning = true
+        // 앱이 화면에 없으면(배경 실행·실행 직후 inactive) 세션만 열고 엔진은 미룬다 — 화면에 오면
+        // 활성 알림이 켠다(engineAwaitingForeground 주석, 2026-10-16). 수신 점검도 엔진과 함께 건다.
+        // 배경에서 깨어난 것이므로 지난 실행이 남긴 비콘 영역도 지운다 — 남겨 두면 iOS 가 또 깨운다.
+        guard isAppActive() else {
+            engineAwaitingForeground = true
+            log(.info, SdkLocalized.text("coord.engineDeferred"))
+            clearStaleEngineRegion()
+            uploads.beginSession()
+            ensureLiveStream()
+            observeAppLifecycleIfNeeded()
+            return
+        }
+        engineAwaitingForeground = false
         provider.start()
         guard isRunning else { return }   // 시작 안에서 이미 닫혔다(재시도 불가) — 타이머를 걸지 않는다
         uploads.beginSession()
         startReceptionCheck()
         ensureLiveStream()
         observeAppLifecycleIfNeeded()
+    }
+
+    /// 앱이 화면에 왔다 — 미뤄 둔 엔진을 켜고 수신 점검을 다시 건다. 내부 공개 — 테스트가 알림 없이 밟는다.
+    ///
+    /// willEnterForeground 와 didBecomeActive 가 둘 다 부른다(배경 실행 뒤 열면 둘 다 오고, 실행 직후
+    /// inactive 에서 begin 했으면 didBecomeActive 만 온다). 깃발을 먼저 내려 **한 번만** 켠다 — 제어 센터처럼
+    /// 잠깐 inactive 였다 돌아오는 것도 didBecomeActive 라, 깃발 없이 켜면 도는 엔진을 또 건드린다(2026-10-16).
+    func handleDidBecomeActive() {
+        // 내려가는 중(stop 이 잔여 좌표를 보내며 기다리는 동안)이면 켜지 않는다 — 끝난 세션에서
+        // 엔진이 다시 돌며 옛 방문 ID 로 존 이벤트를 보내게 된다(S9).
+        guard engineAwaitingForeground, isRunning, stopInFlight == nil, let provider else { return }
+        engineAwaitingForeground = false
+        // 복귀는 새 기회다 — 내려가기 전의 재시도 횟수는 잊는다. 이 시작이 접히면
+        // provider 가 didStopUnexpectedly 로 알려 오고, 거기서 다시 켜 보거나 세션을 닫는다.
+        supervisor.resetAttempts()
+        provider.start()
+        guard isRunning else { return }   // 시작 안에서 이미 닫혔다 — 타이머를 걸지 않는다
+        startReceptionCheck()
     }
 
     /**
@@ -567,6 +615,7 @@ final class SessionCoordinator {
         // 끝낸 세션에 일시정지를 남기지 않는다 — 다음 begin() 은 항상 정상 상태로 시작한다.
         if provider?.isPaused == true { provider?.resume() }
         provider?.stop()
+        engineAwaitingForeground = false    // 끝난 세션은 화면에 와도 켜지 않는다
         uploads.endSession()
         receptionCheckTask?.cancel(); receptionCheckTask = nil
         log(SdkLocalized.format("coord.stopFlush", uploads.pendingCount))
@@ -681,15 +730,21 @@ final class SessionCoordinator {
                            object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
-                    // 복귀는 새 기회다 — 내려가기 전의 재시도 횟수는 잊는다. 이 시작이 접히면
-                    // provider 가 didStopUnexpectedly 로 알려 오고, 거기서 다시 켜 보거나 세션을 닫는다.
-                    self.supervisor.resetAttempts()
-                    // 내려가는 중(stop 이 잔여 좌표를 보내며 기다리는 동안)이면 켜지 않는다 — 끝난 세션에서
-                    // 엔진이 다시 돌며 옛 방문 ID 로 존 이벤트를 보내게 된다(S9).
-                    if self.isRunning, self.stopInFlight == nil { self.provider?.start() }
+                    self.handleDidBecomeActive()        // 엔진 재개(미뤄 둔 것이 있을 때만, 한 번)
                     self.liveStream.forgetConnection()  // 배경에서 끊긴 것 — 새로 붙인다
                     self.ensureLiveStream()
                 }
+            },
+            // 활성: 실행 직후 inactive 에서 begin 했으면 willEnterForeground 없이 이것만 온다(2026-10-16).
+            nc.addObserver(forName: UIApplication.didBecomeActiveNotification,
+                           object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handleDidBecomeActive() }
+            },
+            // 종료: 엔진을 그 자리에서 끈다 — 다음 런루프는 오지 않으므로 Task 로 미루지 않는다.
+            // 엔진이 돈 채로 프로세스가 죽으면 비콘 영역이 남아 iOS 가 앱을 배경에서 다시 깨운다(2026-10-16).
+            nc.addObserver(forName: UIApplication.willTerminateNotification,
+                           object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.handleWillTerminate() }
             },
         ]
         #endif
@@ -704,9 +759,22 @@ final class SessionCoordinator {
             // 정지 뒤에는 provider 가 이벤트를 버린다(2026-10-03 안드 감사 SP-B15). 일시정지 중이면 provider 가 안 낸다.
             (provider as? ExitsZoneBeforeBackground)?.exitActiveZoneBeforeBackground()
             provider?.stop()
+            engineAwaitingForeground = true     // 복귀(handleDidBecomeActive)가 한 번 켠다
+            // 수신 점검도 거둔다 — 걸어 두면 배경 시간까지 세어 복귀하자마자 깨어난다(2026-10-16).
+            // 층 미탐지 감시는 provider.stop() 이 거두고 start() 가 다시 건다.
+            receptionCheckTask?.cancel(); receptionCheckTask = nil
+            // 엔진은 정지하며 비콘 영역을 스스로 풀지만, 못 풀고 남은 것까지 지운다 — 배경에서 다시 깨우지 않게.
+            clearStaleEngineRegion()
             await uploads.flush()
         }
         liveStream.suspend()                    // 스트림은 언제나 끊는다
+    }
+
+    /// 앱 종료 — 엔진을 동기로 끈다(최선 노력, flush 는 기다리지 않는다). 내부 공개 — 테스트가 알림 없이 밟는다.
+    func handleWillTerminate() {
+        guard isRunning else { return }
+        provider?.stop()
+        clearStaleEngineRegion()
     }
 
     /// 앱이 화면에 떠 있는가 — 테스트가 바꿔 끼운다(EngineSupervisor 가 재시도 전에 본다).
@@ -728,6 +796,29 @@ final class SessionCoordinator {
         return f
     }()
     static func iso(_ d: Date) -> String { isoFormatter.string(from: d) }
+}
+
+// MARK: - 엔진이 남긴 비콘 영역
+
+/// 측위 엔진이 층을 찾으려고 CoreLocation 에 거는 비콘 영역을 지운다.
+///
+/// ⚠️ 2026-10-16: 엔진은 정지할 때 이 영역을 스스로 풀지만, 엔진이 도는 중에 프로세스가 죽으면
+///    영역이 iOS 에 그대로 남는다. 위치 '항상' 권한이 있으면 iOS 는 그 비콘을 볼 때마다 앱을 **배경에서**
+///    다시 깨우고, 거기서 begin() 이 불려 화면 없이 엔진이 돌았다(engineAwaitingForeground 주석).
+///    엔진이 다시 켜질 때(포그라운드 시작)는 스스로 다시 거므로 그때는 지우지 않는다.
+enum StaleEngineRegion {
+    /// 엔진 바이너리가 쓰는 영역 식별자(UUID 47500000-4253-428E-B095-A366AEA6CDDB).
+    /// 엔진이 이름을 바꾸면 여기만 고친다 — 이 문자열이 엔진 밖에서 이 영역을 아는 유일한 자리다.
+    static let identifier = "kr.geoplan.gpi-ihub.floor-trigger"
+
+    static func clear() {
+        #if canImport(CoreLocation) && canImport(UIKit)
+        let manager = CLLocationManager()
+        for region in manager.monitoredRegions where region.identifier == identifier {
+            manager.stopMonitoring(for: region)
+        }
+        #endif
+    }
 }
 
 // MARK: - PositioningProviderDelegate (도식 6~9)

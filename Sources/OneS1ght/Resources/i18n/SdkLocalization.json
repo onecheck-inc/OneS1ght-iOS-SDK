@@ -109,6 +109,11 @@
     "ja": "階がまだ確定していません — 階が確定するまで座標は出ません",
     "en": "No floor yet — positions will not be produced until a floor is determined."
   },
+  "coord.engineDeferred": {
+    "ko": "앱이 화면에 없어 측위 엔진 시작을 미룹니다 — 앱이 포그라운드로 오면 시작합니다",
+    "ja": "アプリが前面にないため測位エンジンの起動を保留します — アプリがフォアグラウンドに戻ると起動します",
+    "en": "App is not in the foreground — deferring positioning engine start until the app is active."
+  },
   "coord.rateApplied": {
     "ko": "좌표 전송 주기 %d회/초 적용 (서버 설정)",
     "ja": "座標送信レート %d回/秒 を適用（サーバー設定）",
