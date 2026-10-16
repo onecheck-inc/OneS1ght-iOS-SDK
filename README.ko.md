@@ -53,7 +53,8 @@ targets: [
 
 ### Info.plist
 
-**네 개 모두** 필요합니다. 앞의 세 개는 없으면 권한을 요청하는 순간 앱이 종료됩니다.
+**다섯 개 모두** 필요합니다. 앞의 세 개는 없으면 권한을 요청하는 순간 앱이 종료됩니다. 네 번째
+(`NSLocationAlwaysAndWhenInUseUsageDescription`)는 iOS 27.2 이상에서 '항상' 권한을 요청할 때 필요합니다(아래 참고).
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
@@ -62,6 +63,8 @@ targets: [
 <string>UWB 정밀 측위에 사용합니다.</string>
 <key>NSBluetoothAlwaysUsageDescription</key>
 <string>주변 측위 장비를 찾는 데 사용합니다.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>매장 내 현재 층을 찾는 데 사용합니다.</string>
 <key>NSLocationTemporaryUsageDescriptionDictionary</key>
 <dict>
     <key>Positioning</key>
@@ -73,8 +76,8 @@ targets: [
 > 합니다.** SDK 가 정밀 위치 승격을 요청할 때 쓰는 이름과 글자까지 같아야 하며,
 > 어긋나면 요청이 **오류도 로그도 없이 무시**됩니다.
 >
-> 권한 요청은 SDK 가 합니다 — 앱에서 `CLLocationManager` 를 따로 부를 필요가 없습니다.
-> 사용자가 "대략적인 위치" 를 고르거나 권한을 거부하면 측위가 시작되지 않고
+> '앱 사용 중' 위치 권한(과 정밀 위치)은 SDK 가 요청합니다 — 그것 때문에 앱에서 `CLLocationManager` 를 부를
+> 필요는 없습니다. **iOS 27.2 이상에서는 '항상' 권한을 앱이 직접 요청해야 합니다**(다음 절). 사용자가 "대략적인 위치" 를 고르거나 권한을 거부하면 측위가 시작되지 않고
 > `onDebugLog` 에 `E2003` 이 남습니다.
 
 ### iOS 27.2 이상: 위치 '항상' 권한 필수
@@ -85,7 +88,7 @@ targets: [
 
 | 추가할 것 | 값 |
 |---|---|
-| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | 사용 목적 문구 |
+| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | 사용 목적 문구 (위 블록에 이미 포함) |
 | 런타임 권한 요청 | '앱 사용 중' 허용 직후 `CLLocationManager.requestAlwaysAuthorization()` 한 번 (앱이 직접) |
 
 ```swift
@@ -126,8 +129,7 @@ try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 **예상 로그**
 
 ```
-[I1001] 초기화 완료 — tenant=YOUR_TENANT
-verify 통과 (tenant: YOUR_TENANT)
+[I1001] verify 통과 (tenant: YOUR_TENANT) — tenant=YOUR_TENANT
 ```
 
 ### 기기 지원 여부 먼저 확인
@@ -137,6 +139,7 @@ switch OneS1ght.deviceAvailability {
 case .available:          break
 case .osVersionTooLow:    showNotice("iOS 27 이상에서 사용할 수 있습니다")
 case .deviceNotSupported: showNotice("iPhone 12 이상에서 사용할 수 있습니다")
+@unknown default:         break
 }
 ```
 
@@ -149,9 +152,10 @@ throw 하지 않고 `initialize` 전에도 호출할 수 있어, 네트워크를
 
 ### 위치 권한 — SDK 가 묻습니다
 
-UWB 세션에는 위치 권한(그리고 정밀 위치)이 필요합니다. **`begin()` 이 엔진을 켤 때 SDK 가 둘 다 직접
-요청합니다** — 앱에서 `CLLocationManager` 를 부를 필요가 없습니다. 앱이 할 일은 Step 1 의 Info.plist 키 네 개를
-넣는 것뿐입니다.
+UWB 세션에는 위치 권한(그리고 정밀 위치)이 필요합니다. **`begin()` 이 엔진을 켤 때 SDK 가 '앱 사용 중' 권한과
+정밀 위치를 직접 요청합니다** — 그것 때문에 앱에서 `CLLocationManager` 를 부를 필요는 없습니다. Nearby Interaction 은
+아래 `OneS1ght.requestPermission()` 으로 요청합니다. **iOS 27.2 이상에서는 '항상' 권한을 앱이 직접 요청해야 합니다** —
+Step 1 의 「iOS 27.2 이상」 절을 보세요. 앱은 Step 1 의 Info.plist 키 다섯 개도 넣어야 합니다.
 
 ⚠️ `NSLocationWhenInUseUsageDescription` 이 없으면 iOS 는 요청을 답 없이 무시합니다. SDK 는 그 키를 먼저 확인해,
 없으면 영영 기다리지 않고 시작을 접으며 `E2003`(`Info.plist missing …`)을 남깁니다.
@@ -263,14 +267,17 @@ mapView.setBackground(floor.image,
 **예상 로그**
 
 ```
-[I3001] 층 지정 — building=B1 floor=9f3a1c2e locators=4 zones=3
+[I3001] 층 설정 로드: 로케이터 4대 · 구역 3개 (floor 9f3a1c2e…) — building=B1 floor=9f3a1c2e-… locators=4 zones=3
 ```
 
 빠진 것이 있으면 코드가 대신 나옵니다.
 
 ```
-[E3003] 층에 UWB 세션 없음 — floor=9f3a1c2e
+[E3003] 층에 UWB 세션 없음 — floor=9f3a1c2e-…
 ```
+
+> 전용 문구가 없는 코드(대부분의 `E` 코드와 `I4001` 같은 일부 `I` 코드)는 내장 요약을 찍는데, 이 요약은
+> **한국어로만** 나옵니다 — `setLanguage(_:)` 로 바뀌지 않습니다. 문구가 아니라 `[코드]` 로 판별하세요.
 
 ---
 
