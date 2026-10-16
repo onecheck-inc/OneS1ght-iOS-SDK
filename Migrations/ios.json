@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.2.3",
+  "currentVersion": "0.2.4",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -329,6 +329,14 @@
       "breaking": false,
       "summary": "문서·스니펫만 바뀐 판 — SDK 코드·동작 변경 없음. iOS 27.2 이상에서 층을 찾으려면 위치 권한 '항상' 이 필요하다는 안내를 스니펫(install·permission)과 README 에 반영했다.",
       "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다. 아직 안 했다면 iOS 27.2 이상 대응으로 Info.plist 에 NSLocationAlwaysAndWhenInUseUsageDescription 을 넣고 '앱 사용 중' 허용 뒤 requestAlwaysAuthorization() 을 한 번 부른다(Snippets permission 단계). UIBackgroundModes 의 bluetooth-central 은 넣지 않는다.",
+      "changes": []
+    },
+    {
+      "from": "0.2.3",
+      "to": "0.2.4",
+      "breaking": false,
+      "summary": "측위 엔진은 앱이 화면에 있을 때만 돈다 — 앱이 배경에서 떠 있을 때 시작을 부르면 엔진 시작을 미뤘다가 화면에 올라올 때 켜고, 배경·종료 때 끈다. 실시간 재연결 뒤 도면 있는 층의 존 좌표가 px 를 미터로 읽어 지도에서 사라지던 것도 고쳤다. 공개 API 변경 없음.",
+      "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다. 앱이 배경에서 시작을 불러도 좌표는 앱이 화면에 올라온 뒤부터 나온다 — 배경 동안의 시간을 재는 앱 타이머(층 찾기 제한 시간 등)는 화면에 올라온 뒤부터 세도록 맞춘다.",
       "changes": []
     }
   ]
