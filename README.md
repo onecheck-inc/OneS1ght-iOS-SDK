@@ -6,6 +6,10 @@ Indoor location intelligence SDK. Add it to your app to collect visit and moveme
 through UWB (DL-TDoA) indoor positioning, and receive zone enter / exit / dwell events
 on device.
 
+About the SDK
+- GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
+- Developer docs: https://docs.ones1ght.com/en/sdk/overview
+
 ---
 
 ## Requirements
@@ -52,8 +56,9 @@ add this one package.
 
 ### Info.plist
 
-**All four** keys are required. Without the first three the app is terminated the moment
-permission is requested.
+**All five** keys are required. Without the first three the app is terminated the moment
+permission is requested. The fourth (`NSLocationAlwaysAndWhenInUseUsageDescription`) is needed
+for the "Always" request on iOS 27.2 and later (see below).
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
@@ -62,6 +67,8 @@ permission is requested.
 <string>Used for precise UWB positioning.</string>
 <key>NSBluetoothAlwaysUsageDescription</key>
 <string>Used to discover nearby positioning hardware.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>Used to detect which floor you are on inside the store.</string>
 <key>NSLocationTemporaryUsageDescriptionDictionary</key>
 <dict>
     <key>Positioning</key>
@@ -74,8 +81,9 @@ permission is requested.
 > uses when it asks for full-accuracy location. If it differs, the request is **ignored
 > with no error and no log**.
 >
-> The SDK requests the permissions itself — your app does not need to call
-> `CLLocationManager`. If the user picks "Approximate Location" or denies the
+> The SDK requests "While Using" location (and full accuracy) itself — your app does not
+> call `CLLocationManager` for that. **On iOS 27.2 and later your app must request "Always"
+> itself** (next section). If the user picks "Approximate Location" or denies the
 > permission, positioning does not start and `E2003` is emitted to `onDebugLog`.
 
 ### iOS 27.2 and later: "Always" location is required
@@ -87,7 +95,7 @@ coordinates arrive. iOS 27.1 and earlier work with "While Using".
 
 | Add | Value |
 |---|---|
-| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | Purpose string |
+| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | Purpose string (already in the block above) |
 | Runtime permission | `CLLocationManager.requestAlwaysAuthorization()` once, right after "While Using" is granted (called by the app) |
 
 ```swift
@@ -128,8 +136,7 @@ step (Step 5) — only your app knows which floor to use.
 **Expected logs**
 
 ```
-[I1001] Initialized — tenant=YOUR_TENANT
-verify passed (tenant: YOUR_TENANT)
+[I1001] verify passed (tenant: YOUR_TENANT) — tenant=YOUR_TENANT
 ```
 
 ### Check device support first
@@ -139,6 +146,7 @@ switch OneS1ght.deviceAvailability {
 case .available:          break
 case .osVersionTooLow:    showNotice("Requires iOS 27 or later")
 case .deviceNotSupported: showNotice("Requires iPhone 12 or later")
+@unknown default:         break
 }
 ```
 
@@ -151,9 +159,12 @@ touching the network.
 
 ### Location — the SDK asks for you
 
-The UWB session needs location permission (and full accuracy). **The SDK requests both
-itself when `begin()` starts the engine** — your app does not call `CLLocationManager`.
-What your app must do is ship the four Info.plist keys from Step 1.
+The UWB session needs location permission (and full accuracy). **The SDK requests "While
+Using" and full accuracy itself when `begin()` starts the engine** — your app does not call
+`CLLocationManager` for those. Nearby Interaction is requested with
+`OneS1ght.requestPermission()` (below). **On iOS 27.2 and later your app must request "Always"
+itself** — see "iOS 27.2 and later" in Step 1. Your app must also ship the five Info.plist keys
+from Step 1.
 
 ⚠️ If `NSLocationWhenInUseUsageDescription` is missing, iOS ignores the request without an
 answer. The SDK checks for the key, does not start, and emits `E2003`
@@ -270,14 +281,18 @@ the plan (`.planChanged`).
 **Expected logs**
 
 ```
-[I3001] Floor set — building=B1 floor=9f3a1c2e locators=4 zones=3
+[I3001] Floor config loaded: 4 locators · 3 zones (floor 9f3a1c2e…) — building=B1 floor=9f3a1c2e-… locators=4 zones=3
 ```
 
 If something is missing you get a code instead:
 
 ```
-[E3003] No UWB session on floor — floor=9f3a1c2e
+[E3003] 층에 UWB 세션 없음 — floor=9f3a1c2e-…
 ```
+
+> A code without its own message (most `E` codes, and some `I` codes such as `I4001`) prints its
+> built-in summary, which is **Korean only** — `setLanguage(_:)` does not change it. Match on the
+> `[code]`, not the text.
 
 ---
 
@@ -356,9 +371,9 @@ bursts (about one second) before refreshing — every zone reload restarts the j
 **Expected logs**
 
 ```
-[I4001] Positioning started — visitor=v-20260820-001
+[I4001] 측위 시작 — visitor=v-20260820-001
 🎯 IN  · Cosmetics
-coordinates 240 sent → server accepted 240
+Sent 240 coordinates → server accepted 240
 ```
 
 ---

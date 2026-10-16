@@ -5,6 +5,10 @@
 屋内位置インテリジェンス SDK です。アプリに組み込むと UWB（DL-TDoA）屋内測位により
 訪問・動線データを収集し、ゾーンの入場・退場・滞在イベントを端末上で受け取れます。
 
+SDK について
+- GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
+- 開発者ドキュメント: https://docs.ones1ght.com/ja/sdk/overview
+
 ---
 
 ## 動作要件
@@ -51,7 +55,8 @@ targets: [
 
 ### Info.plist
 
-**4つすべて**必要です。最初の3つは無いと権限を要求した瞬間にアプリが終了します。
+**5つすべて**必要です。最初の3つは無いと権限を要求した瞬間にアプリが終了します。4つ目
+（`NSLocationAlwaysAndWhenInUseUsageDescription`）は iOS 27.2 以降で「常に」を要求するときに必要です（下記参照）。
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
@@ -60,6 +65,8 @@ targets: [
 <string>UWB による精密測位に使用します。</string>
 <key>NSBluetoothAlwaysUsageDescription</key>
 <string>周辺の測位機器を検出するために使用します。</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>店舗内の現在のフロアを検出するために使用します。</string>
 <key>NSLocationTemporaryUsageDescriptionDictionary</key>
 <dict>
     <key>Positioning</key>
@@ -71,8 +78,9 @@ targets: [
 > でなければなりません。SDK が正確な位置情報への一時的な昇格を要求する際に使う名前と
 > 一字一句同じである必要があり、異なると要求は**エラーもログも無く無視されます**。
 >
-> 権限の要求は SDK が行います — アプリ側で `CLLocationManager` を呼ぶ必要はありません。
-> ユーザーが「おおよその位置」を選ぶか権限を拒否した場合、測位は開始されず
+> 「使用中のみ」の位置情報の権限（と正確な位置情報）は SDK が要求します — そのためにアプリ側で
+> `CLLocationManager` を呼ぶ必要はありません。**iOS 27.2 以降では「常に」をアプリが自ら要求する必要があります**
+> （次の節）。ユーザーが「おおよその位置」を選ぶか権限を拒否した場合、測位は開始されず
 > `onDebugLog` に `E2003` が残ります。
 
 ### iOS 27.2 以降: 位置情報「常に」が必須
@@ -83,7 +91,7 @@ targets: [
 
 | 追加するもの | 値 |
 |---|---|
-| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | 利用目的の文言 |
+| Info.plist `NSLocationAlwaysAndWhenInUseUsageDescription` | 利用目的の文言（上のブロックに含まれています） |
 | 実行時の権限リクエスト | 「使用中のみ」の許可直後に `CLLocationManager.requestAlwaysAuthorization()` を一度（アプリが直接） |
 
 ```swift
@@ -124,8 +132,7 @@ try await OneS1ght.initialize(sdkKey: "ock_sdk_…")
 **想定されるログ**
 
 ```
-[I1001] 初期化完了 — tenant=YOUR_TENANT
-verify 通過 (tenant: YOUR_TENANT)
+[I1001] verify 通過 (tenant: YOUR_TENANT) — tenant=YOUR_TENANT
 ```
 
 ### 端末の対応可否を先に確認
@@ -135,6 +142,7 @@ switch OneS1ght.deviceAvailability {
 case .available:          break
 case .osVersionTooLow:    showNotice("iOS 27 以上でご利用いただけます")
 case .deviceNotSupported: showNotice("iPhone 12 以降でご利用いただけます")
+@unknown default:         break
 }
 ```
 
@@ -148,8 +156,10 @@ throw せず `initialize` の前でも呼べるため、ネットワークにア
 ### 位置情報の権限 — SDK が要求します
 
 UWB セッションには位置情報の権限（と正確な位置情報）が必要です。**`begin()` がエンジンを起動するとき、
-SDK が両方を自ら要求します** — アプリ側で `CLLocationManager` を呼ぶ必要はありません。アプリが行うのは
-Step 1 の Info.plist キー 4 つを入れることだけです。
+SDK が「使用中のみ」の権限と正確な位置情報を自ら要求します** — そのためにアプリ側で `CLLocationManager` を呼ぶ
+必要はありません。Nearby Interaction は下記の `OneS1ght.requestPermission()` で要求します。**iOS 27.2 以降では
+「常に」をアプリが自ら要求する必要があります** — Step 1 の「iOS 27.2 以降」の節を参照してください。アプリは
+Step 1 の Info.plist キー 5 つも入れる必要があります。
 
 ⚠️ `NSLocationWhenInUseUsageDescription` が無いと、iOS は要求を応答なしで無視します。SDK はこのキーを
 先に確認し、無ければ待ち続けずに開始を取りやめ、`E2003`（`Info.plist missing …`）を出力します。
@@ -261,14 +271,17 @@ mapView.setBackground(floor.image,
 **想定されるログ**
 
 ```
-[I3001] フロア指定 — building=B1 floor=9f3a1c2e locators=4 zones=3
+[I3001] 階設定をロード: ロケーター 4台 · エリア 3件 (floor 9f3a1c2e…) — building=B1 floor=9f3a1c2e-… locators=4 zones=3
 ```
 
 不足しているものがある場合はコードが代わりに出力されます。
 
 ```
-[E3003] フロアに UWB セッションがありません — floor=9f3a1c2e
+[E3003] 층에 UWB 세션 없음 — floor=9f3a1c2e-…
 ```
+
+> 専用の文言を持たないコード（ほとんどの `E` コードと、`I4001` など一部の `I` コード）は組み込みの要約を出力しますが、
+> この要約は**韓国語のみ**です — `setLanguage(_:)` では変わりません。文言ではなく `[コード]` で判別してください。
 
 ---
 
@@ -345,9 +358,9 @@ session.onConfigChanged = { change in
 **想定されるログ**
 
 ```
-[I4001] 測位開始 — visitor=v-20260820-001
+[I4001] 측위 시작 — visitor=v-20260820-001
 🎯 IN  · 化粧品
-座標 240 件を送信 → サーバー accepted 240
+座標 240件を送信 → サーバー accepted 240
 ```
 
 ---
