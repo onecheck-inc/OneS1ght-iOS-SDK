@@ -53,11 +53,17 @@ enum Fixture {
                             flushInterval: TimeInterval = 60,
                             receptionCheckDelay: TimeInterval = 7,
                             engineRestartDelays: [TimeInterval] = [3, 10, 30]) -> SessionCoordinator {
-        SessionCoordinator(api: api(), identity: identity("Fixture.\(suite)"),
-                           session: makeStubSession(),
-                           flushThreshold: flushThreshold, flushInterval: flushInterval,
-                           receptionCheckDelay: receptionCheckDelay,
-                           engineRestartDelays: engineRestartDelays)
+        let c = SessionCoordinator(api: api(), identity: identity("Fixture.\(suite)"),
+                                   session: makeStubSession(),
+                                   flushThreshold: flushThreshold, flushInterval: flushInterval,
+                                   receptionCheckDelay: receptionCheckDelay,
+                                   engineRestartDelays: engineRestartDelays)
+        // 테스트는 「앱이 화면에 있다」 에서 시작한다 — 시뮬레이터 테스트 프로세스의 applicationState 에
+        // 기대지 않는다(화면 밖이면 start 가 엔진을 미룬다, 2026-10-16). 화면 밖은 테스트가 바꿔 끼운다.
+        c.isAppActive = { true }
+        // 테스트 기기의 CoreLocation 영역은 건드리지 않는다.
+        c.clearStaleEngineRegion = {}
+        return c
     }
 
     /// prepare → identify → start 까지.
