@@ -226,8 +226,13 @@ final class SpaceServiceClient {
         let raw: [RawZone]
         do { raw = try await consoleZones(buildingId, floorId) }
         catch GsError.badResponse(404) { return [] }
-        // 도면이 없으면(캐시에도 없으면) 미터로 그대로 — normalizeZones 가 같은 규칙을 쓴다.
-        return normalizeZones(raw, image: planCache[floorId]?.plan?.image)
+        // ⚠️ 캐시가 비었으면 도면을 다시 받아 그 축척으로 바꾼다 — 비었다고 「도면 없음」으로 읽으면 안 된다.
+        //    실시간 연결이 붙을 때마다(.resyncNeeded) 도면 캐시를 비우는데(invalidatePlan), 그 직후의
+        //    존 새로고침이 캐시 없이 돌아 **px 존을 미터로 읽었다** — 도면 있는 층에서 존이 도면이 뜨자마자
+        //    수백 미터 밖으로 밀려 지도에서 사라졌다(2026-10-16 실기기). 도면 없는 층도 consolePlan 이
+        //    has_plan:false 응답을 캐시하므로 다시 묻는 건 비운 뒤 한 번뿐이다. 못 받으면 예전처럼 미터로 읽는다.
+        let image = (try? await consolePlan(buildingId, floorId))?.plan?.image
+        return normalizeZones(raw, image: image)
     }
 
     /// 존 폴리곤 미터 정규화 — console 이 아직 픽셀로 내려줌 (사양서 §6.4 는 미터).
