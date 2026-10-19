@@ -320,7 +320,13 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         delegate?.provider(self, didDetectFloor: nil)
     }
 
-    fileprivate func positioned(_ fid: Int64, _ x: Double, _ y: Double, _ z: Double) {
+    /// 내부 공개 — 테스트가 엔진 없이 좌표를 밟는다(재개 건강 판정, 2026-10-19).
+    func positioned(_ fid: Int64, _ x: Double, _ y: Double, _ z: Double) {
+        // 엔진 건강 기록은 **버리기 전에** 한다(2026-10-19). 일시정지 중에도 엔진은 좌표를 계속 주고,
+        // resume() 은 "엔진이 아직 좌표를 내고 있는가" 로 재시작 여부를 가른다 — 소비 가드 뒤에서 세면
+        // 일시정지가 길어질수록 멀쩡한 엔진이 죽은 것으로 읽혀 재개마다 층을 다시 찾게 된다.
+        lastFixAt = now()
+        errorSinceLastFix = false
         // 탐색만 하는 동안(측위 시작 전)의 좌표는 버린다 — 화면에도, 서버에도, 판정에도 안 간다.
         guard isRunning else { return }
         // 일시정지 중에도 엔진은 좌표를 계속 준다. 여기서 버린다 — 엔진을 끄지 않는 것이
@@ -358,8 +364,11 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         judge.handleAreaEvent(inOut: inOut, areaName: name, at: now)
     }
 
-    fileprivate func errored(_ code: Int, _ msg: String) {
+    /// 내부 공개 — 테스트가 엔진 없이 오류를 밟는다(재개 건강 판정, 2026-10-19).
+    func errored(_ code: Int, _ msg: String) {
         lastHubError = code
+        // 다음 좌표가 올 때까지 「아픈 엔진」 으로 친다 — resume() 이 보고 다시 띄운다(resumeNeedsRestart 주석).
+        errorSinceLastFix = true
         addLog(.error, SdkLocalized.format("uwb.error", code, msg, Self.describe(code)))
         onEngineError?(code, msg)
         // 화면 로그에 더해 E-코드로도 올린다 — 관리자는 콘솔 로그 분석기에서 이걸 본다.
@@ -410,6 +419,9 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         IntelligenceHub.setLicense(key)
         detectedFloorId = nil
         lastHubError = nil
+        // 새 엔진이다 — 옛 엔진의 좌표·오류 기록으로 건강을 재지 않는다(2026-10-19).
+        lastFixAt = nil
+        errorSinceLastFix = false
         phase = .starting
         hubLaunched = false
         startGeneration += 1
@@ -506,6 +518,43 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     private var wantsRunning = false
     /// 마지막 엔진 오류 — 스스로 멈춘 이유가 사람이 풀어야 하는 것인지 가를 때 본다.
     private var lastHubError: Int?
+
+    // MARK: 재개 때 엔진 건강 판정 (2026-10-19)
+    //
+    // 화면에 떠 있는 동안에도 iOS 가 NearbyInteraction 세션을 무효로 만들 수 있다(iPhone 17·iOS 27.2 beta:
+    // "dl-tdoa session error: cell 41: NIERROR_RESOURCE_USAGE_TIMEOUT_DESCRIPTION"). 엔진은 오류 5
+    // (HubError.sessionFailed → E4001)만 주고 스스로 멈추지 않아(abortsStart=false, onStopped 없음) 「도는 중」
+    // 인 채 좌표를 영영 안 낸다. 사람은 일시정지 → 재개로 살려 보려 하지만 예전 resume() 은 깃발만 내려
+    // 아무 일도 없었다 — 배경에 갔다 와야(엔진 정지·재시작) 살아났다. 그래서 재개할 때 엔진이 아파 보이면
+    // 생명주기 재시작과 같은 길(stop → start)로 다시 띄운다. 멀쩡하면 예전처럼 그대로 둔다(층 재탐색 없음).
+
+    /// 재개할 때 「좌표가 끊긴 지 이만큼이 넘었으면」 엔진을 다시 띄운다.
+    /// 엔진은 초당 여러 번 좌표를 준다(실측 4Hz) — 5초 동안 한 점도 없으면 잠깐 가려진 게 아니라 세션이 죽은 것으로 본다.
+    /// 너무 짧으면 멀쩡한 엔진을 재개마다 껐다 켜 층을 다시 찾게 만든다.
+    static let resumeStaleFixThreshold: TimeInterval = 5
+    /// 엔진이 마지막으로 좌표를 낸 시각 — 일시정지 중에 버린 좌표도 센다(positioned 주석).
+    private var lastFixAt: Date?
+    /// 측위를 켠 시각 — 좌표가 아직 한 번도 안 나왔을 때 얼마나 오래 비었는지를 이것으로 잰다.
+    private var runningSince: Date?
+    /// 마지막 좌표 뒤에 엔진 오류가 났는가 — 좌표가 오면 내린다.
+    private var errorSinceLastFix = false
+    /// 지금 시각 — 테스트가 시계를 바꿔 끼운다.
+    var now: () -> Date = { Date() }
+    /// 앱이 화면에 떠 있는가 — 테스트가 바꿔 끼운다. 엔진은 화면에서만 켠다(0.2.4, engineAwaitingForeground).
+    var isAppActive: () -> Bool = { EngineSupervisor.appIsActive }
+
+    /// 재개하면서 엔진을 다시 띄워야 하는가 — 측위 중이고, 엔진이 떠 있는데 아파 보일 때만.
+    ///
+    /// · 화면 밖이면 띄우지 않는다 — 화면 밖에서 켠 엔진이 정지된 앱 안에 걸려 있던 사고(2026-10-16)를 되풀이한다.
+    ///   그때 엔진은 코어가 꺼 두었고 복귀(handleDidBecomeActive)가 켠다.
+    /// · 이미 내려가는 중·뜨는 중·구역 재적재 중이면 띄우지 않는다 — 곧 새 엔진이 뜬다(이중 시작 금지).
+    private func resumeNeedsRestart() -> Bool {
+        guard isRunning, isAppActive() else { return false }
+        guard phase == .searching || phase == .tracking, !reloadingGeofences, !startAfterStop else { return false }
+        if errorSinceLastFix { return true }
+        guard let since = lastFixAt ?? runningSince else { return false }   // 잴 근거가 없으면 멀쩡한 것으로 둔다
+        return now().timeIntervalSince(since) > Self.resumeStaleFixThreshold
+    }
 
     /// 켜 달라고 했는데 엔진이 꺼졌다 — 코어에 한 번만 알린다(그 뒤 다시 켜는지는 코어가 정한다).
     private func notifyUnexpectedStop(_ context: String, retryable: Bool) {
@@ -631,6 +680,7 @@ extension UwbPositioningProvider: PositioningProvider {
         latestPosition = nil
         judge.reset()
         isRunning = true
+        runningSince = now()
         // isPaused 는 건드리지 않는다 — 백그라운드에서 돌아와 다시 켤 때 일시정지가 풀리면 앱은 「일시정지」
         // 인데 좌표·존 이벤트가 다시 나갔다(S20). 새 세션(begin)·종료(end)에서는 코어가 resume() 으로 푼다.
         warnedFloorMismatch = nil
@@ -666,15 +716,27 @@ extension UwbPositioningProvider: PositioningProvider {
     }
 
     /// 일시정지 해제. 엔진이 계속 돌고 있었으므로 다음 좌표부터 바로 이어진다.
+    /// 단, 엔진이 아파 보이면(세션 오류 뒤 좌표 없음·좌표가 오래 끊김) 다시 띄운다(resumeNeedsRestart 주석, 2026-10-19).
     public func resume() {
         guard isPaused else { return }
+        let restart = resumeNeedsRestart()
         isPaused = false
         // 판정기를 초기화한다. 멈춰 있는 동안 들어온 영역 이벤트를 버렸으므로, 안에 있을 때
         // 멈추고 밖으로 걸어 나온 뒤 재개하면 판정기는 아직 "안에 있다" 고 믿는다. 그러면
         // 이탈이 영영 안 나오고 다음 진입도 통째로 묻힌다. 비워 두면 엔진이 보내는 다음
         // 전환에서 다시 맞춰진다.
         judge.reset()
-        addLog(.info, SdkLocalized.text("uwb.resumed"))
+        guard restart else {
+            addLog(.info, SdkLocalized.text("uwb.resumed"))
+            return
+        }
+        addLog(.info, SdkLocalized.text("uwb.resumeRestart"))
+        // 생명주기 재시작(배경 → 복귀)과 같은 길이다. stop() 이 wantsRunning 을 먼저 내리므로 이 정지는
+        // 「스스로 멈춤」(E4001·재시도)으로 읽히지 않고, start() 는 엔진이 내려가는 중이면 startAfterStop 으로
+        // 미뤘다가 hubStopped() 가 이어서 띄운다 — 이중 시작이 없다. 세션·방문 ID 는 코어 것이라 건드리지 않고,
+        // isPaused 는 위에서 이미 내렸다(stop/start 는 일시정지를 유지한다 — S20).
+        stop()
+        start()
     }
 
     /// 측위 종료 — 좌표 표시·수집·판정을 끄고 엔진도 함께 멈춘다.

@@ -94,5 +94,103 @@ final class PositioningPauseTests: XCTestCase {
         XCTAssertEqual(delivered, ["IN:새 존 2"], "재개 뒤의 이벤트가 한 건만 나가야 한다")
     }
 
+    // MARK: - 재개 때 죽은 엔진은 다시 띄운다 (2026-10-19)
+    //
+    // 화면에 있는 동안 iOS 가 NI 세션을 무효로 만들면 엔진은 오류 5 만 주고 「도는 중」 인 채 좌표를 안 낸다.
+    // 일시정지 → 재개로 살아나야 한다. 멀쩡한 엔진은 건드리지 않는다(층 재탐색 없이 바로 이어져야 한다).
+
+    private final class Clock { var t = Date(timeIntervalSince1970: 1_000_000) }
+
+    /// 「층을 잡고 측위 중」 인 provider — 라이선스 서버 없이 상태만 세운다. 시계·화면 상태는 바꿔 끼운다.
+    private func trackingProvider(_ clock: Clock, active: Bool = true) -> UwbPositioningProvider {
+        let p = UwbPositioningProvider()
+        p.now = { clock.t }
+        p.isAppActive = { active }
+        p.isRunning = true
+        p.phase = .tracking
+        return p
+    }
+
+    private func restartLines(_ p: UwbPositioningProvider) -> Int {
+        p.log.filter { $0 == SdkLocalized.text("uwb.resumeRestart") }.count
+    }
+
+    /// 좌표가 계속 나오던 엔진 — 재개는 깃발만 내린다. 엔진을 건드리면 재개마다 층을 다시 찾는다.
+    func testHealthyResumeDoesNotRestartEngine() {
+        let clock = Clock()
+        let p = trackingProvider(clock)
+        p.positioned(14, 1, 2, 0)
+        p.pause()
+        clock.t += 1
+        p.positioned(14, 1, 2, 0)            // 일시정지 중에도 엔진은 좌표를 준다 — 건강으로 센다
+        clock.t += 30                        // 일시정지가 길어도
+        p.positioned(14, 1, 2, 0)
+        p.resume()
+        XCTAssertFalse(p.isPaused)
+        XCTAssertTrue(p.isRunning)
+        XCTAssertEqual(p.phase, .tracking, "멀쩡한 엔진을 껐다")
+        XCTAssertEqual(restartLines(p), 0)
+    }
+
+    /// 세션 오류(5) 뒤 좌표가 없으면 재개가 엔진을 한 번 다시 띄운다 — 생명주기 재시작과 같은 길(stop → start).
+    func testResumeAfterSessionErrorRestartsOnce() {
+        let clock = Clock()
+        let p = trackingProvider(clock)
+        p.positioned(14, 1, 2, 0)
+        p.errored(HubError.sessionFailed.rawValue, "dl-tdoa session error: cell 41")
+        p.pause()
+        clock.t += 1                         // 좌표가 끊긴 지 1초 — 오류만으로도 다시 띄운다
+        p.resume()
+        XCTAssertFalse(p.isPaused, "재시작해도 일시정지는 풀려야 한다")
+        XCTAssertEqual(p.phase, .stopping, "엔진을 내리지 않았다")
+        XCTAssertEqual(restartLines(p), 1)
+
+        // 내려가는 중에 다시 일시정지 → 재개해도 또 띄우지 않는다(이중 시작 금지 — 곧 새 엔진이 뜬다).
+        p.pause()
+        p.resume()
+        p.resume()
+        XCTAssertEqual(restartLines(p), 1, "재시작이 겹쳤다")
+        XCTAssertEqual(p.phase, .stopping)
+    }
+
+    /// 오류는 없었지만 좌표가 기준(5초)보다 오래 끊겼다 — 다시 띄운다.
+    func testResumeAfterStaleFixRestarts() {
+        let clock = Clock()
+        let p = trackingProvider(clock)
+        p.positioned(14, 1, 2, 0)
+        p.pause()
+        clock.t += UwbPositioningProvider.resumeStaleFixThreshold + 1
+        p.resume()
+        XCTAssertFalse(p.isPaused)
+        XCTAssertEqual(p.phase, .stopping)
+        XCTAssertEqual(restartLines(p), 1)
+    }
+
+    /// 오류 뒤 좌표가 다시 왔으면 회복된 것이다 — 띄우지 않는다.
+    func testErrorFollowedByFixIsHealthy() {
+        let clock = Clock()
+        let p = trackingProvider(clock)
+        p.errored(HubError.sessionFailed.rawValue, "transient")
+        p.positioned(14, 1, 2, 0)
+        p.pause()
+        p.resume()
+        XCTAssertEqual(p.phase, .tracking)
+        XCTAssertEqual(restartLines(p), 0)
+    }
+
+    /// 화면 밖이면 엔진을 켜지 않는다(엔진은 화면에서만 — 0.2.4). 깃발만 내린다.
+    func testResumeWhileInactiveDoesNotRestart() {
+        let clock = Clock()
+        let p = trackingProvider(clock, active: false)
+        p.positioned(14, 1, 2, 0)
+        p.errored(HubError.sessionFailed.rawValue, "dl-tdoa session error")
+        p.pause()
+        clock.t += 60
+        p.resume()
+        XCTAssertFalse(p.isPaused)
+        XCTAssertEqual(p.phase, .tracking, "화면 밖에서 엔진을 건드렸다")
+        XCTAssertEqual(restartLines(p), 0)
+    }
+
 }
 #endif

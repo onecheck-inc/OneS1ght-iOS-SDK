@@ -164,6 +164,11 @@
     "ja": "▶︎ 測位を再開",
     "en": "▶︎ Positioning resumed"
   },
+  "uwb.resumeRestart": {
+    "ko": "▶︎ 측위 재개 — 엔진이 좌표를 못 내고 있어 다시 시작합니다(층을 다시 찾습니다)",
+    "ja": "▶︎ 測位を再開 — エンジンが座標を出していないため再起動します(フロアを再探索します)",
+    "en": "▶︎ Positioning resumed — the engine was not producing positions, restarting it (floor re-scan)"
+  },
   "uwb.stopped": {
     "ko": "측위 엔진 정지됨",
     "ja": "測位エンジン停止",
