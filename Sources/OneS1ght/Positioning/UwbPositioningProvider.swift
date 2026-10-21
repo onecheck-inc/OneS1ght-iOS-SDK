@@ -110,6 +110,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
     /// 엔진은 층을 못 찾아도 오류를 주지 않고 계속 탐색만 한다 — 앱에서는 "그냥 좌표가
     /// 안 나온다"로만 보여서, 이 감시가 없으면 BLE 미수신이 아무 흔적도 남기지 않는다.
     private var floorWatchTask: Task<Void, Never>?
+    /// 엔진 시작 직후 iOS 비콘 스캐너를 깨운다(BeaconScanKick 주석, 2026-10-21).
+    private let beaconKick = BeaconScanKick()
     static let floorDetectDelay: TimeInterval = 20
 
     /// 층 불일치는 한 번만 알린다 — 층이 유지되는 동안 반복하면 로그가 덮인다.
@@ -293,6 +295,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         phase = .tracking
         detectedFloorId = fid
         floorWatchTask?.cancel(); floorWatchTask = nil      // 층을 찾았다 — 미탐지 감시 해제
+        beaconKick.stop(reason: "floor")
         addLog(.info, SdkLocalized.format("uwb.trackingStart", fid))
         checkFloorAgreement(fid)
         onFloorDetected?(fid)
@@ -585,6 +588,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
         hubLaunched = true
         hub.setListener(bridge)
         hub.start()
+        beaconKick.start()
     }
 
     /// 엔진을 완전히 멈춘다. 측위 중이었으면 그것도 끝난다.
@@ -608,6 +612,7 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
             return
         }
         phase = .stopping
+        beaconKick.stop(reason: "engine stop")
         hub.stop()                                   // 정리가 끝나면 onStopped 가 온다
         addLog(.info, SdkLocalized.format("uwb.stopRequested", measurementCount))
     }
