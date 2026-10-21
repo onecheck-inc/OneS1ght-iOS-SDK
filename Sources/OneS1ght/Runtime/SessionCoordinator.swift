@@ -763,8 +763,12 @@ final class SessionCoordinator {
             // 수신 점검도 거둔다 — 걸어 두면 배경 시간까지 세어 복귀하자마자 깨어난다(2026-10-16).
             // 층 미탐지 감시는 provider.stop() 이 거두고 start() 가 다시 건다.
             receptionCheckTask?.cancel(); receptionCheckTask = nil
-            // 엔진은 정지하며 비콘 영역을 스스로 풀지만, 못 풀고 남은 것까지 지운다 — 배경에서 다시 깨우지 않게.
-            clearStaleEngineRegion()
+            // ⚠️ 비콘 영역은 여기서 지우지 않는다 — 엔진이 정지하며 스스로 푼다. 예전엔 여기서 지웠는데
+            //    stop() 은 비동기라 엔진보다 **먼저** 지워졌고, 엔진은 영역이 없으니 정리를 건너뛰었다. 그 뒤
+            //    복귀해 같은 영역을 다시 걸면 iOS 가 로케이터 옆에서도 「밖」 이라 답해 층 탐색(BLE)이 영영
+            //    안 열렸다 — 백그라운드에 다녀올 때마다 「로케이터 신호를 찾을 수 없습니다」(2026-10-21 iPhone 17
+            //    · iOS 27.2 실기기 로그). 엔진이 못 풀고 죽은 경우는 종료(handleWillTerminate)·배경에서 깨어난
+            //    시작(start 의 비활성 분기)이 지운다.
             await uploads.flush()
         }
         liveStream.suspend()                    // 스트림은 언제나 끊는다

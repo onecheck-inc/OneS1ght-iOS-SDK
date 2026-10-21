@@ -94,7 +94,7 @@ final class EngineForegroundOnlyTests: XCTestCase {
         await c.stop()
     }
 
-    /// 배경에서 끄고, 복귀하면 다시 켠다(한 번). 영역은 배경 정지 때 지운다.
+    /// 배경에서 끄고, 복귀하면 다시 켠다(한 번). 영역은 배경 정지 때 지우지 않는다 — 엔진이 스스로 푼다(2026-10-21).
     func testBackgroundStopThenForegroundRestarts() async throws {
         let c = try await prepared()
         try await c.start(provider: provider)
@@ -105,7 +105,7 @@ final class EngineForegroundOnlyTests: XCTestCase {
         await c.handleDidEnterBackground()
         XCTAssertFalse(provider.isRunning)
         XCTAssertTrue(c.engineAwaitingForeground)
-        XCTAssertEqual(regionClears, 1)
+        XCTAssertEqual(regionClears, 0, "엔진보다 먼저 지우면 복귀 뒤 iOS 가 비콘 영역을 「밖」 으로 판정한다")
 
         active = true
         c.handleDidBecomeActive()
