@@ -6,7 +6,7 @@ OneS1ght SDK for iOS는 iOS 모바일 환경에서 UWB 통신을 통해 실시�
 
 SDK 에 대해 
 - GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
-- 개발자 문서: https://docs.ones1ght.com/sdk/overview 
+- 개발자 문서: https://docs.ones1ght.com/developers/sdk/overview 
 
 ---
 
