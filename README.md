@@ -8,7 +8,7 @@ on device.
 
 About the SDK
 - GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
-- Developer docs: https://docs.ones1ght.com/en/sdk/overview
+- Developer docs: https://docs.ones1ght.com/en/developers/sdk/overview
 
 ---
 

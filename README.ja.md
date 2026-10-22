@@ -7,7 +7,7 @@
 
 SDK について
 - GitHub: https://github.com/onecheck-inc/OneS1ght-iOS-SDK
-- 開発者ドキュメント: https://docs.ones1ght.com/ja/sdk/overview
+- 開発者ドキュメント: https://docs.ones1ght.com/ja/developers/sdk/overview
 
 ---
 
