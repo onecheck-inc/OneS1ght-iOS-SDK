@@ -154,6 +154,13 @@ public final class OneS1ght {
     /// 끝내 못 찾으면 E3007 로 통지).
     public static func initialize(sdkKey: String,
                                   baseURL: URL = OneS1ght.defaultBaseURL) async throws {
+        // 엔진이 처음 로그를 쓰기 전에 둔다 — 좌표가 든 파일 로그가 Documents 에 남지 않게 한다.
+        #if os(iOS)
+        if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            EngineLogRedirect.apply(documents: documents)
+        }
+        #endif
+
         // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.
         // 여기서 막으면 세션이 안 만들어져 도면·존 조회까지 전부 닫힌다(coordinator != nil 가드).
 
