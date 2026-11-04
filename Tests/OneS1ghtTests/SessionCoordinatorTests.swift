@@ -236,6 +236,43 @@ final class SessionCoordinatorTests: XCTestCase {
     }
 
     // stop → 잔여 좌표 flush. 초기화 상태는 유지 (재시작 가능)
+    func testIdentifyChange_dropsPreviousProfilePositions() async throws {
+        routeDefaults()
+        let c = try await makeStarted()
+        provider.simulatePosition(Coordinates(x: 1, y: 2, z: 0), floorId: "F", at: Date())
+
+        c.identify(profileId: "pf_next")
+        await c.stop()
+
+        XCTAssertFalse(StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") })
+    }
+
+    func testIdentifyNil_stopsRecordingPositions() async throws {
+        routeDefaults()
+        let c = try await makeStarted()
+        c.identify(profileId: nil)
+        provider.simulatePosition(Coordinates(x: 1, y: 2, z: 0), floorId: "F", at: Date())
+
+        c.identify(profileId: "pf_next")
+        await c.stop()
+
+        XCTAssertFalse(StubURLProtocol.requests.contains { $0.path.hasSuffix("/positioning/logs") })
+    }
+
+    func testIdentifySameProfile_keepsPositions() async throws {
+        routeDefaults()
+        let c = try await makeStarted()
+        provider.simulatePosition(Coordinates(x: 1, y: 2, z: 0), floorId: "F", at: Date())
+
+        c.identify(profileId: "pf_8a3c")
+        await c.stop()
+
+        let logReq = StubURLProtocol.requests.first { $0.path.hasSuffix("/positioning/logs") }
+        let body = try JSONDecoder().decode(ReqPositionBulk.self, from: XCTUnwrap(logReq?.body))
+        XCTAssertEqual(body.points.count, 1)
+        XCTAssertEqual(body.profile_id, "pf_8a3c")
+    }
+
     func testStop_flushesRemainder_staysPrepared() async throws {
         routeDefaults()
         let c = try await makeStarted(flushThreshold: 100)
