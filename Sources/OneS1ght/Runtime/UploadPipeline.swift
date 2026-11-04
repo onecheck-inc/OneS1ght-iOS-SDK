@@ -59,6 +59,7 @@ final class UploadPipeline {
 
     /// 좌표 한 점. 다운샘플을 통과하면 쌓고, 임계에 **닿는 순간** 보낸다.
     func record(_ coordinates: Coordinates, floorId: String, at capturedAt: Date) {
+        guard owner() != nil else { return }   // 주인 없는 좌표는 쌓지 않는다 — 다음 프로필에 붙는다
         guard shouldRecord(at: capturedAt) else { return }
         let before = buffer.count
         buffer.add(PositionPoint(floor_id: floorId,
