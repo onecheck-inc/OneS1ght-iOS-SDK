@@ -69,6 +69,28 @@ final class EngineLogRedirectTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: holder("gpi-prm").appendingPathComponent("20261104.txt").path))
     }
 
+    func testKeepsFolderHoldingHostAppFiles() throws {
+        let folder = documents.appendingPathComponent("gpi-prm")
+        try fm.createDirectory(at: folder.appendingPathComponent("customer-data"), withIntermediateDirectories: true)
+        try write("important.db", under: folder.appendingPathComponent("customer-data"))
+        try write("20261001.txt", under: folder)
+
+        EngineLogRedirect.apply(documents: documents)
+
+        XCTAssertNil(try? fm.destinationOfSymbolicLink(atPath: folder.path))
+        XCTAssertTrue(fm.fileExists(atPath: folder.appendingPathComponent("customer-data/important.db").path))
+        XCTAssertTrue(fm.fileExists(atPath: folder.appendingPathComponent("20261001.txt").path))
+    }
+
+    func testKeepsHostAppFileWithSameName() throws {
+        try write("gpi-ihub", under: documents)
+
+        EngineLogRedirect.apply(documents: documents)
+
+        XCTAssertNil(try? fm.destinationOfSymbolicLink(atPath: documents.appendingPathComponent("gpi-ihub").path))
+        XCTAssertEqual(try Data(contentsOf: documents.appendingPathComponent("gpi-ihub")), Data("x".utf8))
+    }
+
     func testLeavesOtherDocumentsAlone() throws {
         try write("customer.txt", under: documents)
         EngineLogRedirect.apply(documents: documents)

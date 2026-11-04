@@ -154,13 +154,6 @@ public final class OneS1ght {
     /// 끝내 못 찾으면 E3007 로 통지).
     public static func initialize(sdkKey: String,
                                   baseURL: URL = OneS1ght.defaultBaseURL) async throws {
-        // 엔진이 처음 로그를 쓰기 전에 둔다 — 좌표가 든 파일 로그가 Documents 에 남지 않게 한다.
-        #if os(iOS)
-        if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-            EngineLogRedirect.apply(documents: documents)
-        }
-        #endif
-
         // 기기 게이트는 여기 두지 않는다 — initialize 는 "키·설정" 이고 begin() 이 "측위" 다.
         // 여기서 막으면 세션이 안 만들어져 도면·존 조회까지 전부 닫힌다(coordinator != nil 가드).
 
@@ -176,6 +169,13 @@ public final class OneS1ght {
         //    측위에 쓰는 공간 서비스 접속은 여기서 만들지 않는다 — prepare() 가 콘솔에서
         //    키를 받은 뒤 붙인다. 앱이 그 키를 알 필요도, 넘길 방법도 없다.
         if coordinator == nil {
+            // 세션을 새로 만들 때만 — 이미 측위 중인 재호출이 지금 쓰는 로그를 지우면 안 된다.
+            // 좌표가 든 엔진 파일 로그가 Documents 에 남지 않게 한다.
+            #if os(iOS)
+            if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                EngineLogRedirect.apply(documents: documents)
+            }
+            #endif
             let c = SessionCoordinator(api: ApiClient(apiKey: sdkKey, baseURL: baseURL),
                                        identity: identity)
             c.onTriggers = { zoneId, triggers in FloorSession.shared.onTriggers?(zoneId, triggers) }
