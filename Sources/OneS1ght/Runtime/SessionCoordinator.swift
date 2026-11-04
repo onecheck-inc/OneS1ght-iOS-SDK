@@ -559,6 +559,12 @@ final class SessionCoordinator {
 
     /// 프로필 연결 — 좌표·존 이벤트가 이 ID 로 귀속된다.
     func identify(profileId: String?) {
+        // 좌표는 보낼 때의 프로필로 귀속된다 — 앞 사람의 미전송분이 다음 사람 이름으로 나가지 않게 여기서 버린다.
+        if profileId != self.profileId, uploads.pendingCount > 0 {
+            report(.pendingDropped, "points=\(uploads.pendingCount)",
+                   message: SdkLocalized.format("coord.pendingLost", uploads.pendingCount))
+            uploads.discard()
+        }
         self.profileId = profileId
         reporter.profileId = profileId
         guard profileId != nil else { return }
