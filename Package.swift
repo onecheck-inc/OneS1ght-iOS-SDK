@@ -40,6 +40,9 @@ let package = Package(
         // 1.1.0(2026-09-22): 층 판정을 여러 앵커로·새 층은 앵커 3대 이상·첫 층 1초 관찰·UWB 세션이
         // 끊기면 엔진이 스스로 다시 연다(오류 5 는 알림만 — 우리는 원래 5 로 멈추지 않는다). 공개 API 동일.
         .package(url: "https://github.com/Geoplan-Mobile/gpi-ihub", exact: "1.1.0"),
+        // 엔진 매니페스트는 로거만 `from:` 이라 고객 앱이 새 1.x 를 저절로 받는다 — 여기서 정확한 판으로 묶는다.
+        // 엔진을 올릴 때 같이 대조한다.
+        .package(url: "https://github.com/Geoplan-Mobile/gpi-logger", exact: "1.0.1"),
     ],
     targets: [
         .target(
@@ -47,6 +50,8 @@ let package = Package(
             dependencies: [
                 .product(name: "gpi-ihub", package: "gpi-ihub",
                          condition: .when(platforms: [.iOS])),   // 맥 테스트는 엔진 없이 코어만
+                .product(name: "gpi-logger", package: "gpi-logger",
+                         condition: .when(platforms: [.iOS])),
             ],
             path: "Sources/OneS1ght",
             resources: [
