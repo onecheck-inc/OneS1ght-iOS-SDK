@@ -37,9 +37,20 @@ enum EngineLogRedirect {
             let link = documents.appendingPathComponent(module)
             let destination = "../tmp/\(holderFolder)/\(module)"
             if (try? fm.destinationOfSymbolicLink(atPath: link.path)) == destination { continue }
+            // 고객 앱이 같은 이름을 쓰면 손대지 않는다 — 엔진 로그는 그쪽 Documents 에 그대로 쌓인다.
+            guard holdsOnlyEngineLogs(link, fileManager: fm) else { continue }
             // 이전 판이 남긴 진짜 폴더(지난 로그째)를 걷어낸다.
             try? fm.removeItem(at: link)
             try? fm.createSymbolicLink(atPath: link.path, withDestinationPath: destination)
         }
+    }
+
+    /// 지워도 되는 자리인가 — 아무것도 없거나, 엔진 로그(yyyyMMdd.txt)만 든 폴더일 때만 그렇다.
+    private static func holdsOnlyEngineLogs(_ url: URL, fileManager fm: FileManager) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return true }
+        guard isDirectory.boolValue,
+              let names = try? fm.contentsOfDirectory(atPath: url.path) else { return false }
+        return names.allSatisfy { $0.range(of: #"^\d{8}\.txt$"#, options: .regularExpression) != nil }
     }
 }
