@@ -143,9 +143,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
                                                                       : "uwb.unsupported")))
     }
 
-    /// ZoneEvent → SDK 콜백 — 서버 전송은 IN/OUT 만.
-    /// DWELL 은 SDK 파생물(IN 후 타이머)이라 서버로 보내지 않고 onZoneEvent(앱 내 훅)까지만 전달.
-    /// (서버 시책 매칭이 dwell 시책을 IN 에도 태우므로 같이 보내면 중복 발급 여지가 있다)
+    /// ZoneEvent → SDK 콜백 — IN/OUT/DWELL 모두 서버로 보낸다.
+    /// DWELL 은 콘솔의 체류 이벤트가 트리거로 내려오는 유일한 길이다(체류 이벤트만 DWELL 에 응답한다).
     private func forwardToSDK(_ event: ZoneEvent) {
         let fid = currentFloorIdString
         switch event {
@@ -153,8 +152,8 @@ public final class UwbPositioningProvider: NSObject, ObservableObject {
             delegate?.provider(self, didDetectZone: zone.id, status: .enter, floorId: fid, at: at)
         case .exit(let zone, let at):
             delegate?.provider(self, didDetectZone: zone.id, status: .exit, floorId: fid, at: at)
-        case .dwell:
-            break   // 온디바이스 전용
+        case .dwell(let zone, _, let at):
+            delegate?.provider(self, didDetectZone: zone.id, status: .dwell, floorId: fid, at: at)
         }
     }
 
