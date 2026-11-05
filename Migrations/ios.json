@@ -1,6 +1,6 @@
 {
   "platform": "ios",
-  "currentVersion": "0.2.7",
+  "currentVersion": "0.2.8",
   "_readme": [
     "판올림마다 이 파일에 한 칸을 더한다. 비어 있으면 MCP 가 '변경 없음' 이라고 답할 근거가 없어",
     "에이전트가 추측으로 코드를 고치게 된다 — 그게 이 파일이 존재하는 이유다.",
@@ -360,6 +360,14 @@
       "to": "0.2.7",
       "breaking": false,
       "summary": "측위 엔진의 진단 로그를 앱 Documents 밖(앱 tmp)으로 옮기고, 초기화할 때마다 지난 로그를 지운다. 공개 API 변경 없음.",
+      "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다.",
+      "changes": []
+    },
+    {
+      "from": "0.2.7",
+      "to": "0.2.8",
+      "breaking": false,
+      "summary": "존 체류(DWELL)를 서버로 보낸다. 콘솔의 체류 이벤트가 onTriggers 로 내려온다. 공개 API 변경 없음.",
       "action": "의존성 해석만 다시 하면 된다. SDK 코드는 고칠 것이 없다.",
       "changes": []
     }
