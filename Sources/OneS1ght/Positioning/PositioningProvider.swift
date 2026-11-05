@@ -161,8 +161,7 @@ public protocol PositioningProviderDelegate: AnyObject {
 
     /// 앱에 보일 구역 이벤트(진입·이탈·체류) — SDK 가 `FloorSession.onZoneEnter/Exit/Dwell` 로 넘긴다.
     ///
-    /// 서버 전송(`didDetectZone`)과 따로 있는 이유: 체류(DWELL)는 기기 안에서만 쓰는 파생물이라 서버로
-    /// 보내지 않지만 앱에는 보여야 하고, 앱 콜백에는 존 ID 가 아니라 `Zone` 이 실려야 한다.
+    /// 서버 전송(`didDetectZone`)과 따로 있는 이유: 앱 콜백에는 존 ID 가 아니라 `Zone` 이 실려야 한다.
     /// 예전엔 FloorSession 이 내장 provider 의 클로저에만 물려 있어, `begin(provider:)` 로 시작하면
     /// 존 콜백이 하나도 안 왔다(K14). 선택 채택 — 기본 no-op.
     func provider(_ p: PositioningProvider, didEmit event: ZoneEvent)
