@@ -500,6 +500,14 @@ OneS1ght.onDebugLog = { level, line in print("[\(level)] \(line)") }
 
 ---
 
+## 라이선스
+
+OneS1ght SDK 는 OneCheck Inc. 와 서비스 계약을 맺은 OneS1ght 고객에게 사용이 허락되는
+독점 소프트웨어입니다. 전체 조건은 [LICENSE](LICENSE) 를 보세요. SDK 에 포함되거나 SDK 가 쓰는
+제3자 구성요소는 각자의 라이선스를 따릅니다.
+
+---
+
 ## 문의
 
 onesight-support@onecheck.co.kr
