@@ -1,0 +1,200 @@
+DRAFT — SUBJECT TO LEGAL REVIEW
+초안 — 법무 검토 전
+
+OneS1ght SDK License
+
+Copyright (c) 2026 OneCheck Inc. All rights reserved.
+
+This license governs the OneS1ght SDK for iOS, including its compiled
+libraries, source files, documentation, code snippets and any updates
+(together, the "SDK"). By downloading, installing or using the SDK you agree
+to these terms. If you do not agree, do not use the SDK.
+
+1. Eligibility and Grant of License
+
+   OneCheck Inc. ("OneCheck") grants you a limited, non-exclusive,
+   non-transferable, non-sublicensable, revocable license to use the SDK
+   solely to integrate the OneS1ght service into your own applications, and
+   only while you (or the organization you act for) are a OneS1ght customer
+   under a valid service agreement with OneCheck (the "Service Agreement").
+   The SDK may not be used for any other purpose.
+
+2. Restrictions
+
+   Except as expressly permitted in this license or the Service Agreement,
+   you must not:
+
+   (a) distribute, sell, lease, lend, sublicense or otherwise make the SDK
+       available to any third party, except as compiled into and inseparable
+       from an application that integrates the OneS1ght service;
+   (b) reverse engineer, decompile, disassemble or otherwise attempt to derive
+       the source code, algorithms or internal structure of any compiled part
+       of the SDK, except to the extent that applicable law expressly permits
+       this despite this restriction;
+   (c) modify, adapt, translate or create derivative works of the SDK;
+   (d) remove, alter or obscure any copyright, license or proprietary notices
+       in the SDK;
+   (e) use the SDK to build a product or service that competes with OneS1ght,
+       or to access the OneS1ght service in a way the Service Agreement does
+       not permit; or
+   (f) use the SDK in violation of any applicable law, including privacy and
+       personal data protection laws.
+
+3. Third-Party Components
+
+   The SDK includes or depends on third-party components that are licensed
+   under their own terms (for example, open-source licenses). Those terms
+   govern your use of those components, and nothing in this license limits
+   your rights under them. The applicable notices are provided with the
+   components or in their published package metadata.
+
+4. Ownership
+
+   The SDK is licensed, not sold. OneCheck and its licensors retain all right,
+   title and interest in and to the SDK, including all intellectual property
+   rights. All rights not expressly granted in this license are reserved.
+
+5. Data
+
+   The SDK sends data to the OneS1ght service in order to operate. Collection
+   and processing of that data are governed by the Service Agreement and the
+   applicable privacy terms. You are responsible for obtaining any consents
+   from end users that applicable law requires.
+
+6. No Warranty
+
+   THE SDK IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, ACCURACY OR NON-INFRINGEMENT, EXCEPT TO
+   THE EXTENT THE SERVICE AGREEMENT EXPRESSLY PROVIDES OTHERWISE. OneCheck
+   does not warrant that the SDK will be error-free, uninterrupted, or
+   available on every device.
+
+7. Limitation of Liability
+
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ONECHECK WILL NOT BE
+   LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE
+   DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA OR GOODWILL, ARISING
+   OUT OF OR RELATED TO THE SDK. ONECHECK'S TOTAL LIABILITY ARISING OUT OF OR
+   RELATED TO THE SDK WILL NOT EXCEED THE LIMIT SET IN THE SERVICE AGREEMENT
+   OR, IF NONE IS SET, THE FEES YOU PAID TO ONECHECK FOR THE OneS1ght SERVICE
+   IN THE TWELVE (12) MONTHS BEFORE THE EVENT GIVING RISE TO THE CLAIM.
+
+8. Term and Termination
+
+   This license remains in effect while the Service Agreement is in effect
+   and ends automatically when the Service Agreement expires or is
+   terminated. OneCheck may also terminate this license if you breach it.
+   When this license ends, you must stop using the SDK, stop distributing new
+   copies of applications containing it, and delete all copies of the SDK in
+   your possession. Sections 3, 4, 6, 7, 9 and 10 survive termination.
+
+9. Order of Precedence
+
+   If this license conflicts with the Service Agreement, the Service
+   Agreement prevails.
+
+10. Governing Law
+
+   This license is governed by the laws of the Republic of Korea, unless the
+   Service Agreement provides otherwise.
+
+11. Contact
+
+   OneCheck Inc.
+   onesight-support@onecheck.co.kr
+
+
+------------------------------------------------------------------------------
+
+[한국어 번역]
+
+본 번역은 이해를 돕기 위한 것이며, 영어 원문과 내용이 다를 경우 영어 원문이 우선한다.
+
+OneS1ght SDK 라이선스
+
+Copyright (c) 2026 OneCheck Inc. All rights reserved.
+
+본 라이선스는 컴파일된 라이브러리, 소스 파일, 문서, 코드 스니펫 및 모든 업데이트를
+포함한 iOS 용 OneS1ght SDK(이하 "SDK")에 적용된다. SDK 를 내려받거나 설치하거나
+사용함으로써 귀하는 본 조건에 동의한다. 동의하지 않는 경우 SDK 를 사용하지 않는다.
+
+1. 이용 자격 및 사용 허락
+
+   OneCheck Inc.(이하 "OneCheck")는 귀하(또는 귀하가 대리하는 조직)가 OneCheck 와 유효한
+   서비스 계약(이하 "서비스 계약")을 맺은 OneS1ght 고객인 동안에 한하여, OneS1ght 서비스를
+   귀하의 애플리케이션에 연동하는 목적으로만 SDK 를 사용할 수 있는 제한적·비독점적·
+   양도 불가·재허락 불가·철회 가능한 권리를 부여한다. 그 밖의 목적으로는 SDK 를 사용할 수
+   없다.
+
+2. 제한 사항
+
+   본 라이선스 또는 서비스 계약이 명시적으로 허용하는 경우를 제외하고, 귀하는 다음을
+   하여서는 안 된다.
+
+   (a) SDK 를 제3자에게 배포·판매·임대·대여·재허락하거나 달리 제공하는 행위. 다만 OneS1ght
+       서비스를 연동한 애플리케이션에 컴파일되어 분리할 수 없는 형태로 포함되는 경우는
+       예외로 한다.
+   (b) SDK 의 컴파일된 부분을 역설계·디컴파일·역어셈블하거나, 그 소스 코드·알고리즘·내부
+       구조를 알아내려는 행위. 다만 관련 법령이 이 제한에도 불구하고 명시적으로 허용하는
+       범위는 예외로 한다.
+   (c) SDK 를 수정·변형·번역하거나 2차적 저작물을 만드는 행위
+   (d) SDK 에 있는 저작권·라이선스·소유권 표시를 삭제·변경·은폐하는 행위
+   (e) SDK 를 이용해 OneS1ght 와 경쟁하는 제품·서비스를 만들거나, 서비스 계약이 허용하지
+       않는 방식으로 OneS1ght 서비스에 접근하는 행위
+   (f) 개인정보 보호 관련 법령을 포함한 관련 법령에 위반되는 방식으로 SDK 를 사용하는 행위
+
+3. 제3자 구성요소
+
+   SDK 는 각자의 조건(예: 오픈소스 라이선스)에 따라 사용이 허락되는 제3자 구성요소를
+   포함하거나 이에 의존한다. 해당 구성요소의 사용에는 그 조건이 적용되며, 본 라이선스는
+   그 조건에 따른 귀하의 권리를 제한하지 않는다. 해당 고지는 구성요소와 함께 또는 그
+   구성요소의 공개된 패키지 정보에 제공된다.
+
+4. 소유권
+
+   SDK 는 판매되는 것이 아니라 사용이 허락되는 것이다. SDK 에 관한 모든 지식재산권을
+   포함한 일체의 권리는 OneCheck 와 그 라이선서에게 있다. 본 라이선스에서 명시적으로
+   부여하지 않은 모든 권리는 유보된다.
+
+5. 데이터
+
+   SDK 는 동작을 위해 OneS1ght 서비스로 데이터를 전송한다. 해당 데이터의 수집·처리는
+   서비스 계약과 관련 개인정보 처리 조건에 따른다. 관련 법령이 요구하는 최종 이용자의
+   동의를 받는 것은 귀하의 책임이다.
+
+6. 보증의 부인
+
+   서비스 계약이 명시적으로 달리 정한 경우를 제외하고, SDK 는 "있는 그대로" 그리고
+   "이용 가능한 상태로" 제공되며, 상품성·특정 목적 적합성·정확성·비침해에 대한 보증을
+   포함하여 명시적이든 묵시적이든 어떠한 보증도 하지 않는다. OneCheck 는 SDK 에 오류가
+   없거나, 중단 없이 동작하거나, 모든 기기에서 사용 가능함을 보증하지 않는다.
+
+7. 책임의 제한
+
+   관련 법령이 허용하는 최대 범위에서, OneCheck 는 SDK 로 인하여 또는 SDK 와 관련하여
+   발생한 간접·부수·특별·결과적·징벌적 손해, 또는 이익·매출·데이터·영업권의 손실에 대하여
+   책임지지 않는다. SDK 로 인하여 또는 SDK 와 관련하여 발생하는 OneCheck 의 총 책임은
+   서비스 계약에서 정한 한도를, 한도가 정해지지 않은 경우에는 청구 원인이 된 사건 직전
+   12개월 동안 귀하가 OneS1ght 서비스 대가로 OneCheck 에 지급한 금액을 넘지 않는다.
+
+8. 기간 및 종료
+
+   본 라이선스는 서비스 계약이 유효한 동안 효력이 있으며, 서비스 계약이 만료되거나
+   해지되면 자동으로 종료된다. 귀하가 본 라이선스를 위반한 경우 OneCheck 는 본 라이선스를
+   해지할 수 있다. 라이선스가 종료되면 귀하는 SDK 사용을 중단하고, SDK 가 포함된
+   애플리케이션의 새 사본 배포를 중단하며, 보유한 SDK 사본을 모두 삭제하여야 한다.
+   제3조, 제4조, 제6조, 제7조, 제9조 및 제10조는 종료 후에도 효력을 유지한다.
+
+9. 우선 순위
+
+   본 라이선스와 서비스 계약이 충돌하는 경우 서비스 계약이 우선한다.
+
+10. 준거법
+
+   서비스 계약이 달리 정하지 않는 한, 본 라이선스는 대한민국 법률에 따른다.
+
+11. 문의
+
+   OneCheck Inc.
+   onesight-support@onecheck.co.kr
